@@ -44,6 +44,10 @@ https://www.youtube.com/watch?v=REKcTBgkrsE
 parallax voxel raymarching (fastest?)
 https://www.youtube.com/watch?v=h81I8hR56vQ
 
+### atomotage engine
+- example doing some amazing stuff https://www.youtube.com/watch?v=nr5JqYYye3w
+- first video they uploaded showing how LOD https://www.youtube.com/watch?v=4AYBm-9cBqs
+- large scene https://www.youtube.com/watch?v=1sfWYUgxGBE
 
 cool examples:
 https://www.shadertoy.com/view/cdsGz7
