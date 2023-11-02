@@ -6,10 +6,11 @@ Building voxel terrain/structures as it is commonly done by for example Minecraf
 ### PLAN:
 1. start with 3D textures and fixed step raymarch a basic model on GPU
 2. implement FVTA algorithm
-3. edit mesh
+3. realtime mesh editing
 4. chunking
-5. prodedural terrain
-6. parallax voxel marching
+5. LOD
+6. prodedural terrain
+7. parallax voxel marching
 
 
 ### GRID 
