@@ -16,7 +16,7 @@ Building voxel terrain/structures as it is commonly done by for example Minecraf
 ### GRID 
 - grid can be represented as 3D texture (memory heavy, fast, easy to implement)
 - grid can be represented as sparse octree (memory efficient, slow, hard to implement)
-- it can also be completely generated from noise on gpu but if we want to be able to handle physics then we need to pass it from the cpu
+- it can also be completely generated from noise on gpu but if we want to be able to edit the mesh then we need to pass it from the cpu
 
 
 ### GRID TRAVERSAL
