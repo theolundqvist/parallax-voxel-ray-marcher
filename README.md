@@ -1,34 +1,37 @@
-voxel ray marching
+## Voxel ray marching
 
-GRID 
-grid can be represented as 3D texture (memory heavy, fast, easy to implement)
-grid can be represented as sparse octree (memory efficient, slow, hard to implement)
+Building voxel terrain/structures as it is commonly done by for example Minecraft, using two triangles for each face of a voxel, is quickly performance limited with large render distances or small voxels.
 
 
-GRID TRAVERSAL
-ray marching using FVTA algorithm 
-http://www.cse.yorku.ca/~amana/research/grid.pdf
-
-
-MODELS
-Models can be converted from mesh to voxel grid using online resources
-https://github.com/davidstutz/mesh-voxelization
-
-
-PLAN:
+### PLAN:
 1. start with 3D textures and fixed step raymarch a basic model on GPU
 2. implement FVTA algorithm
 3. edit mesh
 4. chunking
 5. prodedural terrain
-6. octree?
+6. parallax voxel marching
 
+
+### GRID 
+- grid can be represented as 3D texture (memory heavy, fast, easy to implement)
+- grid can be represented as sparse octree (memory efficient, slow, hard to implement)
+- it can also be completely generated from noise on gpu but if we want to be able to handle physics then we need to pass it from the cpu
+
+
+### GRID TRAVERSAL
+voxel traversal using FVTA algorithm 
+http://www.cse.yorku.ca/~amana/research/grid.pdf
+
+
+### MODELS
+Models can be converted from mesh to voxel grid using online resources
+https://github.com/davidstutz/mesh-voxelization
 
 
 
 ### voxel ray marching techniques 
 
-how Teardown (game) works does it: 
+how Teardown (game) does it: 
 https://www.youtube.com/watch?v=0VzE8ROwC58
 
 fixed step - not perfect, but easy to implement
