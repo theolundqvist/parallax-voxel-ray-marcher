@@ -26,7 +26,7 @@ http://www.cse.yorku.ca/~amana/research/grid.pdf
 ### MODELS
 Models can be converted from mesh to voxel grid using online resources
 https://github.com/davidstutz/mesh-voxelization
-
+https://drububu.com/miscellaneous/voxelizer/?out=obj
 
 
 ### voxel ray marching techniques 
