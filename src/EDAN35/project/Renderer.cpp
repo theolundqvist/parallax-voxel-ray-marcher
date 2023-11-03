@@ -26,7 +26,7 @@ public:
     for (int x = 0; x < tex_size; x++) {
       for (int y = 0; y < tex_size; y++) {
         for (int z = 0; z < tex_size; z++) {
-          if (z == 2) {
+          if (x == 2) {
           voxel_data[x][y][z] = std::rand() % 255;
           // voxel_data[x][y][z] = (std::rand() % 2) * 255;
 					// printf("%d\n", voxel_data[x][y][z]);
@@ -44,6 +44,7 @@ public:
           glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
                        glm::value_ptr(cam_pos));
           glUniform1f(glGetUniformLocation(program, "voxel_size"), 0.1f);
+          glUniform3iv(glGetUniformLocation(program, "grid_size"),1, glm::value_ptr(glm::ivec3(tex_size, tex_size, tex_size)));
         });
     obj->setShader("voxel");
   }
