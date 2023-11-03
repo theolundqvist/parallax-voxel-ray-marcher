@@ -11,25 +11,28 @@ uniform ivec3 grid_size;
 
 in vec3 fV;
 in vec3 pos;
-
 out vec4 fColor;
 
-int insideBox3D(vec3 v, vec3 bottomLeft, vec3 topRight) {
-    vec3 s = step(bottomLeft, v) - step(topRight, v);
-    return int(s.x * s.y * s.z); 
+
+bool isInside(vec3 pos){
+  if(pos.x < 0.0 || pos.x > 1.0) return false;
+  if(pos.y < 0.0 || pos.y > 1.0) return false;
+  if(pos.z < 0.0 || pos.z > 1.0) return false;
+  return true;
 }
 
-int trace(){
-  vec3 V = -normalize(fV) * voxel_size/6; // fixed step
-  // float max_dist =  // calculate distance to other side of cube to stop after we have exited the texture??? 
+vec3 trace(){
+  vec3 V = normalize(fV) * voxel_size/10; // fixed step
+  V.x = -V.x; // ???
   vec3 P = pos;
-  for(int i = 0; i < 500; i++){
-    if(insideBox3D(pos, vec3(0,0,0), vec3(grid_size)) == 0) return 0;
+  for(int i = 0; i < 400; i++){
+    if(!isInside(P)) discard;
 		int material = int(round(texture(voxels, P).r*255));
-		if(material != 0) return material;
+    if(material != 0) return vec3(float(material)/255, 0, 0);
+    //if(material != 0) return P; // debug
 		P += V;
 	}
-	return 0;
+  discard;
 }
 
 
@@ -38,14 +41,8 @@ void main()
 {
 
 
-  int material = trace();
+  vec3 color = trace();
 
-
-
-	if(material == 0) discard;
-
-  fColor = vec4(vec3(float(material)/255, 0, 0), 1);
-
-	// fColor = vec4(V*0.5+0.5, 1);
+  fColor = vec4(color, 1);
 }
 

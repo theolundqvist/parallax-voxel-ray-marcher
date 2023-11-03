@@ -12,7 +12,7 @@
 class VoxelRenderer {
 public:
   VoxelRenderer(FPSCameraf *cam, ShaderProgramManager *shaderManager,
-           float *elapsed_time_s) {
+                float *elapsed_time_s) {
     camera = cam;
     this->elapsed_time_s = elapsed_time_s;
 
@@ -23,14 +23,17 @@ public:
 
     std::srand(std::time(nullptr));
 
+    int cube_start = tex_size / 2 - 5;
+    int cube_end = tex_size / 2 + 5;
     for (int x = 0; x < tex_size; x++) {
       for (int y = 0; y < tex_size; y++) {
         for (int z = 0; z < tex_size; z++) {
-          if (x == 2) {
-          voxel_data[x][y][z] = std::rand() % 255;
-          // voxel_data[x][y][z] = (std::rand() % 2) * 255;
-					// printf("%d\n", voxel_data[x][y][z]);
+          if (x > cube_start && x < cube_end && y > cube_start &&
+              y < cube_end) {
+            voxel_data[x][y][z] = std::rand() % 254 + 1;
+            // printf("%d\n", voxel_data[x][y][z]);
           }
+          else voxel_data[x][y][z] = 0;
         }
       }
     }
@@ -44,7 +47,9 @@ public:
           glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
                        glm::value_ptr(cam_pos));
           glUniform1f(glGetUniformLocation(program, "voxel_size"), 0.1f);
-          glUniform3iv(glGetUniformLocation(program, "grid_size"),1, glm::value_ptr(glm::ivec3(tex_size, tex_size, tex_size)));
+          glUniform3iv(
+              glGetUniformLocation(program, "grid_size"), 1,
+              glm::value_ptr(glm::ivec3(tex_size, tex_size, tex_size)));
         });
     obj->setShader("voxel");
   }
@@ -117,9 +122,9 @@ private:
   GameObject *obj;
 
   float *elapsed_time_s;
-	float voxel_size = 0.1f;
+  float voxel_size = 0.1f;
   const static int tex_size = 30;
-  int voxel_data[tex_size][tex_size][tex_size] = {0};
+  GLubyte voxel_data[tex_size][tex_size][tex_size] = {0};
   GLuint texture;
 
   FPSCameraf *camera;

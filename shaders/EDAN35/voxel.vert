@@ -20,7 +20,7 @@ out vec3 pos;
 
 void main()
 {
-	pos = vertex;
+	pos = tex_coord_in;
 	vec3 worldPos = (vertex_model_to_world*vec4(vertex,1)).xyz;
 	fV = camera_position - worldPos;
 	gl_Position = vertex_world_to_clip*vec4(worldPos,1);
