@@ -9,9 +9,9 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
 
-class Renderer {
+class VoxelRenderer {
 public:
-  Renderer(FPSCameraf *cam, ShaderProgramManager *shaderManager,
+  VoxelRenderer(FPSCameraf *cam, ShaderProgramManager *shaderManager,
            float *elapsed_time_s) {
     camera = cam;
     this->elapsed_time_s = elapsed_time_s;

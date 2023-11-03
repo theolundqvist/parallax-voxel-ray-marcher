@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include "AppState.cpp"
 
 class UI {
 public:
@@ -15,11 +16,11 @@ public:
         config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x/10);
   }
 
-  void pauseMenu(std::function<void(void)> start){
+  void pauseMenu(){
     auto center = glm::vec2(config::resolution_x, config::resolution_y) * 0.5f;
     TextBox("paused", center + glm::vec2(0, -200));
     if (Button("Continue (esc)", center)) {
-			start();
+      state = RUNNING;
     }
     if (Button("Quit (q)", center + glm::vec2(0, +200))) {
       exit(0);

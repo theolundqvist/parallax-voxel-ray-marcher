@@ -6,20 +6,18 @@
 #include "../util/parametric_shapes.cpp"
 #include "../util/parametric_shapes.hpp"
 #include "../util/ui.cpp"
-#include "Renderer.cpp"
+#include "VoxelRenderer.cpp"
 #include "core/FPSCamera.h"
 #include <cstddef>
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
+#include "../util/AppState.cpp"
 
 class App {
 public:
-  enum State { PAUSED, RUNNING };
-  State state = State::RUNNING;
-
   App(FPSCameraf *cam, InputHandler *inputHandler,
       ShaderProgramManager *shaderManager, float *elapsed_time_s) {
-    this->renderer = new Renderer(cam, shaderManager, elapsed_time_s);
+    this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_s);
     this->inputHandler = inputHandler;
     this->ui = UI();
   }
@@ -32,8 +30,7 @@ public:
       renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
       break;
     case PAUSED:
-			auto state = this->state;
-      ui.pauseMenu([&state]() -> void { state = RUNNING; });
+      ui.pauseMenu();
       break;
     }
   }
@@ -50,7 +47,7 @@ public:
   }
 
 private:
-  Renderer *renderer;
+  VoxelRenderer *renderer;
   UI ui;
   InputHandler *inputHandler;
 };
