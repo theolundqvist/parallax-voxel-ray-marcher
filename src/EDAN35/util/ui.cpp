@@ -12,7 +12,7 @@ public:
   UI() {
     io = ImGui::GetIO();
     font1 = io.Fonts->AddFontFromFileTTF(
-        config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x/3);
+        config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x/10);
   }
 
   void pauseMenu(std::function<void(void)> start){
