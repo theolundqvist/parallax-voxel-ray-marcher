@@ -21,6 +21,7 @@ int insideBox3D(vec3 v, vec3 bottomLeft, vec3 topRight) {
 
 int trace(){
   vec3 V = -normalize(fV) * voxel_size/6; // fixed step
+  # float max_dist =  // calculate distance to other side of cube to stop after we have exited the texture??? 
   vec3 P = pos;
   for(int i = 0; i < 500; i++){
     if(insideBox3D(pos, vec3(0,0,0), vec3(grid_size)) == 0) return 0;
