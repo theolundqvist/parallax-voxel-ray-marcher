@@ -1,0 +1,33 @@
+
+# Build folders
+build/
+Debug/
+Release/
+ipch/
+out/
+
+#config
+
+# Dependencies folder
+dependencies/
+
+# Resources folder
+res/sponza
+res/textures
+res/cubemaps
+res/planets
+res.zip
+
+# Application produced files
+imgui.ini
+log.txt
+
+# Visual Studio Files
+.vs/
+*.opensdf
+*.sdf
+*.suo
+*.vcxproj.user
+
+.DS_Store
+.cache/
