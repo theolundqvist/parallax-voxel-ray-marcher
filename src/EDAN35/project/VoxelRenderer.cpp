@@ -19,7 +19,8 @@ public:
     obj = new GameObject("voxel_plane");
     obj->setMesh(parametric_shapes::createQuad(1.0f, 1.0f, 1, 1));
     obj->transform.rotateAroundX(3.14f * 0.5f);
-    obj->transform.translate(glm::vec3(-1.0f, 1.0f, -0.2f));
+    obj->transform.translate(glm::vec3(-2.0f, 2.0f, -1.0f));
+    obj->transform.setScale(glm::vec3(6.0f));
 
     std::srand(std::time(nullptr));
 
