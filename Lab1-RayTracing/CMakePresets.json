@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "configurePresets": [
+    {
+      "name": "windows-default",
+      "displayName": "Windows x64",
+      "description": "Target Windows with the Visual Studio development environment.",
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": {
+          "value": "${sourceDir}/out/install/${presetName}",
+          "type": "FILEPATH"
+        }
+      },
+      "vendor": { "microsoft.com/VisualStudioSettings/CMake/1.0": { "hostOS": [ "Windows" ] } }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "windows-debug",
+      "displayName": "Debug",
+      "configurePreset": "windows-default",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-relwithdebinfo",
+      "displayName": "RelWithDebInfo",
+      "configurePreset": "windows-default",
+      "configuration": "RelWithDebInfo"
+    }
+  ]
+}
