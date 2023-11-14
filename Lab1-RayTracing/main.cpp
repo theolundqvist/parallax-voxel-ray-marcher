@@ -60,28 +60,50 @@ Color traceRay(const Ray &r, Scene scene, int depth) {
 
     const Vec3 lightPos(0.0f, 30.0f, -5.0f);
     Vec3 lightDir = lightPos - hit.position;
-    lightDir.normalize();
+    float diffuse = std::max(lightDir.normalize() * hit.normal, 0.0f);
 
-    directColor = Color(1.0f, 1.0f, 1.0f);
+    float sum = hit.material.transparency + hit.material.reflectivity;
+    if (sum > 1.0f) {
+        hit.material.transparency /= sum;
+        hit.material.reflectivity /= sum;
+    }
 
-    c = directColor;
+    if (scene.intersect(hit.getShadowRay(lightPos), shadow))
+        directColor = Color(0.0f, 0.0f, 0.0f);
+    else
+        directColor = hit.material.color * diffuse;
 
-    return c;
+    if (hit.material.reflectivity > 0.0f) {
+        // hit.getReflectedRay().origin
+        reflectedColor = traceRay(hit.getReflectedRay(), scene, depth - 1);
+        reflectedColor *= hit.material.reflectivity * std::max(0.0f, 1 - hit.material.transparency);
+    }
+
+    if (hit.material.transparency > 0.0f) {
+        refractedColor = traceRay(hit.getRefractedRay(), scene, depth - 1);
+        refractedColor *= hit.material.transparency * std::max(0.0f, 1 - hit.material.reflectivity);
+    }
+    directColor *= std::max(0.0f, 1 - hit.material.transparency - hit.material.reflectivity);
+
+    return directColor + reflectedColor + refractedColor;
 }
 
 int main() {
-    const int imageWidth = 512;
+    const int imageWidth = 1024;
+    const int SPP_SIDE = 3;
     const int imageHeight = imageWidth;
     const int numChannels = 3;
     uint8_t *pixels = new uint8_t[imageWidth * imageHeight * numChannels];
 
     // Define materials
-    Material whiteDiffuse = Material(Color(0.9f, 0.9f, 0.9f), 0.0f, 0.0f, 1.0f);
+    Material whiteDiffuse = Material(Color(0.9f, 0.9f, 0.9f), 0.1f, 0.0f, 1.0f);
     Material greenDiffuse = Material(Color(0.1f, 0.6f, 0.1f), 0.0f, 0.0f, 1.0f);
     Material redDiffuse = Material(Color(1.0f, 0.1f, 0.1f), 0.0f, 0.0f, 1.0f);
     Material blueDiffuse = Material(Color(0.0f, 0.2f, 0.9f), 0.0f, 0.0f, 1.0f);
     Material yellowReflective = Material(Color(1.0f, 0.6f, 0.1f), 0.2f, 0.0f, 1.0f);
-    Material transparent = Material(Color(1.0f, 1.0f, 1.0f), 0.2f, 0.8f, 1.3f);
+    Material yellowReflective2 = Material(Color(1.0f, 0.6f, 0.1f), 0.2f, 0.2f, 1.0f);
+    Material yellowReflective3 = Material(Color(1.0f, 0.6f, 0.1f), 0.9f, 0.0f, 1.0f);
+    Material transparent = Material(Color(1.0f, 1.0f, 1.0f), 0.0f, 0.9f, 1.3f);
 
     // Setup scene
     Scene scene;
@@ -106,26 +128,27 @@ int main() {
     };
 
     // TODO: Uncomment to render floor triangles
-    // scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
-    // scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
+    scene.push(Triangle(&vertices[0], whiteDiffuse)); // Floor 1
+    scene.push(Triangle(&vertices[3], whiteDiffuse)); // Floor 2
 
     // TODO: Uncomment to render Cornell box
-    // scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
-    // scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
-    // scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
-    // scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
-    // scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
-    // scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
-    // scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
-    // scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
+    scene.push(Triangle(&vertices[6], whiteDiffuse));  // Back wall 1
+    scene.push(Triangle(&vertices[9], whiteDiffuse));  // Back wall 2
+    scene.push(Triangle(&vertices[12], whiteDiffuse)); // Ceiling 1
+    scene.push(Triangle(&vertices[15], whiteDiffuse)); // Ceiling 2
+    scene.push(Triangle(&vertices[18], redDiffuse));   // Red wall 1
+    scene.push(Triangle(&vertices[21], redDiffuse));   // Red wall 2
+    scene.push(Triangle(&vertices[24], greenDiffuse)); // Green wall 1
+    scene.push(Triangle(&vertices[27], greenDiffuse)); // Green wall 2
 
     // TODO: Uncomment to render reflective spheres
-    // scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
-    // scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(7.0f, 3.0f, 0.0f), 3.0f, yellowReflective));
+    scene.push(Sphere(Vec3(9.0f, 10.0f, 0.0f), 3.0f, yellowReflective2));
+    scene.push(Sphere(Vec3(9.0f, 10.0f, -20.0f), 3.0f, yellowReflective3));
 
     // TODO: Uncomment to render refractive spheres
-    // scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
-    // scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-7.0f, 3.0f, 0.0f), 3.0f, transparent));
+    scene.push(Sphere(Vec3(-9.0f, 10.0f, 0.0f), 3.0f, transparent));
 
     // Setup camera
     Vec3 eye(0.0f, 10.0f, 30.0f);
@@ -138,22 +161,28 @@ int main() {
     int depth = 3;
     std::cout << "Rendering... ";
     clock_t start = clock();
+    const float fSPP = (float) SPP_SIDE;
     for (int j = 0; j < imageHeight; ++j) {
         for (int i = 0; i < imageWidth; ++i) {
-
-            Color pixel;
-
             // Get center of pixel coordinate
             float cx = ((float)i) + 0.5f;
             float cy = ((float)j) + 0.5f;
+            Color sum = Color(.0f, .0f, .0f);
+            for (int k = 0; k < SPP_SIDE; k++) {
+                for (int k2 = 0; k2 < SPP_SIDE; k2++) {
 
-            // Get a ray and trace it
-            Ray r = camera.getRay(cx, cy);
-            pixel = traceRay(r, scene, depth);
-
+                    float fK = (float) k;
+                    float fK2 = (float) k2;
+                    // Get a ray and trace it
+                    Ray r = camera.getRay(cx + (fK-1.f) * 1.f / (fSPP+1.f), cy + (fK2-1.f) * 1.f / (fSPP+1.f));
+                    sum += traceRay(r, scene, depth);
+                }
+            }
             // Write pixel value to image
-            writeColor((j * imageWidth + i) * numChannels, pixel, pixels);
+            writeColor((j * imageWidth + i) * numChannels, sum * (1.f / (fSPP*fSPP)), pixels);
+
         }
+
     }
 
     // Save image to file
