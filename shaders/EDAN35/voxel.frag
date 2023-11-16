@@ -22,7 +22,7 @@ bool isInside(vec3 pos){
 }
 
 vec3 trace(){
-  vec3 V = normalize(fV) * voxel_size/20; // fixed step
+  vec3 V = normalize(fV) * voxel_size/15; // fixed step
   V.x = -V.x; // ???
   vec3 P = pos;
   for(int i = 0; i < 400; i++){

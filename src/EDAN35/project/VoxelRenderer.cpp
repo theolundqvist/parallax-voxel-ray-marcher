@@ -79,7 +79,7 @@ public:
           // printf("%d, %d, %d\n",x, y, z);
           // printf("%d, %d\n", (x + WIDTH * (y + DEPTH * z)),
           // (WIDTH*HEIGHT*DEPTH));
-          texels[x + WIDTH * (y + DEPTH * z)] = (GLubyte)voxel_data[x][y][z];
+          texels[x + HEIGHT * (y + DEPTH * z)] = voxel_data[x][y][z];
         }
       }
     }
