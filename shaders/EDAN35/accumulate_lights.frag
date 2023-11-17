@@ -56,38 +56,39 @@ void main()
   vec4 light_view = lights[light_index].view_projection * vec4(world, 1.0f);
   vec3 light_proj = light_view.xyz / light_view.w;
   vec3 light_NDC = light_proj * 0.5f + 0.5f;
-  float shadow_depth = texture(shadow_texture, light_NDC.xy).r;
+
+  float shadow = 0.0f;
+  float bias = 0.00001f;
+  int kernel_r = 2;
+  for(int x = -kernel_r; x <= kernel_r; x++) {
+    for(int y = -kernel_r; y <= kernel_r; y++) {
+      float shadow_depth = texture(shadow_texture, light_NDC.xy+vec2(x,y)*shadowmap_texel_size).r;
+      if(light_NDC.z - bias > shadow_depth)
+      {
+        shadow += 1.0f;
+      }
+    }
+  }
+  shadow /= ((kernel_r*2+1.0f)*(kernel_r*2+1.0f));
+
 
   float distance = length(world - light_position);
-
-  //if(shadow_depth < distance)
-  {
-    //light_diffuse_contribution  = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-    //light_specular_contribution = vec4(0.0f, 0.0f, 0.0f, 1.0f);
-
-    light_diffuse_contribution  = vec4(vec3(light_view.z)*0.001f, 1.0f);
-    light_specular_contribution = vec4(vec3(shadow_depth)*0.001f, 1.0f);
-    return;
-  }
-  {
-    //light_diffuse_contribution  = vec4(vec3(distance-length(shadow_world)*2), 1.0f);
-    //light_specular_contribution = vec4(vec3(length(shadow_world)*0.001f), 1.0f);
-    //return;
-  }
-
   vec3 direction = normalize(world - light_position);
   float max_angle = (light_angle_falloff)/PI_4;
-  float angle = (1.0 - dot(direction, light_direction))/(max_angle*0.15);
+  float angle = (1.0 - dot(direction, light_direction))/(max_angle*0.10);
   float angle_intensity = clamp((1.0 - sqrt(angle))*1.0, 0.0f, 1.0);
 
-  float intensity = ((light_intensity) / (distance*distance)) * angle_intensity;
+  float intensity = ((light_intensity*5.0f) / (pow(distance, 2))) * angle_intensity;
 
   vec3 L = normalize(light_position - world);
   vec3 V = -normalize(camera_position - world);
   vec3 R = reflect(L,N);
 
-  vec3 base_color = intensity * light_color;
+  vec3 base_color = intensity * vec3(1.0f);  
+  //base_color *= light_color;
 
-	light_diffuse_contribution  = vec4(max(dot(N, L) , 0.0)*base_color, 1.0f);
-	light_specular_contribution = vec4(max(dot(R, V), 0.0)*base_color, 1.0f);
+  vec3 diffuse = vec3(max(dot(N, L), 0.0f)) * (1.0 - shadow);
+  vec3 specular = vec3(max(dot(V, R), 0.0f)) * (1.0 - shadow);
+	light_diffuse_contribution  = vec4(diffuse*base_color, 1.0f);
+	light_specular_contribution = vec4(specular*base_color, 1.0f);
 }

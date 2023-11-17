@@ -25,8 +25,8 @@
 
 namespace constant
 {
-	constexpr uint32_t shadowmap_res_x = 1024;
-	constexpr uint32_t shadowmap_res_y = 1024;
+	constexpr uint32_t shadowmap_res_x = 2048;
+	constexpr uint32_t shadowmap_res_y = 2048;
 
 	constexpr float  scale_lengths       = 100.0f; // The scene is expressed in centimetres rather than metres, hence the x100.
 
@@ -533,7 +533,7 @@ edan35::Assignment2::run()
 			glViewport(0, 0, framebuffer_width, framebuffer_height);
 			// XXX: Is any clearing needed?
       glClear(GL_COLOR_BUFFER_BIT);
-      glClear(GL_DEPTH_BUFFER_BIT);
+      //glClear(GL_DEPTH_BUFFER_BIT);
 
 			for (size_t i = 0; i < static_cast<size_t>(lights_nb); ++i) {
 				auto const& lightTransform = lightTransforms[i];
@@ -551,7 +551,7 @@ edan35::Assignment2::run()
 				glViewport(0, 0, constant::shadowmap_res_x, constant::shadowmap_res_y);
 				// XXX: Is any clearing needed?
 
-        //glClear(GL_COLOR_BUFFER_BIT);
+        glClear(GL_COLOR_BUFFER_BIT);
         glClear(GL_DEPTH_BUFFER_BIT);
 
 				glUseProgram(fill_shadowmap_shader);
@@ -605,7 +605,7 @@ edan35::Assignment2::run()
 				glViewport(0, 0, framebuffer_width, framebuffer_height);
 				// XXX: Is any clearing needed?
         //glClear(GL_COLOR_BUFFER_BIT);
-        glClear(GL_DEPTH_BUFFER_BIT);
+        //glClear(GL_DEPTH_BUFFER_BIT);
 
 				glUniform1i(accumulate_light_shader_locations.light_index, static_cast<int>(i));
 				glUniformMatrix4fv(accumulate_light_shader_locations.vertex_model_to_world, 1, GL_FALSE, glm::value_ptr(light_world_matrix));
@@ -663,7 +663,7 @@ edan35::Assignment2::run()
 			glUseProgram(resolve_deferred_shader);
 			glViewport(0, 0, framebuffer_width, framebuffer_height);
 			// XXX: Is any clearing needed?
-      glClear(GL_COLOR_BUFFER_BIT |  GL_DEPTH_BUFFER_BIT);
+      //glClear(GL_COLOR_BUFFER_BIT |  GL_DEPTH_BUFFER_BIT);
 
 			bind_texture_with_sampler(GL_TEXTURE_2D, 0, resolve_deferred_shader, "diffuse_texture", textures[toU(Texture::GBufferDiffuse)], samplers[toU(Sampler::Nearest)]);
 			bind_texture_with_sampler(GL_TEXTURE_2D, 1, resolve_deferred_shader, "specular_texture", textures[toU(Texture::GBufferSpecular)], samplers[toU(Sampler::Nearest)]);
