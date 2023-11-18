@@ -1,4 +1,4 @@
-
+.vscode/
 # Build folders
 build/
 Debug/
@@ -16,6 +16,8 @@ res/sponza
 res/textures
 res/cubemaps
 res/planets
+res/sponza_4k/
+res/sponza_4k_curtains/
 res.zip
 
 # Application produced files

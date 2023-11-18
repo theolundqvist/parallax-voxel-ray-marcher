@@ -129,6 +129,7 @@ public:
     return tf;
   }
 
+
   void addChild(GameObject *child) { _children.push_front(child); }
   void removeChild(GameObject *child) {
     auto it = std::find(_children.begin(), _children.end(), child);

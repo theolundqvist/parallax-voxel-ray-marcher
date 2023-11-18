@@ -115,7 +115,7 @@ bonobo::loadObjects(std::string const& filename)
 	auto const end_of_basedir = filename.rfind("/");
 	auto const parent_folder = (end_of_basedir != std::string::npos ? filename.substr(0, end_of_basedir) : ".") + "/";
 	Assimp::Importer importer;
-	auto const assimp_scene = importer.ReadFile(filename, aiProcess_Triangulate | aiProcess_SortByPType | aiProcess_CalcTangentSpace);
+	auto const assimp_scene = importer.ReadFile(filename, aiProcess_Triangulate | aiProcess_SortByPType | aiProcess_CalcTangentSpace | aiProcess_PreTransformVertices);
 	if (assimp_scene == nullptr || assimp_scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || assimp_scene->mRootNode == nullptr) {
 		LogError("Assimp failed to load \"%s\": %s", filename.c_str(), importer.GetErrorString());
 		return objects;

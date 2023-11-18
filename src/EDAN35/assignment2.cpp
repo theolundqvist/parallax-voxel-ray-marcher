@@ -186,11 +186,22 @@ void
 edan35::Assignment2::run()
 {
 	// Load the geometry of Sponza
-	auto const sponza_geometry = bonobo::loadObjects(config::resources_path("sponza/sponza.obj"));
+	// auto const sponza_geometry = bonobo::loadObjects(config::resources_path("sponza/sponza.obj"));
+
+	auto sponza_geometry = bonobo::loadObjects(config::resources_path("sponza_4k/NewSponza_Main_glTF_002.gltf"));
+	auto const curtains = bonobo::loadObjects(config::resources_path("sponza_4k_curtains/NewSponza_Curtains_glTF.gltf"));
 	if (sponza_geometry.empty()) {
 		LogError("Failed to load the Sponza model");
 		return;
 	}
+	if (curtains.empty()) {
+		LogError("Failed to load the Sponza model");
+		return;
+	}
+	sponza_geometry.reserve(sponza_geometry.size()+curtains.size());
+	for (auto const& geometry : curtains) {
+    sponza_geometry.push_back(geometry);
+  }
 	std::vector<GeometryTextureData> sponza_geometry_texture_data;
 	sponza_geometry_texture_data.reserve(sponza_geometry.size());
 	for (auto const& geometry : sponza_geometry) {
@@ -479,7 +490,7 @@ edan35::Assignment2::run()
 
 				utils::opengl::debug::beginDebugGroup(geometry.name);
 
-				auto const vertex_model_to_world = glm::mat4(1.0f);
+				auto const vertex_model_to_world = glm::scale(glm::mat4(1.0f), glm::vec3(80.0f));
 				auto const normal_model_to_world = glm::mat4(1.0f);
 
 				glUniformMatrix4fv(fill_gbuffer_shader_locations.vertex_model_to_world, 1, GL_FALSE, glm::value_ptr(vertex_model_to_world));
@@ -564,7 +575,7 @@ edan35::Assignment2::run()
 
 					utils::opengl::debug::beginDebugGroup(geometry.name);
 
-					auto const vertex_model_to_world = glm::mat4(1.0f);
+				auto const vertex_model_to_world = glm::scale(glm::mat4(1.0f), glm::vec3(80.0f));
 					glUniformMatrix4fv(fill_shadowmap_shader_locations.vertex_model_to_world, 1, GL_FALSE, glm::value_ptr(vertex_model_to_world));
 
 					glUniform1i(fill_shadowmap_shader_locations.has_opacity_texture, texture_data.opacity_texture_id != 0u ? 1 : 0);

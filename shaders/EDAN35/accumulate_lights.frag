@@ -58,7 +58,7 @@ void main()
   vec3 light_NDC = light_proj * 0.5f + 0.5f;
 
   float shadow = 0.0f;
-  float bias = 0.00001f;
+  float bias = 0.000002f;
   int kernel_r = 2;
   for(int x = -kernel_r; x <= kernel_r; x++) {
     for(int y = -kernel_r; y <= kernel_r; y++) {
@@ -75,10 +75,10 @@ void main()
   float distance = length(world - light_position);
   vec3 direction = normalize(world - light_position);
   float max_angle = (light_angle_falloff)/PI_4;
-  float angle = (1.0 - dot(direction, light_direction))/(max_angle*0.10);
+  float angle = (1.0 - dot(direction, light_direction))/(max_angle*0.20);
   float angle_intensity = clamp((1.0 - sqrt(angle))*1.0, 0.0f, 1.0);
 
-  float intensity = ((light_intensity*5.0f) / (pow(distance, 2))) * angle_intensity;
+  float intensity = ((light_intensity*1000.0f) / (pow(distance, 3))) * angle_intensity;
 
   vec3 L = normalize(light_position - world);
   vec3 V = -normalize(camera_position - world);
