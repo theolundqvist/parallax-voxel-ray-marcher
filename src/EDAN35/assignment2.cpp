@@ -155,7 +155,7 @@ bonobo::mesh_data loadCone();
 } // namespace
 
 edan35::Assignment2::Assignment2(WindowManager &windowManager)
-    : mCamera(0.7f * glm::half_pi<float>(),
+    : mCamera(1.0f * glm::half_pi<float>(),
               static_cast<float>(config::resolution_x) /
                   static_cast<float>(config::resolution_y),
               0.01f * constant::scale_lengths, 80.0f * constant::scale_lengths),
