@@ -51,14 +51,14 @@ void main()
   vec3 world = world_orth.xyz / world_orth.w;
 
   vec3 N = normalize(texture(normal_texture, uv).xyz * 2.0f - 1.0f);
-  
+  float cam_dist = length(camera_position - world); 
 
   vec4 light_view = lights[light_index].view_projection * vec4(world, 1.0f);
   vec3 light_proj = light_view.xyz / light_view.w;
   vec3 light_NDC = light_proj * 0.5f + 0.5f;
 
   float shadow = 0.0f;
-  float bias = 0.000002f;
+  float bias = 0.000015f;
   int kernel_r = 2;
   for(int x = -kernel_r; x <= kernel_r; x++) {
     for(int y = -kernel_r; y <= kernel_r; y++) {
@@ -75,20 +75,26 @@ void main()
   float distance = length(world - light_position);
   vec3 direction = normalize(world - light_position);
   float max_angle = (light_angle_falloff)/PI_4;
-  float angle = (1.0 - dot(direction, light_direction))/(max_angle*0.20);
-  float angle_intensity = clamp((1.0 - sqrt(angle))*1.0, 0.0f, 1.0);
+  float angle = (1.0 - dot(direction, light_direction))/(max_angle*0.25);
+  float angle_intensity = clamp((1.0 - sqrt(angle))*0.10, 0.0f, 1.0);
 
-  float intensity = ((light_intensity*1000.0f) / (pow(distance, 3))) * angle_intensity;
+  float intensity = ((light_intensity*20.0f) / (pow(distance, 2))) * angle_intensity;
+  if(light_index == 0){
+    float angle_intensity = clamp((1.0 - sqrt(angle/1.3))*0.1, 0.0f, 1.0);
+    intensity = (light_intensity*1.0f) * angle_intensity;
+  }
 
   vec3 L = normalize(light_position - world);
   vec3 V = -normalize(camera_position - world);
   vec3 R = reflect(L,N);
 
-  vec3 base_color = intensity * vec3(1.0f);  
-  //base_color *= light_color;
+  //vec3 base_color = light_color;  
+  vec3 base_color = vec3(1.0f);  
+  float max_intensity = 1.0f/max(base_color.r, max(base_color.g, base_color.b));
+  base_color *= min(intensity, max_intensity);
 
   vec3 diffuse = vec3(max(dot(N, L), 0.0f)) * (1.0 - shadow);
   vec3 specular = vec3(max(dot(V, R), 0.0f)) * (1.0 - shadow);
 	light_diffuse_contribution  = vec4(diffuse*base_color, 1.0f);
-	light_specular_contribution = vec4(specular*base_color, 1.0f);
+	light_specular_contribution = vec4(specular*base_color*100.0f, 1.0f);
 }
