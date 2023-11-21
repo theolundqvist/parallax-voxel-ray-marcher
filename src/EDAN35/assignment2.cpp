@@ -183,25 +183,25 @@ edan35::Assignment2::~Assignment2() { bonobo::deinit(); }
 void edan35::Assignment2::run() {
   // Load the geometry of Sponza
   // auto const sponza_geometry =
-  // bonobo::loadObjects(config::resources_path("sponza/sponza.obj"));
+  auto sponza_geometry = bonobo::loadObjects(config::resources_path("sponza/sponza.obj"));
 
-  auto sponza_geometry = bonobo::loadObjects(
-      config::resources_path("sponza_4k/NewSponza_Main_glTF_002.gltf"));
+  //auto sponza_geometry = bonobo::loadObjects(
+   //   config::resources_path("sponza_4k/NewSponza_Main_glTF_002.gltf"));
   // auto sponza_geometry = std::vector<bonobo::mesh_data>();
   // if (sponza_geometry.empty()) {
   //   LogError("Failed to load the Sponza model");
   //   return;
   // }
-  auto const curtains = bonobo::loadObjects(config::resources_path(
-      "sponza_4k_curtains/NewSponza_Curtains_glTF.gltf"));
-  if (curtains.empty()) {
-    LogError("Failed to load the Sponza model");
-    return;
-  }
-  sponza_geometry.reserve(sponza_geometry.size() + curtains.size());
-  for (auto const &geometry : curtains) {
-    sponza_geometry.push_back(geometry);
-  }
+  //auto const curtains = bonobo::loadObjects(config::resources_path(
+   //   "sponza_4k_curtains/NewSponza_Curtains_glTF.gltf"));
+  // if (curtains.empty()) {
+  //   LogError("Failed to load the Sponza model");
+  //   return;
+  // }
+  // sponza_geometry.reserve(sponza_geometry.size() + curtains.size());
+  // for (auto const &geometry : curtains) {
+  //   sponza_geometry.push_back(geometry);
+  // }
   auto temp = std::vector<bonobo::mesh_data>();
   temp.reserve(sponza_geometry.size());
   std::string search = "decals";
@@ -547,8 +547,8 @@ void edan35::Assignment2::run() {
 
         utils::opengl::debug::beginDebugGroup(geometry.name);
 
-        auto const vertex_model_to_world =
-            glm::scale(glm::mat4(1.0f), glm::vec3(1.0f)*constant::scale_lengths);
+        auto const vertex_model_to_world = glm::mat4(1.0f);
+            //glm::scale(glm::mat4(1.0f), glm::vec3(1.0f)*constant::scale_lengths);
         auto const normal_model_to_world = glm::mat4(1.0f);
 
         glUniformMatrix4fv(fill_gbuffer_shader_locations.vertex_model_to_world,
@@ -661,8 +661,8 @@ void edan35::Assignment2::run() {
 
           utils::opengl::debug::beginDebugGroup(geometry.name);
 
-          auto const vertex_model_to_world =
-              glm::scale(glm::mat4(1.0f), glm::vec3(1.0f)*constant::scale_lengths);
+        auto const vertex_model_to_world = glm::mat4(1.0f);
+            //glm::scale(glm::mat4(1.0f), glm::vec3(1.0f)*constant::scale_lengths);
           glUniformMatrix4fv(
               fill_shadowmap_shader_locations.vertex_model_to_world, 1,
               GL_FALSE, glm::value_ptr(vertex_model_to_world));

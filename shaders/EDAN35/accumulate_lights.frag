@@ -88,13 +88,13 @@ void main()
   vec3 V = -normalize(camera_position - world);
   vec3 R = reflect(L,N);
 
-  //vec3 base_color = light_color;  
-  vec3 base_color = vec3(1.0f);  
+  vec3 base_color = light_color;  
+  //vec3 base_color = vec3(1.0f);  
   float max_intensity = 1.0f/max(base_color.r, max(base_color.g, base_color.b));
   base_color *= min(intensity, max_intensity);
 
   vec3 diffuse = vec3(max(dot(N, L), 0.0f)) * (1.0 - shadow);
   vec3 specular = vec3(max(dot(V, R), 0.0f)) * (1.0 - shadow);
 	light_diffuse_contribution  = vec4(diffuse*base_color, 1.0f);
-	light_specular_contribution = vec4(specular*base_color*100.0f, 1.0f);
+	light_specular_contribution = vec4(specular*base_color, 1.0f);
 }
