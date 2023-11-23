@@ -24,22 +24,6 @@ public:
 
     std::srand(std::time(nullptr));
 
-    int cube_start = tex_size / 2 - 5;
-    int cube_end = tex_size / 2 + 5;
-    for (int x = 0; x < tex_size; x++) {
-      for (int y = 0; y < tex_size; y++) {
-        for (int z = 0; z < tex_size; z++) {
-          if (x > cube_start && x < cube_end && y > cube_start &&
-              y < cube_end) {
-            voxel_data[x][y][z] = std::rand() % 254 + 1;
-            // printf("%d\n", voxel_data[x][y][z]);
-          }
-          else voxel_data[x][y][z] = 0;
-        }
-      }
-    }
-    buildTexture();
-
     GameObject::addShaderToLibrary(
         shaderManager, "voxel", [cam, elapsed_time_s](GLuint program) {
           auto cam_pos = cam->mWorld.GetTranslation();
@@ -55,11 +39,37 @@ public:
     obj->setShader("voxel");
   }
 
+  int cantor(int a, int b) { return (a + b + 1) * (a + b) / 2 + b; }
+
+  int hash(int a, int b, int c) { return cantor(a, cantor(b, c)); }
+
   void render(bool show_basis, float basis_length_scale,
               float basis_thickness_scale) {
+    float elapsed = *this->elapsed_time_s * 0.01f;
+    for (int x = 0; x < tex_size; x++) {
+      for (int y = 0; y < tex_size; y++) {
+        for (int z = 0; z < tex_size; z++) {
+          voxel_data[x][y][z] = wave(elapsed, x, y, z);
+        }
+      }
+    }
+    buildTexture();
     obj->setTexture("voxels", texture, GL_TEXTURE_3D);
     obj->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), show_basis,
                 basis_length_scale, basis_thickness_scale);
+  }
+
+  GLubyte wave(float elapsed, int x, int y, int z) {
+    elapsed *= 0.2f;
+    float maxY = (std::sin(elapsed + x*0.3f) * 0.5f + 0.5f) * tex_size*0.5 + tex_size/2.0;
+    //maxY += z - tex_size/2.0;
+    if (y > maxY) {
+      std::hash<std::string> hasher;
+      return (GLubyte)hasher(std::to_string(x) + std::to_string(y) +
+                          std::to_string(z)) %
+          255;
+    } else
+      return 0;
   }
 
   void buildTexture() {
@@ -79,12 +89,13 @@ public:
           // printf("%d, %d, %d\n",x, y, z);
           // printf("%d, %d\n", (x + WIDTH * (y + DEPTH * z)),
           // (WIDTH*HEIGHT*DEPTH));
-          texels[x + HEIGHT * (y + DEPTH * z)] = voxel_data[x][y][z];
+          texels[x + y * HEIGHT + z * HEIGHT * DEPTH] = voxel_data[x][y][z];
         }
       }
     }
 
     glGenTextures(1, &texture);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glBindTexture(GL_TEXTURE_3D, texture);
     // Allocate the storage.
     // glTexStorage3D(GL_TEXTURE_3D, mipLevelCount, GL_R8, WIDTH, HEIGHT,
