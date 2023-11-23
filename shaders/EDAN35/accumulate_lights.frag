@@ -88,8 +88,8 @@ void main()
   vec3 V = -normalize(camera_position - world);
   vec3 R = reflect(L,N);
 
-  vec3 base_color = light_color;  
-  //vec3 base_color = vec3(1.0f);  
+  //vec3 base_color = light_color;  
+  vec3 base_color = vec3(1.0f);  
   float max_intensity = 1.0f/max(base_color.r, max(base_color.g, base_color.b));
   base_color *= min(intensity, max_intensity);
 
