@@ -27,11 +27,19 @@ public:
     GameObject::addShaderToLibrary(
         shaderManager, "voxel", [cam, elapsed_time_s](GLuint program) {
           auto cam_pos = cam->mWorld.GetTranslation();
+
+          // elapsed time
           glUniform1f(glGetUniformLocation(program, "elapsed_time_s"),
                       *elapsed_time_s);
+
+          //cam pos
           glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
                        glm::value_ptr(cam_pos));
+
+          //voxel size
           glUniform1f(glGetUniformLocation(program, "voxel_size"), 0.1f);
+
+          // grid size
           glUniform3iv(
               glGetUniformLocation(program, "grid_size"), 1,
               glm::value_ptr(glm::ivec3(tex_size, tex_size, tex_size)));
@@ -128,6 +136,7 @@ public:
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
   }
 
 private:

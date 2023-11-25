@@ -8,8 +8,8 @@
 namespace config
 {
 	constexpr unsigned int msaa_rate = 1;
-	constexpr unsigned int resolution_x = 1920;
-	constexpr unsigned int resolution_y = 1080;
+	constexpr unsigned int resolution_x = 1000;
+	constexpr unsigned int resolution_y = 1000;
 
 	inline std::string shaders_path(std::string const& path)
 	{

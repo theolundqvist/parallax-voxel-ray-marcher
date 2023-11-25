@@ -29,7 +29,6 @@ vec3 trace(){
     if(!isInside(P)) discard;
 		int material = int(round(texture(voxels, P).r*255));
     if(material != 0) return vec3(float(material)/255, 0, 0);
-    //if(material != 0) return P; // debug
 		P += V;
 	}
   discard;
