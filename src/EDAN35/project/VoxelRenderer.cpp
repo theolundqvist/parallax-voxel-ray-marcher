@@ -41,8 +41,8 @@ public:
     for (int x = 0; x < volume->W; x++) {
       for (int y = 0; y < volume->H; y++) {
         for (int z = 0; z < volume->D; z++) {
-          volume->setVoxel(x, y, z, wave(0.0, x, y, z));
-          LogInfo("x: %d, y: %d, z: %d == %d\n", x, y, z, volume->getVoxel(x,y,z));
+          volume->setVoxel(x, y, z, wave(1000.0, x, y, z+2));
+          //LogInfo("x: %d, y: %d, z: %d == %d\n", x, y, z, volume->getVoxel(x,y,z));
         }
       }
     }

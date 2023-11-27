@@ -49,6 +49,9 @@ public:
   }
 
 private:
+    // does not feel optimal to use gameobject->render which uses node->render,
+    // we just do the opengl calls we need here, it would probaly be nicer,
+    // but gameobject has a scene graph, if we want to use that
     void _pre_render(glm::mat4 const &view_projection,
                    glm::mat4 const &parent_transform, bool show_basis,
                    float basis_length, float basis_width) override {
@@ -60,16 +63,18 @@ private:
                  texels);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+    // bind shader program
+    glUseProgram(*getProgram());
     // voxel size
     glUniform1f(glGetUniformLocation(*getProgram(), "voxel_size"), 0.1f);
-
     // grid size
     glUniform3iv(glGetUniformLocation(*getProgram(), "grid_size"), 1,
                  glm::value_ptr(glm::ivec3(W, H, D)));
-
+    //use texture
     setTexture("voxels", texture, GL_TEXTURE_3D);
   }
 
