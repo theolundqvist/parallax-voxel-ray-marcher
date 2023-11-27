@@ -10,6 +10,8 @@
 #include <iostream>
 #include <vector>
 
+typedef unsigned int uint;
+
 bonobo::mesh_data
 parametric_shapes::createQuad(float const width, float const height,
 							  unsigned int const horizontal_split_count,
@@ -130,7 +132,7 @@ parametric_shapes::createSphere(float const radius,
 	return createShape(longitude_split_count, latitude_split_count, calc_vertex, calc_tangent, calc_bitangent, glm::two_pi<float>(), glm::pi<float>());
 }
 
-bonobo::mesh_data parametric_shapes::createTorus(float const major_radius, float const minor_radius, uint const major_split_count, uint const minor_split_count)
+bonobo::mesh_data parametric_shapes::createTorus(float const major_radius, float const minor_radius, unsigned int const major_split_count, unsigned int const minor_split_count)
 {
 	auto r1 = major_radius;
 	auto r2 = minor_radius;

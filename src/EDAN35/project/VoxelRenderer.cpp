@@ -84,9 +84,9 @@ public:
 
     texture = 0;
 
-    GLsizei WIDTH = tex_size;
-    GLsizei HEIGHT = tex_size;
-    GLsizei DEPTH = tex_size;
+    const GLsizei WIDTH = tex_size;
+    const GLsizei HEIGHT = tex_size;
+    const GLsizei DEPTH = tex_size;
     GLsizei mipLevelCount = 1;
 
     GLubyte texels[WIDTH * HEIGHT * DEPTH];

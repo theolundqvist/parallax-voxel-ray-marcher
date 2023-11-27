@@ -13,7 +13,7 @@
 struct shader_program {
   std::string name;
   GLuint *program;
-  std::function<void(GLuint)> const &set_uniforms;
+  std::function<void(GLuint)> const set_uniforms;
 };
 
 struct texture_program {

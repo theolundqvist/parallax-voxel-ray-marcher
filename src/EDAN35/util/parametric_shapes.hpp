@@ -69,7 +69,7 @@ namespace parametric_shapes
 	//!                          shape.
 	//! @return wrapper around OpenGL objects' name containing the geometry
 	//!         data
-	bonobo::mesh_data createTorus(float const radius, float const inner_radius, uint const long_split_count, uint const lat_split_count);
+	bonobo::mesh_data createTorus(float const radius, float const inner_radius, unsigned int const long_split_count, unsigned int const lat_split_count);
 
 	//! \brief Create a circle ring for a given tesselation level and make it
 	//!        available to OpenGL.
