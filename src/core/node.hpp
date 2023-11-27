@@ -134,6 +134,9 @@ public:
 	TRSTransformf const& get_transform() const;
 	TRSTransformf& get_transform();
 
+// Program data
+GLuint const* _program{ nullptr };
+
 private:
 	// Geometry data
 	GLuint _vao{ 0u };
@@ -142,8 +145,6 @@ private:
 	GLenum _drawing_mode{ GL_TRIANGLES };
 	bool _has_indices{ false };
 
-	// Program data
-	GLuint const* _program{ nullptr };
 	std::function<void (GLuint)> _set_uniforms;
 
 	// Material data

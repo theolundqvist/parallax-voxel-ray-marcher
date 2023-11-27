@@ -120,7 +120,7 @@ void edan35::Project::run() {
 
   auto lastTime = std::chrono::high_resolution_clock::now();
 
-  bool show_logs = false;
+  bool show_logs = true;
   bool show_gui = true;
   bool shader_reload_failed = false;
   bool show_basis = false;

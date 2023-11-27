@@ -1,6 +1,7 @@
 .vscode/
 # Build folders
 build/
+xbuild/
 Debug/
 Release/
 ipch/
