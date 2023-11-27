@@ -1,31 +1,38 @@
 #pragma once
 #include "../util/GameObject.cpp"
 #include "../util/parametric_shapes.hpp"
+#include "EDAN35/util/Transform.cpp"
 #include "core/FPSCamera.h"
+#include "core/helpers.hpp"
 #include <cstddef>
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
 
-class VoxelVolume : public GameObject {
+class VoxelVolume {
 private:
   GLubyte *texels;
   GLuint texture;
+  bonobo::mesh_data bounding_box;
+
+  GLuint *program;
 
 public:
+  Transform transform;
   float voxel_size = 0.1f;
   int W;
   int H;
   int D;
 
-  VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH)
-      : GameObject("VoxelVolume") {
+  VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH) {
     W = WIDTH;
     H = HEIGHT;
     D = DEPTH;
     texels = (GLubyte *)calloc(W * H * D, sizeof(GLubyte));
-    setMesh(parametric_shapes::createQuad(1.0f, 1.0f, 1, 1));
+    bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
+
   }
 
+  void setProgram(GLuint *program) { this->program = program; }
 
   GLubyte getVoxel(int x, int y, int z) {
     return texels[x + y * W + z * W * H];
@@ -48,13 +55,9 @@ public:
     }
   }
 
-private:
-    // does not feel optimal to use gameobject->render which uses node->render,
-    // we just do the opengl calls we need here, it would probaly be nicer,
-    // but gameobject has a scene graph, if we want to use that
-    void _pre_render(glm::mat4 const &view_projection,
-                   glm::mat4 const &parent_transform, bool show_basis,
-                   float basis_length, float basis_width) override {
+  void render(glm::mat4 const &view_projection,
+              glm::mat4 const &parent_transform, bool show_basis,
+              float basis_length, float basis_width) {
     texture = 0;
     glGenTextures(1, &texture);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -67,15 +70,59 @@ private:
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
+    // use texture
+    glActiveTexture(texture);
+
     // bind shader program
-    glUseProgram(*getProgram());
-    // voxel size
-    glUniform1f(glGetUniformLocation(*getProgram(), "voxel_size"), 0.1f);
-    // grid size
-    glUniform3iv(glGetUniformLocation(*getProgram(), "grid_size"), 1,
-                 glm::value_ptr(glm::ivec3(W, H, D)));
-    //use texture
-    setTexture("voxels", texture, GL_TEXTURE_3D);
+    glUseProgram(*program);
+    glUniform1i(glGetUniformLocation(*program, "volume"), texture);
+
+    setUniforms(parent_transform, view_projection);
+
+    renderMesh(bounding_box);
+
   }
 
+private:
+  void setUniforms(glm::mat4 const &parent_transform,
+                   glm::mat4 const &view_projection){
+
+    // voxel size
+    glUniform1f(glGetUniformLocation(*program, "voxel_size"), 0.1f);
+    // grid size
+    glUniform3iv(glGetUniformLocation(*program, "grid_size"), 1,
+                 glm::value_ptr(glm::ivec3(W, H, D)));
+
+    // vertex model to world
+    glUniformMatrix4fv(glGetUniformLocation(*program, "vertex_model_to_world"),
+                       1, GL_FALSE, glm::value_ptr(parent_transform));
+
+    // normal model to world
+    glUniformMatrix4fv(
+        glGetUniformLocation(*program, "normal_model_to_world"), 1, GL_FALSE,
+        glm::value_ptr(glm::transpose(glm::inverse(parent_transform))));
+
+    // vertex to clip
+    glUniformMatrix4fv(glGetUniformLocation(*program, "vertex_world_to_clip"),
+                       1, GL_FALSE, glm::value_ptr(view_projection));
+  }
+
+  void renderMesh(bonobo::mesh_data shape) {
+    auto _vao = shape.vao;
+    auto _vertices_nb = static_cast<GLsizei>(shape.vertices_nb);
+    auto _indices_nb = static_cast<GLsizei>(shape.indices_nb);
+    auto _drawing_mode = shape.drawing_mode;
+    auto _has_indices = shape.ibo != 0u;
+
+    if (_vao == 0u || program == 0u)
+      return;
+
+    glBindVertexArray(_vao);
+    if (_has_indices)
+      glDrawElements(_drawing_mode, _indices_nb, GL_UNSIGNED_INT,
+                     reinterpret_cast<GLvoid const *>(0x0));
+    else
+      glDrawArrays(_drawing_mode, 0, _vertices_nb);
+    glBindVertexArray(0u);
+  }
 };

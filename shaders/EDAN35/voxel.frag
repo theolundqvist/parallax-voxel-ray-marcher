@@ -2,7 +2,7 @@
 
 // uniform vec3 light_position;
 uniform vec3 camera_position;
-uniform sampler3D voxels;
+uniform sampler3D volume;
 uniform float voxel_size;
 uniform ivec3 grid_size;
 
@@ -27,7 +27,7 @@ vec3 trace(){
   vec3 P = pos;
   for(int i = 0; i < 400; i++){
     if(!isInside(P)) discard;
-		int material = int(round(texture(voxels, P).r*255));
+		int material = int(round(texture(volume, P).r*255));
     if(material != 0) return vec3(float(material)/255, 0, 0);
 		P += V;
 	}
@@ -40,7 +40,8 @@ void main()
 {
 
 
-  vec3 color = trace();
+  //vec3 color = trace();
+  vec3 color = vec3(1.0, 1.0, 1.0);
 
   fColor = vec4(color, 1);
 }
