@@ -414,7 +414,7 @@ void edan35::Assignment2::run() {
   glBindFramebuffer(GL_READ_FRAMEBUFFER, fbos[toU(FBO::Resolve)]);
 
   auto seconds_nb = 0.0f;
-  std::array<GLuint64, toU(ElapsedTimeQuery::Count)> pass_elapsed_times;
+  std::array<GLuint64, toU(ElapsedTimeQuery::Count)> pass_elapsed_times{};
   auto lastTime = std::chrono::high_resolution_clock::now();
   bool show_textures = true;
   bool show_cone_wireframe = false;
