@@ -9,9 +9,6 @@ layout (location = 4) in vec3 binormal;
 uniform mat4 vertex_model_to_world;
 uniform mat4 normal_model_to_world;
 uniform mat4 vertex_world_to_clip;
-uniform int has_textures;
-uniform int has_diffuse_texture;
-uniform int has_opacity_texture;
 
 uniform vec3 camera_position;
 

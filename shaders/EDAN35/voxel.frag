@@ -40,8 +40,9 @@ void main()
 {
 
 
-  //vec3 color = trace();
-  vec3 color = vec3(1.0, 1.0, 1.0);
+  //vec3 color = pos;
+  vec3 color = texture(volume, pos).rgb;
+  //vec3 color = vec3(1.0, 1.0, 1.0);
 
   fColor = vec4(color, 1);
 }

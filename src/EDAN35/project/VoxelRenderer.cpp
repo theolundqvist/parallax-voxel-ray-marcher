@@ -24,12 +24,12 @@ public:
     volume->transform.translate(glm::vec3(-2.0f, 2.0f, -1.0f));
     volume->transform.setScale(glm::vec3(6.0f));
 
-    GLuint *program = new GLuint(0u);
+    auto program = GLuint(1u);
     shaderManager->CreateAndRegisterProgram(
         "voxel",
         {{ShaderType::vertex, "EDAN35/voxel.vert"},
          {ShaderType::fragment, "EDAN35/voxel.frag"}},
-        *program);
+        program);
     volume->setProgram(program);
 
     std::srand(std::time(nullptr));
@@ -37,7 +37,7 @@ public:
     for (int x = 0; x < volume->W; x++) {
       for (int y = 0; y < volume->H; y++) {
         for (int z = 0; z < volume->D; z++) {
-          volume->setVoxel(x, y, z, wave(1000.0, x, y, z + 2));
+          volume->setVoxel(x, y, z, wave(100.0, x, y, z+2));
           // LogInfo("x: %d, y: %d, z: %d == %d\n", x, y, z,
           // volume->getVoxel(x,y,z));
         }
