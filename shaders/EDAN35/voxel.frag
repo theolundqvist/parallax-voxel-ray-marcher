@@ -21,6 +21,7 @@ bool isInside(vec3 pos){
     return true;
 }
 
+// Work In Progress
 vec3 findStartPos(){
     vec3 rayOrigin = pos;// Assuming world coords for simplicity
     vec3 rayDir = -fV;//normalize(pos - camera_position);// Direction from cam to current pixel
