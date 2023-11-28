@@ -65,9 +65,9 @@ vec3 findStartPos(){
 vec3 trace(){
     vec3 V = normalize(fV) * voxel_size/15;// fixed step
     V.x = -V.x;// ???
-    vec3 P = findStartPos();
+    vec3 P = pos;
     for (int i = 0; i < 400; i++){
-        //if (!isInside(P)) discard;
+        if (!isInside(P)) discard;
         int material = int(round(texture(volume, P).r*255));
         if (material != 0) return vec3(float(material)/255, 0, 0);
         P += V;
@@ -84,6 +84,7 @@ void main()
     //vec3 color = pos;
     //vec3 color = texture(volume, pos).rgb;
     //vec3 color = vec3(1.0, 1.0, 1.0);
+    //vec3 color = fV;
     vec3 color = trace();
 
     fColor = vec4(color, 1);

@@ -31,7 +31,7 @@ public:
   }
   glm::vec3 getScale() { return glm::vec3(mS[0][0], mS[1][1], mS[2][2]); }
 
-  glm::mat4 getMatrix() { return mRT * mS; }
+  glm::mat4 getMatrix() const { return mRT * mS; }
 	void setMatrix(glm::mat4 mat){
    mRT = mat;
 	}

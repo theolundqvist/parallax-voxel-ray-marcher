@@ -24,7 +24,8 @@ public:
         H = HEIGHT;
         D = DEPTH;
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
-        bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
+        bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
+        //bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
 
     }
 
@@ -51,7 +52,7 @@ public:
         }
     }
 
-    void render(glm::mat4 const &view_projection,
+    void render(FPSCameraf *camera,
                 glm::mat4 const &parent_transform, bool show_basis,
                 float basis_length, float basis_width) {
 
@@ -81,8 +82,11 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
 
-        setUniforms(parent_transform, view_projection);
+        // uniforms
+        auto tf = parent_transform * transform.getMatrix();
+        setUniforms(tf, camera);
 
+        // render
         glEnable(GL_CULL_FACE);
         glFrontFace(GL_CW);
         glCullFace(GL_BACK);
@@ -91,12 +95,17 @@ public:
         // Unbind texture and shader program
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
+
+        // render basis
+        if (show_basis) {
+            bonobo::renderBasis(basis_width, basis_length, camera->mWorld.GetMatrix(), tf);
+        }
         utils::opengl::debug::endDebugGroup();
     }
 
 private:
-    void setUniforms(glm::mat4 const &parent_transform,
-                     glm::mat4 const &view_projection) const {
+    void setUniforms(glm::mat4 const &tf,
+                     FPSCameraf *camera) const {
 
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
@@ -106,19 +115,24 @@ private:
 
         // vertex model to world
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_model_to_world"),
-                           1, GL_FALSE, glm::value_ptr(parent_transform));
+                           1, GL_FALSE, glm::value_ptr(tf));
 
         // normal model to world
         glUniformMatrix4fv(
                 glGetUniformLocation(program, "normal_model_to_world"), 1, GL_FALSE,
-                glm::value_ptr(glm::transpose(glm::inverse(parent_transform))));
+                glm::value_ptr(glm::transpose(glm::inverse(tf))));
 
         // vertex to clip
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),
-                           1, GL_FALSE, glm::value_ptr(view_projection));
+                           1, GL_FALSE, glm::value_ptr(camera->GetWorldToClipMatrix()));
+
+        //cam pos
+        glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
+                     glm::value_ptr(camera->mWorld.GetTranslation()));
+
     }
 
-    void renderMesh(const bonobo::mesh_data &shape) {
+    void renderMesh(const bonobo::mesh_data &shape) const {
         auto _vao = shape.vao;
         auto _vertices_nb = static_cast<GLsizei>(shape.vertices_nb);
         auto _indices_nb = static_cast<GLsizei>(shape.indices_nb);
