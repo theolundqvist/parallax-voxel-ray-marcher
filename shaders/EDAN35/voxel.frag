@@ -7,8 +7,6 @@ uniform float voxel_size;
 uniform ivec3 grid_size;
 
 
-
-
 in vec3 fV;
 in vec3 pos;
 out vec4 fColor;

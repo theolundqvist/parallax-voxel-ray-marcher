@@ -24,8 +24,8 @@ public:
         H = HEIGHT;
         D = DEPTH;
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
-        bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
-        //bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
+        //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
+        bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
 
     }
 
@@ -98,7 +98,7 @@ public:
 
         // render basis
         if (show_basis) {
-            bonobo::renderBasis(basis_width, basis_length, camera->mWorld.GetMatrix(), tf);
+            bonobo::renderBasis(basis_width, basis_length, camera->GetWorldToClipMatrix(), tf);
         }
         utils::opengl::debug::endDebugGroup();
     }
@@ -114,12 +114,12 @@ private:
                      glm::value_ptr(glm::ivec3(W, H, D)));
 
         // vertex model to world
-        glUniformMatrix4fv(glGetUniformLocation(program, "vertex_model_to_world"),
+        glUniformMatrix4fv(glGetUniformLocation(program, "model_to_world"),
                            1, GL_FALSE, glm::value_ptr(tf));
 
-        // normal model to world
+        // world to model
         glUniformMatrix4fv(
-                glGetUniformLocation(program, "normal_model_to_world"), 1, GL_FALSE,
+                glGetUniformLocation(program, "world_to_model"), 1, GL_FALSE,
                 glm::value_ptr(glm::transpose(glm::inverse(tf))));
 
         // vertex to clip
