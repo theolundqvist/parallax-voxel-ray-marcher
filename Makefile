@@ -21,7 +21,7 @@ project:
 p: project
 
 clean:
-	bash -c "shopt -s globstar && rm -rf **/CMakeFiles && rm -rf **/CMakeCache.txt"
+	bash -c "shopt -s globstar && rm -rf **/CMakeFiles && rm -rf **/CMakeCache.txt && rm -rf cmake-build-* && rm -rf build"
 
 
 

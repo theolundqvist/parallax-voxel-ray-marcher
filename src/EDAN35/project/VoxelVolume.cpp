@@ -59,9 +59,17 @@ public:
         // load shader program
         glUseProgram(program);
 
-        // setup texture
-        texture = GLuint(1u);
+        // generate texture object
         glGenTextures(1, &texture);
+
+        // Set texture unit for sampler
+        glUniform1i(glGetUniformLocation(program, "volume"), 0);
+        // Active texture unit before use
+        glActiveTexture(GL_TEXTURE0);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture);
+
+        // setup texture
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glBindTexture(GL_TEXTURE_3D, texture);
         glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W, H, D, 0, GL_RED, GL_UNSIGNED_BYTE,
@@ -72,27 +80,23 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
-        // use texture
-        glActiveTexture(texture);
-        glBindTexture(GL_TEXTURE_3D, texture);
-        glUniform1i(glGetUniformLocation(program, "volume"), static_cast<GLint>(texture));
 
         setUniforms(parent_transform, view_projection);
 
+        glEnable(GL_CULL_FACE);
         glFrontFace(GL_CW);
-        glCullFace(GL_FRONT);
+        glCullFace(GL_BACK);
         renderMesh(bounding_box);
 
-        // teardown
+        // Unbind texture and shader program
         glBindTexture(GL_TEXTURE_3D, 0);
-        glUniform1i(glGetUniformLocation(program, "volume"), 0);
         glUseProgram(0u);
         utils::opengl::debug::endDebugGroup();
     }
 
 private:
     void setUniforms(glm::mat4 const &parent_transform,
-                     glm::mat4 const &view_projection) {
+                     glm::mat4 const &view_projection) const {
 
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
