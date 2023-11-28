@@ -11,6 +11,8 @@
 #include <iostream>
 #include <vector>
 
+typedef unsigned int uint;
+
 bonobo::mesh_data parametric_shapes::createCube(float const width,
                                                 float const height,
                                                 float const depth) {
@@ -258,8 +260,8 @@ parametric_shapes::createSphere(float const radius,
 
 bonobo::mesh_data parametric_shapes::createTorus(float const major_radius,
                                                  float const minor_radius,
-                                                 uint const major_split_count,
-                                                 uint const minor_split_count) {
+                                                 unsigned int const major_split_count,
+                                                 unsigned int const minor_split_count) {
     auto r1 = major_radius;
     auto r2 = minor_radius;
     auto calc_vertex = [r1, r2](float st, float ct, float sp,
