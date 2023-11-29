@@ -19,24 +19,6 @@ namespace parametric_shapes
 	//!                             you two edges, and so on.
 	//! @return wrapper around OpenGL objects' name containing the geometry
 	//!         data
-  bonobo::mesh_data createCube(float const width,
-                                                float const height,
-                                                float const depth);
-	//! \brief Create a quad a given tesselation level and make it
-	//!        available to OpenGL.
-	//!
-	//! @param width the width of the quad
-	//! @param height the height of the quad
-	//! @param horizontal_split_count the number of times horizontal edges
-	//!                               should be split: 0 means each horizontal
-	//!                               line consist of a single edge, 1 gives
-	//!                               you two edges, and so on.
-	//! @param vertical_split_count the number of times vertical edges
-	//!                             should be split: 0 means each vertical
-	//!                             line consist of a single edge, 1 gives
-	//!                             you two edges, and so on.
-	//! @return wrapper around OpenGL objects' name containing the geometry
-	//!         data
 	bonobo::mesh_data createQuad(float const width, float const height,
 	                             unsigned int const horizontal_split_count = 0u,
 	                             unsigned int const vertical_split_count = 0u);
@@ -87,7 +69,7 @@ namespace parametric_shapes
 	//!                          shape.
 	//! @return wrapper around OpenGL objects' name containing the geometry
 	//!         data
-	bonobo::mesh_data createTorus(float const radius, float const inner_radius, unsigned int const long_split_count, unsigned int const lat_split_count);
+	bonobo::mesh_data createTorus(float const radius, float const inner_radius, uint const long_split_count, uint const lat_split_count);
 
 	//! \brief Create a circle ring for a given tesselation level and make it
 	//!        available to OpenGL.

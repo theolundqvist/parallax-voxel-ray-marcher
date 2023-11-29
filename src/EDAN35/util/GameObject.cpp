@@ -13,7 +13,7 @@
 struct shader_program {
   std::string name;
   GLuint *program;
-  std::function<void(GLuint)> const set_uniforms;
+  std::function<void(GLuint)> const &set_uniforms;
 };
 
 struct texture_program {
@@ -110,12 +110,9 @@ public:
     node.set_material_constants(constants);
   }
 
-
   glm::mat4 render(glm::mat4 const &view_projection,
                    glm::mat4 const &parent_transform, bool show_basis,
                    float basis_length, float basis_width) {
-    _pre_render(view_projection, parent_transform, show_basis, basis_length,
-               basis_width);
     glm::mat4 tf = parent_transform * transform.getMatrix();
     if (!enabled)
       return tf;
@@ -143,15 +140,7 @@ public:
     // printf("Removed child, count: %ld\n", _children.size());
   }
 
-  const GLuint* getProgram(){
-    return node._program;
-  }
-
 private:
-  virtual void _pre_render(glm::mat4 const &view_projection,
-                  glm::mat4 const &parent_transform, bool show_basis,
-                  float basis_length, float basis_width) { }
-
   std::list<GameObject *> _children; // could be hashmap later
   Node node;
   bool enabled = true;

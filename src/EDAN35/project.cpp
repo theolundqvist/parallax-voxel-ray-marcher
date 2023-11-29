@@ -115,7 +115,7 @@ void edan35::Project::run() {
   auto app = new App(&mCamera, &inputHandler, &program_manager, &elapsed_time_s);
 
   glClearDepthf(1.0f);
-  glClearColor(1.0f, 1.0f, 0.94f, 1.0f);
+  glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
   glEnable(GL_DEPTH_TEST);
 
   auto lastTime = std::chrono::high_resolution_clock::now();
@@ -125,8 +125,8 @@ void edan35::Project::run() {
   bool shader_reload_failed = false;
   bool show_basis = false;
   auto polygon_mode = bonobo::polygon_mode_t::fill;
-  float basis_thickness_scale = 0.2f;
-  float basis_length_scale = 1.0f;
+  float basis_thickness_scale = 1.0f;
+  float basis_length_scale = 3.0f;
   bool camera_free_view = false;
   while (!glfwWindowShouldClose(window)) {
     auto const nowTime = std::chrono::high_resolution_clock::now();
