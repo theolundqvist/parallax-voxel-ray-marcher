@@ -112,7 +112,8 @@ void edan35::Project::run() {
   // GameObject::addShaderToLibrary(&program_manager, "shield",
   //                                phong_set_uniforms);
 
-  auto app = new App(&mCamera, &inputHandler, &program_manager, &elapsed_time_s);
+  auto app = new App(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_s);
+
 
   glClearDepthf(1.0f);
   glClearColor(1.0f, 1.0f, 0.94f, 1.0f);
@@ -128,6 +129,7 @@ void edan35::Project::run() {
   float basis_thickness_scale = 0.2f;
   float basis_length_scale = 1.0f;
   bool camera_free_view = false;
+  bool hideMouse = false;
   while (!glfwWindowShouldClose(window)) {
     auto const nowTime = std::chrono::high_resolution_clock::now();
     auto const deltaTimeUs =
@@ -142,7 +144,7 @@ void edan35::Project::run() {
 
     glfwPollEvents();
     inputHandler.Advance();
-    mCamera.Update(deltaTimeUs, inputHandler);
+    app->update(deltaTimeUs);
 
     if (inputHandler.GetKeycodeState(GLFW_KEY_R) & JUST_PRESSED) {
       shader_reload_failed = !program_manager.ReloadAllPrograms();
@@ -175,8 +177,6 @@ void edan35::Project::run() {
     //
     // Todo: If you need to handle inputs, you can do it here
     //
-    if (inputHandler.GetKeycodeState(GLFW_KEY_C) & JUST_PRESSED)
-      camera_free_view = !camera_free_view;
     if (inputHandler.GetKeycodeState(GLFW_KEY_B) & JUST_PRESSED)
       show_basis = !show_basis;
     if (inputHandler.GetKeycodeState(GLFW_KEY_M) & JUST_PRESSED) {
@@ -195,7 +195,7 @@ void edan35::Project::run() {
     glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
     // RENDER
-    app->update(show_basis, basis_length_scale, basis_thickness_scale);
+    app->render(show_basis, basis_length_scale, basis_thickness_scale);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
