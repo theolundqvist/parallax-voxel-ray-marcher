@@ -28,6 +28,7 @@ public:
     switch (state) {
     case RUNNING:
       renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
+      if(showCrosshair) ui.crosshair();
       break;
     case PAUSED:
       ui.pauseMenu();
@@ -41,6 +42,9 @@ public:
 			else state = RUNNING;
 		}
 
+    if(inputHandler->GetKeycodeState(GLFW_KEY_C) & JUST_PRESSED)
+      showCrosshair = !showCrosshair;
+
     if (state == PAUSED &&
         inputHandler->GetKeycodeState(GLFW_KEY_Q) & JUST_PRESSED)
       exit(0);
@@ -48,6 +52,7 @@ public:
 
 private:
   VoxelRenderer *renderer;
+  bool showCrosshair = false;
   UI ui;
   InputHandler *inputHandler;
 };

@@ -1,4 +1,5 @@
 #pragma once
+
 #include "config.hpp"
 #include <glm/glm.hpp>
 #include <imgui.h>
@@ -6,71 +7,109 @@
 
 class UI {
 public:
-  ImFont *font1;
-  ImGuiIO io;
-	int window_size;
+    ImFont *font1;
+    ImGuiIO io;
+    int window_size;
 
-  UI() {
-    io = ImGui::GetIO();
-    font1 = io.Fonts->AddFontFromFileTTF(
-        config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x/10);
-  }
+    UI() {
+        io = ImGui::GetIO();
+        font1 = io.Fonts->AddFontFromFileTTF(
+                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x / 10);
+    }
 
-  void pauseMenu(){
-    auto center = glm::vec2(config::resolution_x, config::resolution_y) * 0.5f;
-    TextBox("paused", center + glm::vec2(0, -200));
-    if (Button("Continue (esc)", center)) {
-      state = RUNNING;
+    void crosshair() {
+        float crosshairSize = 10.0f;
+        float lineWidth = 1.5f;
+        float gapSize = 4.0f;
+        float dotSize = 2.0f;
+
+        ImDrawList *drawList = ImGui::GetBackgroundDrawList();
+        auto white = ImColor(255, 255, 255);
+        DrawCrossHair(drawList, crosshairSize + 1.0f, lineWidth + 0.5f, gapSize - 0.5f, dotSize + 0.5f, white);
+
+        auto black = ImColor(0, 0, 0);
+        DrawCrossHair(drawList, crosshairSize, lineWidth, gapSize, dotSize, black);
+
+        //Rendering :)
+        ImGui::Render();
     }
-    if (Button("Quit (q)", center + glm::vec2(0, +200))) {
-      exit(0);
+
+    void pauseMenu() {
+        auto center = glm::vec2(config::resolution_x, config::resolution_y) * 0.5f;
+        TextBox("paused", center + glm::vec2(0, -200));
+        if (Button("Continue (esc)", center)) {
+            state = RUNNING;
+        }
+        if (Button("Quit (q)", center + glm::vec2(0, +200))) {
+            exit(0);
+        }
     }
-  }
 
 private:
-  void CenterCursor(std::string text) {
-    auto windowWidth = ImGui::GetWindowSize().x;
-    auto textWidth = ImGui::CalcTextSize(text.c_str()).x;
+    void CenterCursor(std::string text) {
+        auto windowWidth = ImGui::GetWindowSize().x;
+        auto textWidth = ImGui::CalcTextSize(text.c_str()).x;
 
-    ImGui::SetCursorPosX((windowWidth - textWidth) * 0.5f);
-  }
-  void Begin(std::string name, bool background,glm::vec2 pos) {
-    auto flags = ImGuiWindowFlags_NoDecoration |
-                 ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
-                 ImGuiWindowFlags_NoTitleBar;
-    if (!background)
-      flags |= ImGuiWindowFlags_NoBackground;
-    ImGui::Begin(name.c_str(), nullptr, flags);
-    SetWindowPos(pos);
-  }
-  void End() { ImGui::End(); }
+        ImGui::SetCursorPosX((windowWidth - textWidth) * 0.5f);
+    }
 
-  void SetWindowPos(glm::vec2 pos) {
-    auto size = ImGui::GetWindowSize();
-    ImGui::SetWindowPos(ImVec2(pos.x - size.x * .5f, pos.y - size.y * .5f));
-  }
-  void TextBox(std::string text, glm::vec2 pos, float scale){
-    text = " " + text + " ";
-    Begin(text,true, pos);
+    void Begin(std::string name, bool background, glm::vec2 pos) {
+        auto flags = ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoTitleBar;
+        if (!background)
+            flags |= ImGuiWindowFlags_NoBackground;
+        ImGui::Begin(name.c_str(), nullptr, flags);
+        SetWindowPos(pos);
+    }
 
-    // center
-    ImGui::PushFont(font1);
-    ImGui::SetWindowFontScale(0.7f);
-    CenterCursor(text);
-    ImGui::Text("%s", text.c_str());
-    ImGui::PopFont();
-    ImGui::SetWindowFontScale(1.0f);
-    End();
-	}
-  void TextBox(std::string text, glm::vec2 pos) { TextBox(text, pos, 1.0f); }
-  bool Button(std::string text, glm::vec2 pos) {
-    text = "   " + text + "   ";
-    Begin(text, false, pos);
-    ImGui::PushFont(font1);
-    CenterCursor(text);
-    auto clicked = ImGui::Button(text.c_str());
-    ImGui::PopFont();
-    End();
-    return clicked;
-  }
+    void DrawCrossHair(ImDrawList *drawList, float crosshairSize, float lineWidth, float gapSize, float dotSize,
+                       ImColor color) {
+        float centerX = config::resolution_x / 2.0f;
+        float centerY = config::resolution_y / 2.0f;
+        // Draw horizontal line
+        drawList->AddLine({centerX - crosshairSize - gapSize, centerY}, {centerX - gapSize, centerY}, color, lineWidth);
+        drawList->AddLine({centerX + gapSize, centerY}, {centerX + crosshairSize + gapSize, centerY}, color, lineWidth);
+
+        // Draw vertical line
+        drawList->AddLine({centerX, centerY - crosshairSize - gapSize}, {centerX, centerY - gapSize}, color, lineWidth);
+        drawList->AddLine({centerX, centerY + gapSize}, {centerX, centerY + crosshairSize + gapSize}, color, lineWidth);
+
+        // Draw dot in the center
+        //drawList->AddCircleFilled({ centerX, centerY }, dotSize, color);
+    }
+
+    void End() { ImGui::End(); }
+
+    void SetWindowPos(glm::vec2 pos) {
+        auto size = ImGui::GetWindowSize();
+        ImGui::SetWindowPos(ImVec2(pos.x - size.x * .5f, pos.y - size.y * .5f));
+    }
+
+    void TextBox(std::string text, glm::vec2 pos, float scale) {
+        text = " " + text + " ";
+        Begin(text, true, pos);
+
+        // center
+        ImGui::PushFont(font1);
+        ImGui::SetWindowFontScale(0.7f);
+        CenterCursor(text);
+        ImGui::Text("%s", text.c_str());
+        ImGui::PopFont();
+        ImGui::SetWindowFontScale(1.0f);
+        End();
+    }
+
+    void TextBox(std::string text, glm::vec2 pos) { TextBox(text, pos, 1.0f); }
+
+    bool Button(std::string text, glm::vec2 pos) {
+        text = "   " + text + "   ";
+        Begin(text, false, pos);
+        ImGui::PushFont(font1);
+        CenterCursor(text);
+        auto clicked = ImGui::Button(text.c_str());
+        ImGui::PopFont();
+        End();
+        return clicked;
+    }
 };

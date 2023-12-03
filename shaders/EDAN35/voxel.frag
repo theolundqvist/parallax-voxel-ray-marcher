@@ -165,8 +165,8 @@ void main()
     //vec3 color = vec3(1.0, 1.0, 1.0);
     //vec3 color = fV;
 
-    //vec3 color = fixed_step();
-    vec3 color = fvta_step();
+    vec3 color = fixed_step();
+    //vec3 color = fvta_step();
 
     fColor = vec4(color, 1);
 }
