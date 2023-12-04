@@ -25,7 +25,7 @@ public:
         glfwGetFramebufferSize(window, &w, &h);
         glfwGetWindowContentScale(window, &xscale, &yscale);
         //printf("fbSize=%dx%d, scale=%.2fx%.2f\n", w, h, xscale, yscale);
-        ImGui::SetWindowSize(ImVec2((float)w, (float)h));
+        ImGui::SetWindowSize(ImVec2((float)w/xscale, (float)h/yscale));
     }
 
 

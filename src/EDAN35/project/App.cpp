@@ -36,8 +36,8 @@ public:
             case RUNNING:
                 gpu_time = renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
                 ui->resize();
+                if (showFps) ui->fps(gpu_time, cpu_time, 10);
                 if (showCrosshair) ui->crosshair();
-                if(showFps) ui->fps(gpu_time, cpu_time, 10);
                 break;
             case PAUSED:
                 ui->resize();
@@ -71,17 +71,19 @@ public:
             if (state == RUNNING) state = PAUSED;
             else state = RUNNING;
         }
+        if (state == RUNNING) {
+            if (inputHandler->GetKeycodeState(GLFW_KEY_C) & JUST_PRESSED) {
+                showCrosshair = !showCrosshair;
+                dragToMove = !dragToMove;
+            }
+            if (inputHandler->GetKeycodeState(GLFW_KEY_F) & JUST_PRESSED)
+                showFps = !showFps;
 
-        if (inputHandler->GetKeycodeState(GLFW_KEY_C) & JUST_PRESSED) {
-            showCrosshair = !showCrosshair;
-            dragToMove = !dragToMove;
-        }
-        if(inputHandler->GetKeycodeState(GLFW_KEY_F) & JUST_PRESSED){
-            showFps = !showFps;
-        }
+            if(inputHandler->GetKeycodeState(GLFW_KEY_SPACE)){
+                //renderer->raycast();
+            }
 
-        if (state == PAUSED &&
-            inputHandler->GetKeycodeState(GLFW_KEY_Q) & JUST_PRESSED)
+        } else if (inputHandler->GetKeycodeState(GLFW_KEY_Q) & JUST_PRESSED)
             exit(0);
     }
 

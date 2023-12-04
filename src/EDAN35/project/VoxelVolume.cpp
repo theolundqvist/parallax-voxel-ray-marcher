@@ -52,6 +52,11 @@ public:
         }
     }
 
+    glm::ivec3 raycast(glm::vec3 w_origin, glm::vec3 w_direction){
+        //implement raycast
+       return glm::ivec3(0,0,0);
+    }
+
     void render(FPSCameraf *camera,
                 glm::mat4 const &parent_transform, bool show_basis,
                 float basis_length, float basis_width) {
