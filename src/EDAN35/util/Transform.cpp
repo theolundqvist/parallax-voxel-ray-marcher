@@ -10,56 +10,70 @@ public:
     glm::mat4 mRT = glm::mat4(1.0f);
     glm::mat4 mS = glm::mat4(1.0f);
 
-    void setPos(glm::vec3 pos) {
+    Transform setPos(glm::vec3 pos) {
         mRT[3][0] = pos.x;
         mRT[3][1] = pos.y;
         mRT[3][2] = pos.z;
+        return *this;
     }
 
-    void translate(glm::vec3 translation) {
+    Transform translate(glm::vec3 translation) {
         mRT = glm::translate(glm::mat4(1.0f), translation) * mRT;
+        return *this;
     }
+    Transform translate(float x, float y, float z) { return translate(glm::vec3(x, y, z)); }
+    Transform translateX(float x) { return translate(glm::vec3(x, 0, 0)); }
+    Transform translateY(float y) { return translate(glm::vec3(0, y, 0)); }
+    Transform translateZ(float z) { return translate(glm::vec3(0, 0, z)); }
+
 
     glm::vec3 getPos() { return {mRT[3][0], mRT[3][1], mRT[3][2]}; }
 
-    void scale(glm::vec3 scale) { mS = glm::scale(glm::mat4(1.0f), scale) * mS; }
-
-    void scale(float s) { scale(glm::vec3(s)); }
-
-    void setScale(glm::vec3 s) {
-        mS = glm::mat4(1.0f);
-        scale(s);
+    Transform scale(glm::vec3 scale) {
+        mS = glm::scale(glm::mat4(1.0f), scale) * mS;
+        return *this;
     }
 
-    void setScale(float s) {
+    Transform scale(float s) { return scale(glm::vec3(s)); }
+
+    Transform setScale(glm::vec3 s) {
         mS = glm::mat4(1.0f);
-        scale(s);
+        return scale(s);
+    }
+
+    Transform setScale(float s) {
+        mS = glm::mat4(1.0f);
+        return scale(s);
     }
 
     glm::vec3 getScale() { return {mS[0][0], mS[1][1], mS[2][2]}; }
 
     glm::mat4 getMatrix() const { return mRT * mS; }
 
-    void setMatrix(glm::mat4 mat) {
+    Transform setMatrix(glm::mat4 mat) {
         mRT = mat;
+        return *this;
     }
 
-    void rotateAroundX(float angle) {
+    Transform rotateAroundX(float angle) {
         mRT = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(1, 0, 0)) * mRT;
+        return *this;
     }
 
-    void rotateAroundY(float angle) {
+    Transform rotateAroundY(float angle) {
         mRT = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0, 1, 0)) * mRT;
+        return *this;
     }
 
-    void rotateAroundZ(float angle) {
+    Transform rotateAroundZ(float angle) {
         mRT = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0, 0, 1)) * mRT;
+        return *this;
     }
 
-    void resetRotation() {
+    Transform resetRotation() {
         auto translation = getPos();
         mRT = glm::mat4x4(1.0f);
-        setPos(translation);
+        return setPos(translation);
     }
 
     glm::vec3 getEulerAngles() const { return glm::eulerAngles(glm::quat_cast(mRT)); }
@@ -76,14 +90,14 @@ public:
         return {mRT * glm::vec4(vec, 0)};
     }
 
-    void lookAt(glm::vec3 at, glm::vec3 up) { lookTowards(at - getPos(), up); }
+    Transform lookAt(glm::vec3 at, glm::vec3 up) { return lookTowards(at - getPos(), up); }
 
-    void lookTowards(glm::vec3 front_vec, glm::vec3 up_vec) {
+    Transform lookTowards(glm::vec3 front_vec, glm::vec3 up_vec) {
         front_vec = normalize(-front_vec);
         up_vec = normalize(up_vec);
 
         if (std::abs(dot(up_vec, front_vec)) > 0.99999f)
-            return;
+            return *this;
 
         glm::vec3 prev_up = up_vec;
 
@@ -96,6 +110,7 @@ public:
         mRT[0] = glm::vec4(right, 0);
         mRT[1] = glm::vec4(up, 0);
         mRT[2] = glm::vec4(-front_vec, 0);
+        return *this;
     }
 
     void printMatrix() {

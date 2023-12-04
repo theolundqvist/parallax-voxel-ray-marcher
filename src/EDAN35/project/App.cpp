@@ -21,29 +21,40 @@ public:
         this->window = window;
         this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_s);
         this->inputHandler = inputHandler;
-        this->ui = UI();
         this->camera = cam;
-        cam->mWorld.LookAt(glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0, 0, -10.f));
+        cam->mWorld.LookAt(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0, 0, 10.f));
+        ui = new UI(window);
     }
 
+
     void render(bool show_basis, float basis_length_scale,
-                float basis_thickness_scale) {
+                float basis_thickness_scale, float dt) {
+        const auto now = std::chrono::high_resolution_clock::now();
+        float gpu_time;
+        float cpu_time = dt;
         switch (state) {
             case RUNNING:
-                renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
-                if (showCrosshair) ui.crosshair();
+                gpu_time = renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
+                ui->resize();
+                if (showCrosshair) ui->crosshair();
+                if(showFps) ui->fps(gpu_time, cpu_time, 10);
                 break;
             case PAUSED:
-                ui.pauseMenu();
+                ui->resize();
+                ui->pauseMenu();
                 break;
         }
+        const auto end = std::chrono::high_resolution_clock::now();
+        //printf("app render time: %f ms\n", std::chrono::duration<float>(end - now).count()*1000.0f);
     }
 
     void update(const std::chrono::microseconds deltaTimeUs) {
+        const auto now = std::chrono::high_resolution_clock::now();
         handleInput();
         switch (state) {
             case RUNNING:
                 glfwSetInputMode(window, GLFW_CURSOR, dragToMove ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
+                renderer->update(inputHandler, deltaTimeUs.count() * 0.001f);
                 camera->Update(deltaTimeUs, *inputHandler, false, false, dragToMove);
                 break;
             case PAUSED:
@@ -51,6 +62,8 @@ public:
                 //camera->Update(deltaTimeUs, *inputHandler, false, false, true);
                 break;
         }
+        const auto end = std::chrono::high_resolution_clock::now();
+        //printf("app update time: %f ms\n", std::chrono::duration<float>(end - now).count()*1000.0f);
     }
 
     void handleInput() {
@@ -60,8 +73,11 @@ public:
         }
 
         if (inputHandler->GetKeycodeState(GLFW_KEY_C) & JUST_PRESSED) {
-            dragToMove = !dragToMove;
             showCrosshair = !showCrosshair;
+            dragToMove = !dragToMove;
+        }
+        if(inputHandler->GetKeycodeState(GLFW_KEY_F) & JUST_PRESSED){
+            showFps = !showFps;
         }
 
         if (state == PAUSED &&
@@ -73,7 +89,8 @@ private:
     VoxelRenderer *renderer;
     bool showCrosshair = false;
     bool dragToMove = true;
-    UI ui;
+    bool showFps = true;
+    UI *ui;
     InputHandler *inputHandler;
     GLFWwindow *window;
     FPSCameraf *camera;

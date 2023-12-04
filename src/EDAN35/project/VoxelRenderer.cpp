@@ -20,65 +20,78 @@ public:
         camera = cam;
         this->elapsed_time_s = elapsed_time_s;
 
-        volume = new VoxelVolume(30, 30, 30);
-        // does not work if not rotated like this ??, something wierd in the shader
-        volume->transform.rotateAroundX(glm::pi<float>()*1.5f);
-        volume->transform.scale(3.0f);
-        //volume->transform.translate(Direction::up * 1.0f);
-
-        auto program = GLuint(1u);
+        voxel_program = GLuint(1u);
         shaderManager->CreateAndRegisterProgram(
                 "voxel",
                 {{ShaderType::vertex,   "EDAN35/voxel.vert"},
                  {ShaderType::fragment, "EDAN35/voxel.frag"}},
-                program);
-        volume->setProgram(program);
+                voxel_program);
 
         std::srand(std::time(nullptr));
-        //updateVolume(100.0f);
+        auto tf = Transform()
+                .scale(3.0f)
+                .rotateAroundX(glm::pi<float>() * 1.5f);
+        createVolume(30, tf.translateX(3));
+        createVolume(30, tf.translateX(3));
+        createVolume(30, tf.translateX(3));
     }
 
-    void updateVolume(float elapsed) {
+    void createVolume(int size, Transform transform = Transform()) {
+        auto volume = new VoxelVolume(30, 30, 30);
+        // does not work if not rotated like this ??, something wierd in the shader
+        volume->transform = transform;
+        volume->setProgram(voxel_program);
+        volumes.push_back(volume);
+    }
+
+    void update(InputHandler *inputHandler, float dt) {
+        // try this rotation
+        // volume->transform.rotateAroundX(glm::pi<float>()*dt*0.01f);
+        for (auto volume: volumes) {
+            updateVolume(volume);
+        }
+    }
+
+    void updateVolume(VoxelVolume *volume) {
+        // run whatever algorithm for updating the voxels
+        auto volume_pos = volume->transform.getPos() * glm::vec3(volume->W, volume->H, volume->D);
         for (int x = 0; x < volume->W; x++) {
             for (int y = 0; y < volume->H; y++) {
                 for (int z = 0; z < volume->D; z++) {
-                    volume->setVoxel(x, y, z, wave(elapsed, x, y, z));
-                    // LogInfo("x: %d, y: %d, z: %d == %d\n", x, y, z,
-                    // volume->getVoxel(x,y,z));
+                    auto pos = glm::vec3(x, y, z) + volume_pos;
+                    volume->setVoxel(x, y, z, wave(1.0f, pos.x, pos.y, pos.z));
                 }
             }
         }
     }
 
-
-    float last_time = 0.0f;
-
-    void render(bool show_basis, float basis_length, float basis_thickness) {
-        float elapsed = *this->elapsed_time_s * 0.001f;
-        float dt = elapsed - last_time;
-        last_time = elapsed;
-
-        // try this rotation
-        // volume->transform.rotateAroundX(glm::pi<float>()*dt*0.01f);
-        updateVolume(elapsed);
-        volume->render(
-                camera,
-                glm::mat4(1.0f),
-                show_basis,
-                basis_length,
-                basis_thickness
-        );
+    float render(bool show_basis, float basis_length, float basis_thickness) {
+        // sort volumes by distance to camera
+        glBeginQuery(GL_TIME_ELAPSED, elapsed_time_query);
+        for (auto volume: volumes) {
+            volume->render(
+                    camera,
+                    glm::mat4(1.0f),
+                    show_basis,
+                    basis_length,
+                    basis_thickness
+            );
+        }
+        glEndQuery(GL_TIME_ELAPSED);
+        glGetQueryObjectui64v(elapsed_time_query, GL_QUERY_RESULT,
+                              &pass_elapsed_time);
+        return (float) pass_elapsed_time / 1000000.0f;
     }
+
 
     int cantor(int a, int b) { return (a + b + 1) * (a + b) / 2 + b; }
 
     int hash(int a, int b, int c) { return cantor(a, cantor(b, c)); }
 
-    GLubyte wave(float elapsed, int x, int y, int z) {
-        elapsed *= 0.2f;
+    GLubyte wave(float offset, float x, float y, float z, int maxY = 22) {
         float surfaceY =
-                (std::sin(elapsed + x * 0.3f) * 0.5f + 0.5f) * volume->H * 0.5 +
-                volume->H / 2.0;
+                (std::sin(offset + x * 0.3f) * 0.5f + 0.5f) * maxY * 0.5 +
+                maxY / 2.0;
         if (y > surfaceY) {
             std::hash<std::string> hasher;
             return (GLubyte) hasher(
@@ -91,7 +104,32 @@ public:
     }
 
 private:
-    VoxelVolume *volume;
+    std::vector<VoxelVolume *> volumes;
     FPSCameraf *camera;
+    GLuint voxel_program;
     float *elapsed_time_s;
+    GLuint elapsed_time_query = createElapsedTimeQuery();
+    GLuint64 pass_elapsed_time;
+
+    static GLuint createElapsedTimeQuery() {
+        GLuint query;
+        glGenQueries(1, &query);
+
+        if (utils::opengl::debug::isSupported()) {
+            // Queries (like any other OpenGL object) need to have been used at least
+            // once to ensure their resources have been allocated so we can call
+            // `glObjectLabel()` on them.
+            auto const register_query = [](GLuint const query) {
+                glBeginQuery(GL_TIME_ELAPSED, query);
+                glEndQuery(GL_TIME_ELAPSED);
+            };
+
+            register_query(query);
+            utils::opengl::debug::nameObject(
+                    GL_QUERY, query,
+                    "GBuffer generation");
+        }
+
+        return query;
+    }
 };
