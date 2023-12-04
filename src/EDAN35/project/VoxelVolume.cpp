@@ -150,6 +150,4 @@ private:
             glDrawArrays(_drawing_mode, 0, _vertices_nb);
         glBindVertexArray(0u);
     }
-
-    int elapsed_time;
 };
