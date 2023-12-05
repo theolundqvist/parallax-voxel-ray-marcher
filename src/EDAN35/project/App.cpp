@@ -24,6 +24,15 @@ public:
         this->camera = cam;
         cam->mWorld.LookAt(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0, 0, 10.f));
         ui = new UI(window);
+
+        // just for showing raycast near and far hit points
+        //hitMin = new GameObject("test");
+        //hitMax = new GameObject("test");
+        //hitMin->setMesh(parametric_shapes::createSphere(0.25f, 10, 10));
+        //hitMax->setMesh(parametric_shapes::createSphere(0.25f, 10, 10));
+        //GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
+        //hitMin->setShader("fallback");
+        //hitMax->setShader("fallback");
     }
 
 
@@ -35,6 +44,8 @@ public:
         switch (state) {
             case RUNNING:
                 gpu_time = renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
+                //hitMin->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), false, false, false);
+                //hitMax->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), false, false, false);
                 ui->resize();
                 if (showFps) ui->fps(gpu_time, cpu_time, 10);
                 if (showCrosshair) ui->crosshair();
@@ -79,8 +90,13 @@ public:
             if (inputHandler->GetKeycodeState(GLFW_KEY_F) & JUST_PRESSED)
                 showFps = !showFps;
 
-            if(inputHandler->GetKeycodeState(GLFW_KEY_SPACE)){
-                //renderer->raycast();
+            if (inputHandler->GetKeycodeState(GLFW_KEY_SPACE) & JUST_PRESSED) {
+                auto hit = renderer->raycast(camera->mWorld.GetTranslation(), camera->mWorld.GetFront());
+                if (!hit.miss) {
+                    //hitMin->transform.setPos(hit.voxel.world_pos);
+                    //hitMax->transform.setPos(hit.voxel.world_pos_far);
+                    hit.volume->setVoxel(hit.voxel.index, 0);
+                }
             }
 
         } else if (inputHandler->GetKeycodeState(GLFW_KEY_Q) & JUST_PRESSED)
@@ -96,4 +112,7 @@ private:
     InputHandler *inputHandler;
     GLFWwindow *window;
     FPSCameraf *camera;
+
+    GameObject *hitMax;
+    GameObject *hitMin;
 };

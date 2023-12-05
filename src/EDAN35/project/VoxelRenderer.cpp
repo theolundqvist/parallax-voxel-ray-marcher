@@ -5,6 +5,7 @@
 #include "../util/GameObject.cpp"
 #include "../util/parametric_shapes.cpp"
 #include "../util/parametric_shapes.hpp"
+#include "../util/IntersectionTests.cpp"
 #include "./VoxelVolume.cpp"
 #include "core/FPSCamera.h"
 #include "core/ShaderProgramManager.hpp"
@@ -31,9 +32,12 @@ public:
         auto tf = Transform()
                 .scale(3.0f)
                 .rotateAroundX(glm::pi<float>() * 1.5f);
+        createVolume(30, tf);
         createVolume(30, tf.translateX(3));
         createVolume(30, tf.translateX(3));
-        createVolume(30, tf.translateX(3));
+        for (auto volume: volumes) {
+            updateVolume(volume);
+        }
     }
 
     void createVolume(int size, Transform transform = Transform()) {
@@ -47,9 +51,11 @@ public:
     void update(InputHandler *inputHandler, float dt) {
         // try this rotation
         // volume->transform.rotateAroundX(glm::pi<float>()*dt*0.01f);
+/*
         for (auto volume: volumes) {
             updateVolume(volume);
         }
+*/
     }
 
     void updateVolume(VoxelVolume *volume) {
@@ -59,7 +65,7 @@ public:
             for (int y = 0; y < volume->H; y++) {
                 for (int z = 0; z < volume->D; z++) {
                     auto pos = glm::vec3(x, y, z) + volume_pos;
-                    volume->setVoxel(x, y, z, wave(1.0f, pos.x, pos.y, pos.z));
+                    volume->setVoxel(x, y, z, wave(*elapsed_time_s*0.001f, pos.x, pos.y, pos.z));
                 }
             }
         }
@@ -81,6 +87,32 @@ public:
         glGetQueryObjectui64v(elapsed_time_query, GL_QUERY_RESULT,
                               &pass_elapsed_time);
         return (float) pass_elapsed_time / 1000000.0f;
+    }
+
+    typedef struct volume_hit_t {
+        bool miss;
+        VoxelVolume::voxel_hit_t voxel;
+        VoxelVolume *volume;
+    } volume_hit_t;
+
+    volume_hit_t raycast(glm::vec3 origin, glm::vec3 direction) {
+        volume_hit_t result = {true};
+        auto closest_hit = glm::vec3(999999999.0f);
+        for (auto volume: volumes) {
+            // if volume is further away than the closest hit, skip it;
+/*
+            if (glm::length2(volume->transform.getPos()) >
+                glm::length2(closest_hit.volume->transform.getPos()))
+                continue;
+*/
+            auto hit = volume->raycast(origin, direction);
+            if (hit.miss) continue;
+            if (glm::length2(hit.world_pos - origin) < glm::length2(closest_hit - origin)) {
+                result = {.miss = false,  .voxel = hit,.volume = volume};
+                closest_hit = hit.world_pos;
+            }
+        }
+        return result;
     }
 
 

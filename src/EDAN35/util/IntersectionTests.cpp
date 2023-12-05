@@ -20,22 +20,49 @@ public:
         return dmin <= r2;
     }
 
+    typedef struct box_t {
+        glm::vec3 min;
+        glm::vec3 max;
+    } box_t;
+    typedef struct ray_t {
+        glm::vec3 origin;
+        glm::vec3 dir;
+        glm::vec3 dir_inv;
+    } ray_t;
+
+    typedef struct hit_t {
+        bool miss;
+        glm::vec3 near;
+        glm::vec3 far;
+    } hit_t;
+
     // found this algorithm here
-    // https://tavianator.com/2022/ray_box_boundary.html
-    static bool RayIntersectsBox(glm::vec3 min, glm::vec3 max, glm::vec3 origin, glm::vec3 dir_inv) {
-        double tx1 = (min.x - origin.x) * dir_inv.x;
-        double tx2 = (min.x - origin.x) * dir_inv.x;
+    // https://gdbooks.gitbooks.io/3dcollisions/content/Chapter3/raycast_aabb.html
+    static hit_t RayIntersectsBox(box_t box, ray_t ray) {
 
-        double tmin = std::min(tx1, tx2);
-        double tmax = std::max(tx1, tx2);
+        float t1 = (box.min.x - ray.origin.x) * ray.dir_inv.x;
+        float t2 = (box.max.x - ray.origin.x) * ray.dir_inv.x;
+        float t3 = (box.min.y - ray.origin.y) * ray.dir_inv.y;
+        float t4 = (box.max.y - ray.origin.y) * ray.dir_inv.y;
+        float t5 = (box.min.z - ray.origin.z) * ray.dir_inv.z;
+        float t6 = (box.max.z - ray.origin.z) * ray.dir_inv.z;
 
-        double ty1 = (min.y - origin.y) * dir_inv.y;
-        double ty2 = (max.y - origin.y) * dir_inv.y;
+        float tmin = std::max(std::max(std::min(t1, t2), std::min(t3, t4)), std::min(t5, t6));
+        float tmax = std::min(std::min(std::max(t1, t2), std::max(t3, t4)), std::max(t5, t6));
 
-        tmin = std::max(tmin, std::min(ty1, ty2));
-        tmax = std::min(tmax, std::max(ty1, ty2));
+        // if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behing us
+        if (tmax < 0) return {true};
 
-        return tmax >= tmin;
+
+        // if tmin > tmax, ray doesn't intersect AABB
+        if (tmin > tmax) return {true};
+
+
+        return {
+                .miss = tmax < tmin,
+                .near = ray.origin + ray.dir * (float) tmin,
+                .far=ray.origin + ray.dir * (float) tmax,
+        };
     }
 
 };

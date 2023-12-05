@@ -84,10 +84,14 @@ public:
 
     glm::vec3 getRight() const { return applyRotation(Direction::right); }
 
-    glm::vec3 apply(glm::vec3 vec) const { return {mRT * glm::vec4(vec, 1)}; }
+    glm::vec3 apply(glm::vec3 vec) const { return {getMatrix() * glm::vec4(vec, 1)}; }
 
     glm::vec3 applyRotation(glm::vec3 vec) const {
         return {mRT * glm::vec4(vec, 0)};
+    }
+
+    Transform get_inverse() const{
+        return Transform().setMatrix(glm::inverse(getMatrix()));
     }
 
     Transform lookAt(glm::vec3 at, glm::vec3 up) { return lookTowards(at - getPos(), up); }

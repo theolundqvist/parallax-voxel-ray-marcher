@@ -34,9 +34,15 @@ public:
     GLubyte getVoxel(int x, int y, int z) {
         return texels[x + y * W + z * W * H];
     }
+    GLubyte getVoxel(glm::ivec3 index){
+        return getVoxel(index.x, index.y, index.z);
+    }
 
     void setVoxel(int x, int y, int z, GLubyte value) {
         texels[x + y * W + z * W * H] = value;
+    }
+    void setVoxel(glm::ivec3 index, GLubyte value) {
+        setVoxel(index.x, index.y, index.z, value);
     }
 
     void setVolumeData(GLubyte *data) { texels = data; }
@@ -52,10 +58,54 @@ public:
         }
     }
 
-    glm::ivec3 raycast(glm::vec3 w_origin, glm::vec3 w_direction){
-        //implement raycast
-       return glm::ivec3(0,0,0);
+/*
+ * this is not axis aligned (aabb) since it can be rotated, and therefore does not work with most algorithms
+    IntersectionTests::box_t getBoundingBox() const {
+        auto min = glm::vec3(-0.5);
+        // .apply just runs matrix * pos => vec3
+        return {.min = transform.apply(min),
+                .max = transform.apply(-min)};
     }
+*/
+
+    typedef struct voxel_hit_t {
+        bool miss;
+        glm::vec3 world_pos;
+        glm::vec3 world_pos_far;
+        glm::ivec3 index;
+    } voxel_hit_t;
+
+    voxel_hit_t raycast(glm::vec3 w_origin, glm::vec3 w_direction) {
+        //check if bounding box is hit
+        auto inverse = transform.get_inverse();
+        auto dir = inverse.applyRotation(w_direction);
+        auto hit = IntersectionTests::RayIntersectsBox(
+                {.min=glm::vec3(-.5f), .max=glm::vec3(.5f)},
+                {
+                        inverse.apply(w_origin),
+                        dir,
+                        glm::vec3(1.0f)/dir
+                });
+        if (!hit.miss) {
+            auto P = transform.apply(hit.near); //world
+            auto step = w_direction * transform.getScale() * voxel_size * 0.1f;
+            for (int i = 0; i < 400; ++i) {
+/*
+                if (glm::any(glm::lessThan(P, box.min + step)) || glm::any(glm::greaterThan(P, box.max-step))) {
+                    printf("out of bounds\n");
+                    break;
+                }
+*/
+                auto INDEX = glm::ivec3((inverse.apply(P) + glm::vec3(0.5f)) * glm::vec3(W, H, D));
+                if (getVoxel(INDEX) > 0) {
+                    return {.miss = false, .world_pos = P, .world_pos_far = transform.apply(hit.far), .index = INDEX};
+                }
+                P += step;
+            }
+        }
+        return {.miss = true};
+    }
+
 
     void render(FPSCameraf *camera,
                 glm::mat4 const &parent_transform, bool show_basis,
