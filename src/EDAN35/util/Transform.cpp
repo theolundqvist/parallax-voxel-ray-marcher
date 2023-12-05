@@ -46,7 +46,7 @@ public:
         return scale(s);
     }
 
-    glm::vec3 getScale() { return {mS[0][0], mS[1][1], mS[2][2]}; }
+    glm::vec3 getScale() const { return {mS[0][0], mS[1][1], mS[2][2]}; }
 
     glm::mat4 getMatrix() const { return mRT * mS; }
 
@@ -92,6 +92,13 @@ public:
 
     Transform get_inverse() const{
         return Transform().setMatrix(glm::inverse(getMatrix()));
+        // better to keep scale separate but did not manage
+/*
+        auto tf = Transform();
+        tf.setScale(glm::vec3(1.0f)/getScale());
+        tf.mRT = glm::inverse(mRT);
+        return tf;
+*/
     }
 
     Transform lookAt(glm::vec3 at, glm::vec3 up) { return lookTowards(at - getPos(), up); }

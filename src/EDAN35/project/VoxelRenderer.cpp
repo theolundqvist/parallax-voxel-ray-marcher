@@ -65,7 +65,7 @@ public:
             for (int y = 0; y < volume->H; y++) {
                 for (int z = 0; z < volume->D; z++) {
                     auto pos = glm::vec3(x, y, z) + volume_pos;
-                    volume->setVoxel(x, y, z, wave(*elapsed_time_s*0.001f, pos.x, pos.y, pos.z));
+                    volume->setVoxel(x, y, z, wave(*elapsed_time_s * 0.001f, pos.x, pos.y, pos.z));
                 }
             }
         }
@@ -89,14 +89,34 @@ public:
         return (float) pass_elapsed_time / 1000000.0f;
     }
 
-    typedef struct volume_hit_t {
-        bool miss;
-        VoxelVolume::voxel_hit_t voxel;
-        VoxelVolume *volume;
-    } volume_hit_t;
+    typedef VoxelVolume::voxel_hit_t voxel_hit_t;
 
-    volume_hit_t raycast(glm::vec3 origin, glm::vec3 direction) {
-        volume_hit_t result = {true};
+    voxel_hit_t findVoxel(glm::vec3 world_pos) {
+        for (auto volume: volumes) {
+            auto hit = volume->isInside(world_pos);
+            if(!hit.miss) return hit;
+        }
+        return {.miss=true};
+    }
+
+    bool findAndSetVoxel(glm::vec3 world_pos, GLubyte material){
+        auto hit = findVoxel(world_pos);
+        if(hit.miss) return false;
+        hit.volume->setVoxel(hit.index, material);
+        return true;
+    }
+
+    std::vector<VoxelVolume*> sphereIntersect(glm::vec3 center, float radius){
+        std::vector<VoxelVolume*> result;
+        for (auto volume: volumes) {
+            if(volume->intersectsSphere(center, radius)) result.push_back(volume);
+        }
+        return result;
+    }
+
+
+    voxel_hit_t raycast(glm::vec3 origin, glm::vec3 direction) {
+        voxel_hit_t result = {true};
         auto closest_hit = glm::vec3(999999999.0f);
         for (auto volume: volumes) {
             // if volume is further away than the closest hit, skip it;
@@ -108,7 +128,7 @@ public:
             auto hit = volume->raycast(origin, direction);
             if (hit.miss) continue;
             if (glm::length2(hit.world_pos - origin) < glm::length2(closest_hit - origin)) {
-                result = {.miss = false,  .voxel = hit,.volume = volume};
+                result = hit;
                 closest_hit = hit.world_pos;
             }
         }

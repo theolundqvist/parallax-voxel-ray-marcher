@@ -8,18 +8,6 @@
 
 class IntersectionTests {
 public:
-    // found this algorithm here
-    // https://stackoverflow.com/questions/4578967/cube-sphere-intersection-test
-    static bool BoxIntersectsSphere(glm::vec3 min, glm::vec3 max, glm::vec3 C, float r) {
-        float r2 = r * r;
-        float dmin = 0;
-        for (int i = 0; i < 3; i++) {
-            if (C[i] < min[i]) dmin += (C[i] - min[i]) * (C[i] - min[i]);
-            else if (C[i] > max[i]) dmin += (C[i] - max[i]) * (C[i] - max[i]);
-        }
-        return dmin <= r2;
-    }
-
     typedef struct box_t {
         glm::vec3 min;
         glm::vec3 max;
@@ -35,6 +23,18 @@ public:
         glm::vec3 near;
         glm::vec3 far;
     } hit_t;
+    // found this algorithm here
+    // https://stackoverflow.com/questions/4578967/cube-sphere-intersection-test
+    static bool BoxIntersectsSphere(box_t box, glm::vec3 C, float r) {
+        float r2 = r * r;
+        float dmin = 0;
+        for (int i = 0; i < 3; i++) {
+            if (C[i] < box.min[i]) dmin += (C[i] - box.min[i]) * (C[i] - box.min[i]);
+            else if (C[i] > box.max[i]) dmin += (C[i] - box.max[i]) * (C[i] - box.max[i]);
+        }
+        return dmin <= r2;
+    }
+
 
     // found this algorithm here
     // https://gdbooks.gitbooks.io/3dcollisions/content/Chapter3/raycast_aabb.html
@@ -63,6 +63,13 @@ public:
                 .near = ray.origin + ray.dir * (float) tmin,
                 .far=ray.origin + ray.dir * (float) tmax,
         };
+    }
+
+    static bool PointInBox(glm::vec3 point, box_t box) {
+        return
+                point.x >= box.min.x && point.x <= box.max.x &&
+                point.y >= box.min.y && point.y <= box.max.y &&
+                point.z >= box.min.z && point.z <= box.max.z;
     }
 
 };

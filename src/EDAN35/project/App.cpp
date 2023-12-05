@@ -90,13 +90,23 @@ public:
             if (inputHandler->GetKeycodeState(GLFW_KEY_F) & JUST_PRESSED)
                 showFps = !showFps;
 
-            if (inputHandler->GetKeycodeState(GLFW_KEY_SPACE) & JUST_PRESSED) {
+            if (inputHandler->GetKeycodeState(GLFW_KEY_SPACE) & JUST_PRESSED ||
+            inputHandler->GetKeycodeState(GLFW_MOUSE_BUTTON_1) & JUST_PRESSED) {
                 auto hit = renderer->raycast(camera->mWorld.GetTranslation(), camera->mWorld.GetFront());
                 if (!hit.miss) {
                     //hitMin->transform.setPos(hit.voxel.world_pos);
                     //hitMax->transform.setPos(hit.voxel.world_pos_far);
-                    hit.volume->setVoxel(hit.voxel.index, 0);
+                    //hit.volume->setVoxel(hit.index, 0);
+                    auto volumes = renderer->sphereIntersect(hit.world_pos, 0.5f);
+                    for (auto volume:volumes) {
+                        printf("hit %p\n", volume);
+                        volume->setSphere(hit.world_pos, 0.5f, 0);
+                    }
                 }
+            }
+            if (inputHandler->GetKeycodeState(GLFW_KEY_X) & JUST_PRESSED ||
+                inputHandler->GetKeycodeState(GLFW_MOUSE_BUTTON_2) & JUST_PRESSED) {
+                // build
             }
 
         } else if (inputHandler->GetKeycodeState(GLFW_KEY_Q) & JUST_PRESSED)
