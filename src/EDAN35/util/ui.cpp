@@ -9,14 +9,59 @@ class UI {
 public:
     ImFont *font1;
     ImGuiIO io;
-    int window_size;
+    GLFWwindow *window = nullptr;
 
-    UI() {
+    UI(GLFWwindow *window) {
         io = ImGui::GetIO();
         font1 = io.Fonts->AddFontFromFileTTF(
-                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x / 10);
+                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x / 10.0f);
+        this->window = window;
     }
 
+
+    void resize() const {
+        int w, h;
+        float xscale, yscale;
+        glfwGetFramebufferSize(window, &w, &h);
+        glfwGetWindowContentScale(window, &xscale, &yscale);
+        //printf("fbSize=%dx%d, scale=%.2fx%.2f\n", w, h, xscale, yscale);
+        ImGui::SetWindowSize(ImVec2((float)w/xscale, (float)h/yscale));
+    }
+
+
+    std::list<float> gpu_times = {};
+    std::list<float> cpu_times = {};
+    void fps(float gpu_time, float cpu_time, int sliding_mean = 10) {
+        gpu_times.push_back(gpu_time);
+        cpu_times.push_back(cpu_time);
+        if(gpu_times.size() > sliding_mean) {
+            gpu_times.pop_front();
+            cpu_times.pop_front();
+        }
+        gpu_time = 0.0;
+        cpu_time = 0.0;
+        for(auto time : gpu_times) {
+            gpu_time += time;
+        }
+        for(auto time : cpu_times) {
+            cpu_time += time;
+        }
+        gpu_time /= (float)gpu_times.size();
+        cpu_time /= (float)cpu_times.size();
+        auto flags = ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
+        ImGui::Begin("fps", nullptr, flags);
+        ImGui::SetWindowPos(ImVec2(0,0));
+        ImGui::SetWindowFontScale(0.3f);
+        ImGui::PushFont(font1);
+        ImGui::TextColored(ImColor(0,0,0),"FPS: %.0f", ImGui::GetIO().Framerate);
+        ImGui::TextColored(ImColor(0,0,0),"GPU: %.2f ms", gpu_time);
+        ImGui::TextColored(ImColor(0,0,0), "CPU: %.2f ms", cpu_time);
+        ImGui::PopFont();
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::End();
+    }
     void crosshair() {
         float crosshairSize = 10.0f;
         float lineWidth = 1.5f;
@@ -35,7 +80,7 @@ public:
     }
 
     void pauseMenu() {
-        auto center = glm::vec2(config::resolution_x, config::resolution_y) * 0.5f;
+        auto center = glm::vec2(ImGui::GetWindowWidth(), ImGui::GetWindowHeight()) * 0.5f;
         TextBox("paused", center + glm::vec2(0, -200));
         if (Button("Continue (esc)", center)) {
             state = RUNNING;
@@ -47,7 +92,7 @@ public:
 
 private:
     void CenterCursor(std::string text) {
-        auto windowWidth = ImGui::GetWindowSize().x;
+        auto windowWidth = ImGui::GetWindowWidth();
         auto textWidth = ImGui::CalcTextSize(text.c_str()).x;
 
         ImGui::SetCursorPosX((windowWidth - textWidth) * 0.5f);
@@ -65,8 +110,9 @@ private:
 
     void DrawCrossHair(ImDrawList *drawList, float crosshairSize, float lineWidth, float gapSize, float dotSize,
                        ImColor color) {
-        float centerX = config::resolution_x / 2.0f;
-        float centerY = config::resolution_y / 2.0f;
+        auto center = ImGui::GetWindowSize();
+        float centerX = center.x / 2.0f;
+        float centerY = center.y / 2.0f;
         // Draw horizontal line
         drawList->AddLine({centerX - crosshairSize - gapSize, centerY}, {centerX - gapSize, centerY}, color, lineWidth);
         drawList->AddLine({centerX + gapSize, centerY}, {centerX + crosshairSize + gapSize, centerY}, color, lineWidth);
@@ -86,7 +132,7 @@ private:
         ImGui::SetWindowPos(ImVec2(pos.x - size.x * .5f, pos.y - size.y * .5f));
     }
 
-    void TextBox(std::string text, glm::vec2 pos, float scale) {
+    void TextBox(std::string text, glm::vec2 pos) {
         text = " " + text + " ";
         Begin(text, true, pos);
 
@@ -99,8 +145,6 @@ private:
         ImGui::SetWindowFontScale(1.0f);
         End();
     }
-
-    void TextBox(std::string text, glm::vec2 pos) { TextBox(text, pos, 1.0f); }
 
     bool Button(std::string text, glm::vec2 pos) {
         text = "   " + text + "   ";
