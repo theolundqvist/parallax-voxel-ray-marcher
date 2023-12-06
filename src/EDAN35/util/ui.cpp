@@ -4,17 +4,20 @@
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include "AppState.cpp"
+#include "settings.cpp"
 
 class UI {
 public:
     ImFont *font1;
     ImGuiIO io;
     GLFWwindow *window = nullptr;
+    float font_height = 0.0f;
 
     UI(GLFWwindow *window) {
         io = ImGui::GetIO();
+        font_height = config::resolution_x/10.0f;
         font1 = io.Fonts->AddFontFromFileTTF(
-                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x / 10.0f);
+                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), font_height);
         this->window = window;
     }
 
@@ -58,6 +61,32 @@ public:
         ImGui::TextColored(ImColor(0,0,0),"FPS: %.0f", ImGui::GetIO().Framerate);
         ImGui::TextColored(ImColor(0,0,0),"GPU: %.2f ms", gpu_time);
         ImGui::TextColored(ImColor(0,0,0), "CPU: %.2f ms", cpu_time);
+        ImGui::PopFont();
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::End();
+    }
+
+
+    void displaySettings(settings_t settings){
+        auto flags = ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
+        ImGui::Begin("settings", nullptr, flags);
+        auto size = ImGui::GetWindowSize();
+        printf("size: %f %f\n", size.x, size.y);
+        ImGui::SetWindowPos(ImVec2(0,size.y-font_height*3));
+        ImGui::SetWindowFontScale(0.3f);
+        ImGui::PushFont(font1);
+        ImGui::TextColored(ImColor(0,0,0),"Settings");
+        ImGui::TextColored(ImColor(0,0,0),"Edit size: %.2f m", settings.edit_size);
+        ImGui::TextColored(ImColor(0,0,0),"Edit cooldown: %.0f ms", settings.edit_cooldown);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();

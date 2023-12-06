@@ -3,6 +3,7 @@
 
 #include "../util/Direction.cpp"
 #include "../util/GameObject.cpp"
+#include "../util/voxel_util.cpp"
 #include "../util/parametric_shapes.cpp"
 #include "../util/parametric_shapes.hpp"
 #include "../util/IntersectionTests.cpp"
@@ -106,8 +107,8 @@ public:
         return true;
     }
 
-    std::vector<VoxelVolume*> sphereIntersect(glm::vec3 center, float radius){
-        std::vector<VoxelVolume*> result;
+    std::list<VoxelVolume*> sphereIntersect(glm::vec3 center, float radius){
+        std::list<VoxelVolume*> result;
         for (auto volume: volumes) {
             if(volume->intersectsSphere(center, radius)) result.push_back(volume);
         }
@@ -136,21 +137,12 @@ public:
     }
 
 
-    int cantor(int a, int b) { return (a + b + 1) * (a + b) / 2 + b; }
-
-    int hash(int a, int b, int c) { return cantor(a, cantor(b, c)); }
-
     GLubyte wave(float offset, float x, float y, float z, int maxY = 22) {
         float surfaceY =
                 (std::sin(offset + x * 0.3f) * 0.5f + 0.5f) * maxY * 0.5 +
                 maxY / 2.0;
         if (y > surfaceY) {
-            std::hash<std::string> hasher;
-            return (GLubyte) hasher(
-                    std::to_string(x) +
-                    std::to_string(y) +
-                    std::to_string(z)
-            ) % 255;
+            return voxel_util::hash(glm::ivec3(x, y, z));
         } else
             return 0;
     }

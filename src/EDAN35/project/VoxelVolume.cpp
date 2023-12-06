@@ -3,6 +3,7 @@
 #include "EDAN35/util/Transform.cpp"
 #include "core/helpers.hpp"
 #include "core/opengl.hpp"
+#include <glm/gtx/component_wise.hpp>
 
 class VoxelVolume {
 private:
@@ -50,7 +51,7 @@ public:
 
     bool setVoxel(int x, int y, int z, GLubyte value) {
         auto i = x + y * W + z * W * H;
-        if(i < 0 || i >= W*H*D) return false;
+        if (i < 0 || i >= W * H * D) return false;
         texels[i] = value;
         return true;
     }
@@ -107,7 +108,8 @@ public:
         );
     }
 
-    void setSphere(glm::vec3 center, float radius, GLubyte material) {
+    void setSphere(glm::vec3 center, float radius, int material) {
+
         auto inverse = transform.get_inverse();
         auto local_center = inverse.apply(center);
         auto local_radius = radius / transform.getScale().x;  // will have to do
@@ -116,19 +118,21 @@ public:
         auto index_center = localToIndex(local_center);
         auto min_index = localToIndex(min);
         auto max_index = localToIndex(max);
-        auto index_radius = local_radius * W;
+        auto index_radius = local_radius * this->W;
         float r2 = index_radius * index_radius;
-        printf("min: %d %d %d\n", min_index.x, min_index.y, min_index.z);
-        printf("max: %d %d %d\n", max_index.x, max_index.y, max_index.z);
-        printf("center: %d %d %d\n", index_center.x, index_center.y, index_center.z);
-        printf("radius: %f\n", index_radius);
-
+        min_index.x = std::max(min_index.x, 0);
+        min_index.y = std::max(min_index.y, 0);
+        min_index.z = std::max(min_index.z, 0);
+        max_index.x = std::min(max_index.x, W - 1);
+        max_index.y = std::min(max_index.y, H - 1);
+        max_index.z = std::min(max_index.z, D - 1);
         for (int x = min_index.x; x <= max_index.x; x++) {
             for (int y = min_index.y; y <= max_index.y; y++) {
                 for (int z = min_index.z; z <= max_index.z; z++) {
                     auto index = glm::ivec3(x, y, z);
                     if (glm::length2(glm::vec3(index - index_center)) <= r2) {
-                        setVoxel(index, material);
+                        auto mat = material == -1 ? voxel_util::hash(index) : material;
+                        setVoxel(index, mat);
                     }
                 }
             }
