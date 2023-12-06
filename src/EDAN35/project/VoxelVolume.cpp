@@ -25,6 +25,9 @@ public:
         W = WIDTH;
         H = HEIGHT;
         D = DEPTH;
+
+        voxel_size = transform.getScale().x/W;
+
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);

@@ -51,12 +51,14 @@ public:
 
     void update(InputHandler *inputHandler, float dt) {
         // try this rotation
-        // volume->transform.rotateAroundX(glm::pi<float>()*dt*0.01f);
+        //volumes[0]->transform.rotateAroundX(glm::pi<float>()*dt*0.0001f);
+
 /*
         for (auto volume: volumes) {
             updateVolume(volume);
         }
 */
+
     }
 
     void updateVolume(VoxelVolume *volume) {
