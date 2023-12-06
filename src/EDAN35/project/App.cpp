@@ -52,7 +52,7 @@ public:
                 ui->resize();
                 if (showFps) ui->fps(gpu_time, cpu_time, 10);
                 if (showCrosshair) ui->crosshair();
-                if(showCrosshair) ui->displaySettings(settings);
+                if (showCrosshair) ui->displaySettings(settings);
                 break;
             case PAUSED:
                 ui->resize();
@@ -96,7 +96,10 @@ public:
 
             if (getKey(GLFW_KEY_SPACE, PRESSED, settings.edit_cooldown) ||
                 getKey(GLFW_MOUSE_BUTTON_LEFT, PRESSED, settings.edit_cooldown)) {
-                auto hit = renderer->raycast(camera->mWorld.GetTranslation(), camera->mWorld.GetFront());
+                auto hit = renderer->raycast(
+                        camera->mWorld.GetTranslation(),
+                        camera->mWorld.GetFront()
+                );
                 if (!hit.miss) {
                     auto volumes = renderer->sphereIntersect(hit.world_pos, settings.edit_size);
                     for (auto volume: volumes) {
@@ -106,7 +109,10 @@ public:
             }
             if (getKey(GLFW_KEY_X, PRESSED, settings.edit_cooldown) ||
                 getKey(GLFW_MOUSE_BUTTON_RIGHT, PRESSED, settings.edit_cooldown)) {
-                auto hit = renderer->raycast(camera->mWorld.GetTranslation(), camera->mWorld.GetFront());
+                auto hit = renderer->raycast(
+                        camera->mWorld.GetTranslation(),
+                        camera->mWorld.GetFront()
+                );
                 if (!hit.miss) {
                     auto volumes = renderer->sphereIntersect(hit.world_pos, settings.edit_size);
                     for (auto volume: volumes) {
