@@ -1,5 +1,5 @@
 #version 410
-#define elspon 0.00001
+#define epsilon 0.00001
 
 // uniform vec3 light_position;
 uniform vec3 camera_position;
@@ -109,7 +109,7 @@ vec3 trace_FVTA(){
           tMaxZ += tDeltaZ;
         }
       }
-         vec3 current_voxel_position=vec3(current_voxel.x*voxel_size+elspon,current_voxel.y*voxel_size+elspon,current_voxel.z*voxel_size+elspon);//only render the front face
+        vec3 current_voxel_position=vec3(current_voxel.x*voxel_size+epsilon*stepX,current_voxel.y*voxel_size+epsilon*stepY,current_voxel.z*voxel_size+epsilon*stepZ);//only render the front face
         if(!isInside(current_voxel_position))
          {
            discard;
@@ -134,3 +134,4 @@ void main()
   fColor = vec4(color, 1);
 }
 
+//https://github.com/francisengelmann/fast_voxel_traversal/blob/master/main.cpp
