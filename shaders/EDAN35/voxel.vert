@@ -13,14 +13,16 @@ uniform mat4 vertex_world_to_clip;
 uniform vec3 camera_position;
 
 out vec3 fV;
+flat out vec3 model_cam_pos;
 out vec3 pos;
 
 void main()
 {
 	pos = tex_coord_in;
 	vec3 worldPos = (model_to_world*vec4(vertex,1)).xyz;
-	vec3 V = camera_position - worldPos;
-	fV = (world_to_model * vec4(V, 1)).xyz;
+	vec3 V = worldPos - camera_position;
+	fV = (world_to_model * vec4(V, 0)).xyz;
+	model_cam_pos = (world_to_model * vec4(camera_position, 1)).xyz + 0.5f;
 	gl_Position = vertex_world_to_clip*vec4(worldPos,1);
 
 }

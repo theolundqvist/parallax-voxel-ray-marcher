@@ -213,7 +213,7 @@ public:
         // render
         glEnable(GL_CULL_FACE);
         glFrontFace(GL_CW);
-        glCullFace(GL_BACK);
+        glCullFace(GL_FRONT);
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
@@ -244,7 +244,7 @@ private:
         // world to model
         glUniformMatrix4fv(
                 glGetUniformLocation(program, "world_to_model"), 1, GL_FALSE,
-                glm::value_ptr(glm::transpose(glm::inverse(tf))));
+                glm::value_ptr(glm::inverse(tf)));
 
         // vertex to clip
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),
