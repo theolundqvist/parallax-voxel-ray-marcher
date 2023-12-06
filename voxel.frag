@@ -1,4 +1,5 @@
 #version 410
+#define elspon 0.00001
 
 // uniform vec3 light_position;
 uniform vec3 camera_position;
@@ -44,10 +45,9 @@ vec3 trace_fixed()
 vec3 trace_FVTA(){
   //replaced by FVTA
   //initialization
+  //float sub_voxel_size=voxel_size/15;//to make it looks more smooth
 
-  float sub_voxel_size=voxel_size/15;//to make it looks more smooth
-
-  vec3 current_voxel=vec3(floor(pos.x/sub_voxel_size),floor(pos.y/sub_voxel_size),floor(pos.z/sub_voxel_size));//start from current point, this is the id of the current voxel
+  vec3 current_voxel=vec3(floor(pos.x/voxel_size),floor(pos.y/voxel_size),floor(pos.z/voxel_size));//start from current point, this is the id of the current voxel
   vec3 V=normalize(fV);
   V.x = -V.x; 
 
@@ -60,17 +60,17 @@ vec3 trace_FVTA(){
   float stepY = (V.y >= 0) ? 1:-1; // step longth of Y
   float stepZ = (V.z >= 0) ? 1:-1; // step longth of Z
 
-  float next_voxel_x = (current_voxel.x+stepX)*sub_voxel_size; // find the position of next voxel's boundary. 
-  float next_voxel_y = (current_voxel.y+stepY)*sub_voxel_size; // 
-  float next_voxel_z = (current_voxel.z+stepZ)*sub_voxel_size; // 
+  float next_voxel_x = (current_voxel.x+stepX)*voxel_size; // find the position of next voxel's boundary. 
+  float next_voxel_y = (current_voxel.y+stepY)*voxel_size; // 
+  float next_voxel_z = (current_voxel.z+stepZ)*voxel_size; // 
 
   float tMaxX = (cos_x!=0) ? (next_voxel_x - pos.x)/cos_x:200000000 ; //find the t at which the ray crosses the first vertical voxel boundary
   float tMaxY = (cos_y!=0) ? (next_voxel_y - pos.y)/cos_y:200000000 ; //and the mininum distance of x,y,z is the first voxel that the ray hit 
   float tMaxZ = (cos_z!=0) ? (next_voxel_z - pos.z)/cos_z:200000000 ; //
 
-  float tDeltaX = (cos_x!=0) ? sub_voxel_size/cos_x*stepX : 200000000 ;//length of step
-  float tDeltaY = (cos_y!=0) ? sub_voxel_size/cos_y*stepY : 200000000 ;
-  float tDeltaZ = (cos_z!=0) ? sub_voxel_size/cos_z*stepZ : 200000000 ;
+  float tDeltaX = (cos_x!=0) ? voxel_size/cos_x*stepX : 200000000 ;//length of step
+  float tDeltaY = (cos_y!=0) ? voxel_size/cos_y*stepY : 200000000 ;
+  float tDeltaZ = (cos_z!=0) ? voxel_size/cos_z*stepZ : 200000000 ;
 
   for(int i=0;i<300;i++)//need to add the end point
  {
@@ -109,15 +109,14 @@ vec3 trace_FVTA(){
           tMaxZ += tDeltaZ;
         }
       }
-         vec3 current_voxel_position=vec3(current_voxel.x*sub_voxel_size,current_voxel.y*sub_voxel_size,current_voxel.z*sub_voxel_size);//only render the front face
-        // if(current_voxel_position.x<0 || current_voxel_position.y<0||current_voxel_position.z<0 || current_voxel_position.x>1 || current_voxel_position.y>1 || current_voxel_position.z>1)
+         vec3 current_voxel_position=vec3(current_voxel.x*voxel_size+elspon,current_voxel.y*voxel_size+elspon,current_voxel.z*voxel_size+elspon);//only render the front face
         if(!isInside(current_voxel_position))
          {
            discard;
          }
          else
         {
-          int material = int(round(texture(voxels, current_voxel_position).r*255));
+          int material = int(round(texture(voxels, current_voxel_position).r*255));//select a point which is a little bit inside the voxel
           if(material != 0) return vec3(float(material)/255, 0, 0);
         }
    }
@@ -129,8 +128,8 @@ vec3 trace_FVTA(){
 
 void main()
 {
- //vec3 color = trace_FVTA();
- vec3 color = trace_fixed();
+ vec3 color = trace_FVTA();
+ //vec3 color = trace_fixed();
 
   fColor = vec4(color, 1);
 }
