@@ -50,6 +50,16 @@ https://www.youtube.com/watch?v=h81I8hR56vQ
 - first video they uploaded showing how LOD https://www.youtube.com/watch?v=4AYBm-9cBqs
 - large scene https://www.youtube.com/watch?v=1sfWYUgxGBE
 
+### moving voxelvolumes around and intersecting.
+Have to disable early depth test since depth can change in fragment shader.
+Though we can use an extension:
+https://www.khronos.org/opengl/wiki/Fragment_Shader#Conservative_Depth
+```glsl
+layout (depth_less) out float gl_FragDepth;```
+To say that we always will move the pixel closer than the plane it was rendered on, which is the only thing we will do when rendering backfaces
+
+
+
 cool examples:
 https://www.shadertoy.com/view/cdsGz7
 https://www.shadertoy.com/view/dtVSzw
