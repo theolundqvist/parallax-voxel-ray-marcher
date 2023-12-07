@@ -13,15 +13,18 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
 #include "../util/AppState.cpp"
+#include <map>
+#include <iostream>
 
 class App {
 public:
     App(GLFWwindow *window, FPSCameraf *cam, InputHandler *inputHandler,
-        ShaderProgramManager *shaderManager, float *elapsed_time_s) {
+        ShaderProgramManager *shaderManager, float *elapsed_time_ms) {
         this->window = window;
-        this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_s);
+        this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
         this->inputHandler = inputHandler;
         this->camera = cam;
+        this->elapsed = elapsed_time_ms;
         cam->mWorld.LookAt(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0, 0, 10.f));
         ui = new UI(window);
 
@@ -49,6 +52,7 @@ public:
                 ui->resize();
                 if (showFps) ui->fps(gpu_time, cpu_time, 10);
                 if (showCrosshair) ui->crosshair();
+                if (showCrosshair) ui->displaySettings(settings);
                 break;
             case PAUSED:
                 ui->resize();
@@ -78,29 +82,69 @@ public:
     }
 
     void handleInput() {
-        if (inputHandler->GetKeycodeState(GLFW_KEY_ESCAPE) & JUST_PRESSED) {
+        if (getKey(GLFW_KEY_ESCAPE, JUST_PRESSED)) {
             if (state == RUNNING) state = PAUSED;
             else state = RUNNING;
         }
         if (state == RUNNING) {
-            if (inputHandler->GetKeycodeState(GLFW_KEY_C) & JUST_PRESSED) {
+            if (getKey(GLFW_KEY_C)) {
                 showCrosshair = !showCrosshair;
                 dragToMove = !dragToMove;
             }
-            if (inputHandler->GetKeycodeState(GLFW_KEY_F) & JUST_PRESSED)
+            if (getKey(GLFW_KEY_F))
                 showFps = !showFps;
 
-            if (inputHandler->GetKeycodeState(GLFW_KEY_SPACE) & JUST_PRESSED) {
-                auto hit = renderer->raycast(camera->mWorld.GetTranslation(), camera->mWorld.GetFront());
+            if (getKey(GLFW_KEY_SPACE, PRESSED, settings.edit_cooldown) ||
+                getKey(GLFW_MOUSE_BUTTON_LEFT, PRESSED, settings.edit_cooldown)) {
+                auto hit = renderer->raycast(
+                        camera->mWorld.GetTranslation(),
+                        camera->mWorld.GetFront()
+                );
                 if (!hit.miss) {
-                    //hitMin->transform.setPos(hit.voxel.world_pos);
-                    //hitMax->transform.setPos(hit.voxel.world_pos_far);
-                    hit.volume->setVoxel(hit.voxel.index, 0);
+                    auto volumes = renderer->sphereIntersect(hit.world_pos, settings.edit_size);
+                    for (auto volume: volumes) {
+                        volume->setSphere(hit.world_pos, settings.edit_size, 0);
+                    }
                 }
             }
+            if (getKey(GLFW_KEY_X, PRESSED, settings.edit_cooldown) ||
+                getKey(GLFW_MOUSE_BUTTON_RIGHT, PRESSED, settings.edit_cooldown)) {
+                auto hit = renderer->raycast(
+                        camera->mWorld.GetTranslation(),
+                        camera->mWorld.GetFront()
+                );
+                if (!hit.miss) {
+                    auto volumes = renderer->sphereIntersect(hit.world_pos, settings.edit_size);
+                    for (auto volume: volumes) {
+                        // material = -1, means hash on index
+                        volume->setSphere(hit.world_pos, settings.edit_size, -1);
+                    }
+                }
+            }
+            if (getKey(GLFW_KEY_DOWN, PRESSED, 300.0f))
+                settings.edit_size -= 0.1f;
+            if (getKey(GLFW_KEY_UP, PRESSED, 300.0f))
+                settings.edit_size += 0.1f;
 
-        } else if (inputHandler->GetKeycodeState(GLFW_KEY_Q) & JUST_PRESSED)
+
+        } else if (getKey(GLFW_KEY_Q))
             exit(0);
+    }
+
+
+    bool getKey(int code, int key_state = JUST_PRESSED, float cooldown_ms = -1.0f) {
+        auto pressed = inputHandler->GetKeycodeState(code) & key_state;
+        if (pressed && cooldown_ms > 0.0f) {
+            if (cooldowns.count(code) == 0)
+                cooldowns.emplace(code, key_cooldown_t{cooldown_ms, *elapsed});
+            else {
+                auto &cd = cooldowns[code];
+                if (*elapsed > cd.last_press + cd.cooldown)
+                    cd.last_press = *elapsed;
+                else return false;
+            }
+        }
+        return pressed;
     }
 
 private:
@@ -115,4 +159,14 @@ private:
 
     GameObject *hitMax;
     GameObject *hitMin;
+
+    typedef struct key_cooldown_t {
+        float cooldown;
+        float last_press;
+    } key_cooldown_t;
+    std::map<int, key_cooldown_t> cooldowns = {};
+
+
+    float *elapsed;
+    settings_t settings;
 };

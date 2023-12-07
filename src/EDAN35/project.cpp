@@ -102,7 +102,7 @@ void edan35::Project::run() {
     auto light_position = glm::vec3(-2.0f, 4.0f, 2.0f);
     bool use_normal_mapping = false;
     auto camera_position = mCamera.mWorld.GetTranslation();
-    float elapsed_time_s = 0.0f;
+    float elapsed_time_ms = 0.0f;
     // GameObject::addShaderToLibrary(&program_manager, "phong",
     // phong_set_uniforms); GameObject::addShaderToLibrary(&program_manager,
     // "enemy", phong_set_uniforms);
@@ -111,7 +111,7 @@ void edan35::Project::run() {
     // GameObject::addShaderToLibrary(&program_manager, "shield",
     //                                phong_set_uniforms);
 
-    auto app = new App(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_s);
+    auto app = new App(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
 
 
     glClearDepthf(1.0f);
@@ -134,9 +134,9 @@ void edan35::Project::run() {
         auto const deltaTimeUs =
                 std::chrono::duration_cast<std::chrono::microseconds>(nowTime -
                                                                       lastTime);
-        float dt = deltaTimeUs.count() / 1000.0;
+        float dt = deltaTimeUs.count() * 0.001f;
         lastTime = nowTime;
-        elapsed_time_s += dt;
+        elapsed_time_ms += dt;
 
         auto &io = ImGui::GetIO();
         inputHandler.SetUICapture(io.WantCaptureMouse, io.WantCaptureKeyboard);

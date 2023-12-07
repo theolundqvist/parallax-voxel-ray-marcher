@@ -4,26 +4,31 @@
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include "AppState.cpp"
+#include "settings.cpp"
 
 class UI {
 public:
     ImFont *font1;
     ImGuiIO io;
     GLFWwindow *window = nullptr;
+    float font_height = 0.0f;
+    glm::ivec2 window_scale;
 
     UI(GLFWwindow *window) {
         io = ImGui::GetIO();
+        font_height = config::resolution_x/10.0f;
         font1 = io.Fonts->AddFontFromFileTTF(
-                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), config::resolution_x / 10.0f);
+                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), font_height);
         this->window = window;
     }
 
 
-    void resize() const {
+    void resize() {
         int w, h;
         float xscale, yscale;
         glfwGetFramebufferSize(window, &w, &h);
         glfwGetWindowContentScale(window, &xscale, &yscale);
+        window_scale = glm::ivec2(xscale, yscale);
         //printf("fbSize=%dx%d, scale=%.2fx%.2f\n", w, h, xscale, yscale);
         ImGui::SetWindowSize(ImVec2((float)w/xscale, (float)h/yscale));
     }
@@ -58,6 +63,34 @@ public:
         ImGui::TextColored(ImColor(0,0,0),"FPS: %.0f", ImGui::GetIO().Framerate);
         ImGui::TextColored(ImColor(0,0,0),"GPU: %.2f ms", gpu_time);
         ImGui::TextColored(ImColor(0,0,0), "CPU: %.2f ms", cpu_time);
+        ImGui::PopFont();
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::End();
+    }
+
+
+    void displaySettings(settings_t settings){
+        auto flags = ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
+        ImGui::Begin("settings", nullptr, flags);
+        int w, h;
+        glfwGetFramebufferSize(window, &w, &h);
+        int number_rows = 3;
+        float font_scale = 0.25f;
+        ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
+        ImGui::SetWindowFontScale(font_scale);
+        ImGui::PushFont(font1);
+        ImGui::TextColored(ImColor(0,0,0),"Settings");
+        ImGui::TextColored(ImColor(0,0,0),"Edit size: %.2f m", settings.edit_size);
+        ImGui::TextColored(ImColor(0,0,0),"Edit cooldown: %.0f ms", settings.edit_cooldown);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
+        //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();
