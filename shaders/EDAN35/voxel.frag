@@ -7,22 +7,29 @@ uniform float voxel_size;
 uniform ivec3 grid_size;
 
 
-in vec3 fV;
+// world space
+flat in float face_dot_v;
+
+// model space
 flat in vec3 model_cam_pos;
+in vec3 fV;
 in vec3 pos;
+
+//out
 out vec4 fColor;
 
 
-bool isInside(vec3 pos){
-/*
-    return step(0.0, pos.x)*step(pos.x, 1.0) &&
-    step(0.0, pos.y)*step(pos.y, 1.0) &&
+float isInside(vec3 pos){
+    // this works but did not notice performance difference
+    return step(0.0, pos.x)*step(pos.x, 1.0) *
+    step(0.0, pos.y)*step(pos.y, 1.0) *
     step(0.0, pos.z)*step(pos.z, 1.0);
-*/
+/*
     if (pos.x < 0.0 || pos.x > 1.0) return false;
     if (pos.y < 0.0 || pos.y > 1.0) return false;
     if (pos.z < 0.0 || pos.z > 1.0) return false;
     return true;
+*/
 }
 
 // Work In Progress
@@ -64,7 +71,7 @@ vec3 fixed_step(){
     vec3 V = normalize(fV) * voxel_size/15;// fixed step
     vec3 P = findStartPos(); // P is in 0-1.0 space
     for (int i = 0; i < 700; i++){
-        if (!isInside(P)) discard;
+        if (isInside(P) < 0.5) discard;
         int material = int(round(texture(volume, P).r*255));
         if (material != 0) return vec3(float(material)/255, 0, 0);
         P += V;
@@ -156,12 +163,8 @@ vec3 fvta_step(){
 
 void main()
 {
-
-
-    //vec3 color = pos;
-    //vec3 color = texture(volume, pos).rgb;
-    //vec3 color = vec3(1.0, 1.0, 1.0);
-    //vec3 color = fV;
+    // custom front face culling to do it based on cam pos
+    if(face_dot_v < 0.0) discard;
 
     //vec3 color = findStartPos();
     vec3 color = fixed_step();

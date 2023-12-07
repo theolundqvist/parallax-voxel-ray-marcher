@@ -28,6 +28,11 @@ public:
         cam->mWorld.LookAt(glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0, 0, 10.f));
         ui = new UI(window);
 
+        this->playerBody = new GameObject("playerbody");
+        playerBody->setMesh(parametric_shapes::createSphere(0.25f, 10, 10));
+        GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
+        playerBody->setShader("fallback");
+
         // just for showing raycast near and far hit points
         //hitMin = new GameObject("test");
         //hitMax = new GameObject("test");
@@ -39,6 +44,8 @@ public:
     }
 
 
+    glm::mat4 frozen_view_matrix;
+
     void render(bool show_basis, float basis_length_scale,
                 float basis_thickness_scale, float dt) {
         const auto now = std::chrono::high_resolution_clock::now();
@@ -46,7 +53,18 @@ public:
         float cpu_time = dt;
         switch (state) {
             case RUNNING:
-                gpu_time = renderer->render(show_basis, basis_length_scale, basis_thickness_scale);
+                if (!freeView) frozen_view_matrix = camera->GetWorldToClipMatrix();
+                gpu_time = renderer->render(
+                        frozen_view_matrix,
+                        camera->mWorld.GetTranslation(),
+                        show_basis,
+                        basis_length_scale,
+                        basis_thickness_scale);
+                if (freeView)
+                    playerBody->render(
+                            frozen_view_matrix,
+                            camera->mWorld.GetMatrix(), false, false, false
+                    );
                 //hitMin->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), false, false, false);
                 //hitMax->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), false, false, false);
                 ui->resize();
@@ -93,6 +111,10 @@ public:
             }
             if (getKey(GLFW_KEY_F))
                 showFps = !showFps;
+
+            if (getKey(GLFW_KEY_P)) {
+                freeView = !freeView;
+            }
 
             if (getKey(GLFW_KEY_SPACE, PRESSED, settings.edit_cooldown) ||
                 getKey(GLFW_MOUSE_BUTTON_LEFT, PRESSED, settings.edit_cooldown)) {
@@ -152,6 +174,7 @@ private:
     bool showCrosshair = false;
     bool dragToMove = true;
     bool showFps = true;
+    bool freeView = false;
     UI *ui;
     InputHandler *inputHandler;
     GLFWwindow *window;
@@ -169,4 +192,5 @@ private:
 
     float *elapsed;
     settings_t settings;
+    GameObject *playerBody;
 };

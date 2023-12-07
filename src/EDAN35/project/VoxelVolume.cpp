@@ -10,7 +10,7 @@ private:
     GLubyte *texels;
     GLuint texture{};
     bonobo::mesh_data bounding_box;
-    IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(-.5f), .max=glm::vec3(.5f)};
+    IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
 
     GLuint program{};
 
@@ -26,7 +26,7 @@ public:
         H = HEIGHT;
         D = DEPTH;
 
-        voxel_size = transform.getScale().x/W;
+        voxel_size = transform.getScale().x / W;
 
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
@@ -176,9 +176,12 @@ public:
     }
 
 
-    void render(FPSCameraf *camera,
-                glm::mat4 const &parent_transform, bool show_basis,
-                float basis_length, float basis_width) {
+    void render( glm::mat4 const &parent_transform,
+                glm::mat4 world_to_clip,
+                glm::vec3 cam_pos,
+                bool show_basis,
+                float basis_length,
+                float basis_width) {
 
         utils::opengl::debug::beginDebugGroup("VoxelVolume::render");
         // load shader program
@@ -208,12 +211,12 @@ public:
 
         // uniforms
         auto tf = parent_transform * transform.getMatrix();
-        setUniforms(tf, camera);
+        setUniforms(tf, world_to_clip, cam_pos);
 
         // render
-        glEnable(GL_CULL_FACE);
-        glFrontFace(GL_CW);
-        glCullFace(GL_FRONT);
+        //glEnable(GL_CULL_FACE);
+        //glFrontFace(GL_CW);
+        //glCullFace(GL_FRONT);
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
@@ -222,14 +225,14 @@ public:
 
         // render basis
         if (show_basis) {
-            bonobo::renderBasis(basis_width, basis_length, camera->GetWorldToClipMatrix(), tf);
+            bonobo::renderBasis(basis_width, basis_length, world_to_clip, tf);
         }
         utils::opengl::debug::endDebugGroup();
     }
 
 private:
     void setUniforms(glm::mat4 const &tf,
-                     FPSCameraf *camera) const {
+                     glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
 
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
@@ -241,18 +244,25 @@ private:
         glUniformMatrix4fv(glGetUniformLocation(program, "model_to_world"),
                            1, GL_FALSE, glm::value_ptr(tf));
 
+        auto inverse = glm::inverse(tf);
         // world to model
         glUniformMatrix4fv(
                 glGetUniformLocation(program, "world_to_model"), 1, GL_FALSE,
-                glm::value_ptr(glm::inverse(tf)));
+                glm::value_ptr(inverse));
+        // normal model -> world
+        // done on gpu instead, did not get it to work
+/*
+        glUniformMatrix3fv(glGetUniformLocation(program, "normal_model_to_world"),
+                           1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(tf))));
+*/
 
         // vertex to clip
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),
-                           1, GL_FALSE, glm::value_ptr(camera->GetWorldToClipMatrix()));
+                           1, GL_FALSE, glm::value_ptr(world_to_clip));
 
         //cam pos
         glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
-                     glm::value_ptr(camera->mWorld.GetTranslation()));
+                     glm::value_ptr(cam_pos));
 
     }
 
@@ -276,6 +286,6 @@ private:
     }
 
     glm::ivec3 localToIndex(glm::vec3 local) const {
-        return (local + 0.5f) * sizef();
+        return local * sizef();
     }
 };

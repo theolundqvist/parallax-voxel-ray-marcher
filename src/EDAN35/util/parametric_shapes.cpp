@@ -16,56 +16,37 @@ typedef unsigned int uint;
 bonobo::mesh_data parametric_shapes::createCube(float const width,
                                                 float const height,
                                                 float const depth) {
-    auto vertices = std::vector<glm::vec3>();
-    auto texCoords = std::vector<glm::vec3>();
-
     bonobo::mesh_data data;
-
-    for (int i = 0; i < 8; ++i) {
-        // Calculate vertex coordinates
-        GLfloat x = (i & 1) ? 0.5f : -0.5f;
-        GLfloat y = (i & 2) ? 0.5f : -0.5f;
-        GLfloat z = (i & 4) ? 0.5f : -0.5f;
-
-        // Add vertex coordinates
-        vertices.emplace_back(x * width, y * height, z * depth);
-
-        // Add texture coordinates
-        texCoords.emplace_back(glm::vec3(x, y, z) + 0.5f);
-    }
+    std::vector<glm::vec3> vertices = {
+            {0, 1, 1},    // 0 -x face provoking vertex
+            {0, 0, 1},    // 1 +z face provoking vertex
+            {1, 0, 1},    // 2 +x face provoking vertex
+            {1, 1, 1},    // 3 unused as provoking vertex
+            {0, 1, 0},    // 4 +y face provoking vertex
+            {0, 0, 0},    // 5 -y face provoking vertex
+            {1, 0, 0},    // 6 unused as provoking vertex
+            {1, 1, 0},    // 7 -z face provoking vertex
+    };
+    std::vector<glm::vec3> normals = {
+            {-1, 0,  0},
+            {0,  0,  1,},
+            {1,  0,  0,},
+            {0,  0,  0,},
+            {0,  1,  0,},
+            {0,  -1, 0},
+            {0,  0,  0,},
+            {0,  0,  -1},
+    };
 
     // Generate triangle indices
     std::vector<GLuint> trigs = {
-// Front face (facing -z)
-            0, 1, 2,
-            2, 1, 3,
-
-// Back face (facing +z)
-            4, 6, 5,
-            6, 7, 5,
-
-// Left face (facing -x)
-            4, 0, 6,
-            6, 0, 2,
-
-// Right face (facing +x)
-            1, 5, 3,
-            5, 7, 3,
-
-// Top face (facing +y)
-            2, 3, 6,
-            6, 3, 7,
-
-// Bottom face ((facing -y)
-            0, 4, 1,
-            4, 5, 1,
+            6, 7, 2, 7, 3, 2,   // +x face
+            4, 5, 0, 5, 1, 0,   // -x face
+            0, 3, 4, 3, 7, 4,   // +y face
+            6, 2, 5, 2, 1, 5,   // -y face
+            2, 3, 1, 3, 0, 1,   // +z face
+            6, 5, 7, 5, 4, 7,   // -z face
     };
-    //
-    // NOTE:
-    //
-    // Only the values preceded by a `\todo` tag should be changed, the
-    // other ones are correct!
-    //
 
     // Create a Vertex Array Object: it will remember where we stored the
     // data on the GPU, and  which part corresponds to the vertices, which
@@ -84,8 +65,9 @@ bonobo::mesh_data parametric_shapes::createCube(float const width,
     glGenBuffers(1, &data.bo);
     glBindBuffer(GL_ARRAY_BUFFER, data.bo);
     auto vertBufferSize = vertices.size() * sizeof(glm::vec3);
-    auto texBufferSize = texCoords.size() * sizeof(glm::vec3);
-    auto bufferSize = vertBufferSize + texBufferSize;
+    auto texBufferSize = 0;//texCoords.size() * sizeof(glm::vec3);
+    auto normalBufferSize = normals.size() * sizeof(glm::vec3);
+    auto bufferSize = vertBufferSize + texBufferSize + normalBufferSize;
     glBufferData(GL_ARRAY_BUFFER, bufferSize, nullptr, GL_STATIC_DRAW);
 
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertBufferSize, vertices.data());
@@ -95,32 +77,37 @@ bonobo::mesh_data parametric_shapes::createCube(float const width,
             static_cast<unsigned int>(bonobo::shader_bindings::vertices), 3, GL_FLOAT,
             GL_FALSE, 0, reinterpret_cast<GLvoid const *>(0x0));
 
+/*
     glBufferSubData(GL_ARRAY_BUFFER, vertBufferSize, texBufferSize, texCoords.data());
     glEnableVertexAttribArray(
             static_cast<unsigned int>(bonobo::shader_bindings::texcoords));
     glVertexAttribPointer(
             static_cast<unsigned int>(bonobo::shader_bindings::texcoords), 3,
             GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const *>(vertBufferSize));
+*/
+    glBufferSubData(GL_ARRAY_BUFFER, vertBufferSize + texBufferSize, normalBufferSize, normals.data());
+    glEnableVertexAttribArray(
+            static_cast<unsigned int>(bonobo::shader_bindings::normals));
+    glVertexAttribPointer(
+            static_cast<unsigned int>(bonobo::shader_bindings::normals), 3,
+            GL_FLOAT, GL_TRUE, 0, reinterpret_cast<GLvoid const *>(normalBufferSize));
 
     // Now, let's allocate a second one for the indices.
     //
     // Have the buffer's name stored into `data.ibo`.
-    glGenBuffers(1, /*! \todo fill me */ &data.ibo);
+    glGenBuffers(1, &data.ibo);
 
     // We still want a 1D-array, but this time it should be a 1D-array of
     // elements, aka. indices!
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
-            /*! \todo bind the previously generated Buffer */ data.ibo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, data.ibo);
 
     glBufferData(
             GL_ELEMENT_ARRAY_BUFFER,
-            /*! \todo how many bytes should the buffer contain? */
             sizeof(GLuint) * trigs.size(),
-            /* where is the data stored on the CPU? */ trigs.data(),
-            /* inform OpenGL that the data is modified once, but used often */
+            trigs.data(),
             GL_STATIC_DRAW);
 
-    data.indices_nb = /*! \todo how many indices do we have? */ trigs.size();
+    data.indices_nb = trigs.size();
 
     // All the data has been recorded, we can unbind them.
     glBindVertexArray(0u);
