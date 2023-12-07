@@ -55,7 +55,8 @@ Have to disable early depth test since depth can change in fragment shader.
 Though we can use an extension:
 https://www.khronos.org/opengl/wiki/Fragment_Shader#Conservative_Depth
 ```glsl
-layout (depth_less) out float gl_FragDepth;```
+layout (depth_less) out float gl_FragDepth;
+```
 To say that we always will move the pixel closer than the plane it was rendered on, which is the only thing we will do when rendering backfaces
 
 
