@@ -32,6 +32,9 @@ public:
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
     }
+    ~VoxelVolume(){
+        free(texels);
+    }
 
     glm::ivec3 size() const {
         return {W, H, D};
@@ -147,17 +150,23 @@ public:
         //check if bounding box is hit
         auto inverse = transform.get_inverse();
         auto dir = inverse.applyRotation(w_direction);
+        auto local_origin = inverse.apply(w_origin);
         auto hit = IntersectionTests::RayIntersectsBox(
                 local_space_AABB,
                 {
-                        inverse.apply(w_origin),
+                        local_origin,
                         dir,
                         glm::vec3(1.0f) / dir
                 });
         if (!hit.miss) {
+            if(glm::length2(hit.near - hit.far) > glm::length2(local_origin - hit.far)){
+                //camera inside BB
+               hit.near = local_origin;
+            }
             auto P = transform.apply(hit.near); //world
-            auto step = w_direction * transform.getScale() * voxel_size * 0.1f;
-            for (int i = 0; i < 400; ++i) {
+            auto step = w_direction * transform.getScale() * voxel_size * 0.10f;
+            int i = 0;
+            for (i = 0; i < 600; ++i) {
 /*
                 if (glm::any(glm::lessThan(P, box.min + step)) || glm::any(glm::greaterThan(P, box.max-step))) {
                     printf("out of bounds\n");
@@ -220,6 +229,7 @@ public:
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
+        glDeleteTextures(1, &texture);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
 
