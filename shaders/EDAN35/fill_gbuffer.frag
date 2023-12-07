@@ -42,7 +42,7 @@ void main()
   if (has_normals_texture){
     vec3 T = normalize(vec3(normal_model_to_world * vec4(fs_in.tangent, 0.0)));
     vec3 B = normalize(vec3(normal_model_to_world * vec4(fs_in.binormal, 0.0)));
-    vec3 N = normalize(vec3(normal_model_to_world * vec4(fs_in.normal, 0.0)));
+    vec3 N = normalize();
     mat3 TBN = mat3(T, B, N);
     vec3 bump = texture(normals_texture, fs_in.texcoord).xyz * 2.0f - 1.0f;
     vec3 normal = normalize(TBN * bump);

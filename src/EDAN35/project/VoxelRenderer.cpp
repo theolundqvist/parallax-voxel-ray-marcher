@@ -74,13 +74,16 @@ public:
         }
     }
 
-    float render(bool show_basis, float basis_length, float basis_thickness) {
+
+
+    float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness) {
         // sort volumes by distance to camera
         glBeginQuery(GL_TIME_ELAPSED, elapsed_time_query);
         for (auto volume: volumes) {
             volume->render(
-                    camera,
                     glm::mat4(1.0f),
+                    world_to_clip,
+                    cam_pos,
                     show_basis,
                     basis_length,
                     basis_thickness

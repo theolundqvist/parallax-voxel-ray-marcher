@@ -13,6 +13,7 @@ public:
     GLFWwindow *window = nullptr;
     float font_height = 0.0f;
     glm::ivec2 window_scale;
+    glm::ivec2 window_size;
 
     UI(GLFWwindow *window) {
         io = ImGui::GetIO();
@@ -29,6 +30,7 @@ public:
         glfwGetFramebufferSize(window, &w, &h);
         glfwGetWindowContentScale(window, &xscale, &yscale);
         window_scale = glm::ivec2(xscale, yscale);
+        window_size = glm::ivec2(w, h);
         //printf("fbSize=%dx%d, scale=%.2fx%.2f\n", w, h, xscale, yscale);
         ImGui::SetWindowSize(ImVec2((float)w/xscale, (float)h/yscale));
     }
@@ -74,8 +76,7 @@ public:
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
         ImGui::Begin("settings", nullptr, flags);
-        int w, h;
-        glfwGetFramebufferSize(window, &w, &h);
+        int h = window_size.y / window_scale.y;
         int number_rows = 3;
         float font_scale = 0.25f;
         ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
@@ -189,4 +190,5 @@ private:
         End();
         return clicked;
     }
+
 };
