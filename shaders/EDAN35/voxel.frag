@@ -3,6 +3,8 @@
 // uniform vec3 light_position;
 uniform vec3 camera_position;
 uniform sampler3D volume;
+uniform sampler3D volume_2;
+uniform sampler3D volume_4;
 uniform float voxel_size;
 uniform ivec3 grid_size;
 
@@ -68,13 +70,30 @@ vec3 findStartPos(){
 }
 
 vec3 fixed_step(){
-    vec3 V = normalize(fV) * voxel_size/15;// fixed step
+    vec3 V = normalize(fV) * (voxel_size)/15;// fixed step
+    vec3 V_2 = V*2 * 5;
+    vec3 V_4 = V*4 * 5;
     vec3 P = findStartPos(); // P is in 0-1.0 space
-    for (int i = 0; i < 700; i++){
+    // largest mipmap
+    for (int i = 0; i < 300; i++){
         if (isInside(P) < 0.5) discard;
-        int material = int(round(texture(volume, P).r*255));
-        if (material != 0) return vec3(float(material)/255, 0, 0);
-        P += V;
+        int material = int(round(texture(volume_4, P).r*255));
+        // if there is a nonzero voxel inside this 4x4x4 cube
+        if (material > 0) {
+            for(int j = 0; j < 2*15; j++){
+                material = int(round(texture(volume_2, P).r*255));
+                // if there is a nonzero voxel inside this 2x2x2 cube
+                if(material > 0){
+                    for(int j = 0; j < 2*15; j++){
+                        material = int(round(texture(volume, P).r*255));
+                        if (material != 0) return vec3(float(material)/255, 0, 0);
+                        P += V;
+                    }
+                }
+                P += V_2;
+            }
+        }
+        P += V_4;
     }
     discard;
 }

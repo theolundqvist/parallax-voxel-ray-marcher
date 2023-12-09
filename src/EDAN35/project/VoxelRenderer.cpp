@@ -36,7 +36,7 @@ public:
         //createVolume(150, tf);
         for (int x = 0; x < 3; ++x) {
             for (int z = 0; z < 3; ++z) {
-                createVolume(50, tf.translated(x * 3, 0, z * 3));
+                createVolume(64, tf.translated(x * 3, 0, z * 3));
             }
         }
         for (auto volume: volumes) {

@@ -7,8 +7,13 @@
 
 class VoxelVolume {
 private:
+    /** full res **/
     GLubyte *texels;
-    GLuint texture{};
+    /** One division in each dimension == 1/8 res **/
+    GLubyte *texels_2;
+    /** Two divisions in each dimension == 1/64 res **/
+    GLubyte *texels_4;
+
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
 
@@ -17,23 +22,28 @@ private:
 public:
     Transform transform;
     float voxel_size = 0.1f;
-    int W;
-    int H;
-    int D;
+    int W, H, D;
+    int W_2, H_2, D_2;
+    int W_4, H_4, D_4;
 
     VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH) {
-        W = WIDTH;
-        H = HEIGHT;
-        D = DEPTH;
+        W = WIDTH; H = HEIGHT; D = DEPTH;
+        W_2 = W / 2; H_2 = H / 2; D_2 = D / 2;
+        W_4 = W / 4; H_4 = H / 4; D_4 = D / 4;
 
         voxel_size = transform.getScale().x / W;
 
-        texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
+        int size =  W * H * D;
+        texels = (GLubyte *) calloc(size, sizeof(GLubyte));
+        texels_2 = (GLubyte *) calloc(size/8, sizeof(GLubyte));
+        texels_4 = (GLubyte *) calloc(size/64, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
     }
     ~VoxelVolume(){
         free(texels);
+        free(texels_2);
+        free(texels_4);
     }
 
     glm::ivec3 size() const {
@@ -56,8 +66,22 @@ public:
     }
 
     bool setVoxel(int x, int y, int z, GLubyte value) {
-        auto i = x + y * W + z * W * H;
+        int i = x + y * W + z * W * H;
         if (i < 0 || i >= W * H * D) return false;
+        if(value > 0){
+            int i_2 = x/2 + y/2 * W_2 + z/2 * W_2 * H_2;
+            int i_4 = x/4 + y/4 * W_4 + z/4 * W_4 * H_4;
+            texels_2[i_2] = 255;
+            texels_4[i_4] = 255;
+        }
+//        else{
+//            // if all are 0, set to 0
+//            bool all_zero = false;
+//            for (int j = 0; j < ; ++j) {
+//
+//            }
+//
+//        }
         texels[i] = value;
         return true;
     }
@@ -66,6 +90,8 @@ public:
         return setVoxel(index.x, index.y, index.z, value);
     }
 
+/*
+ * // not used, unsure about mipmapping
     void setVolumeData(GLubyte *data) { texels = data; }
 
     void setVolumeData3D(GLubyte ***data) {
@@ -78,6 +104,7 @@ public:
             }
         }
     }
+*/
 
     typedef struct voxel_hit_t {
         bool miss;
@@ -195,32 +222,14 @@ public:
         utils::opengl::debug::beginDebugGroup("VoxelVolume::render");
         // load shader program
         glUseProgram(program);
-
-        // generate texture object
-        glGenTextures(1, &texture);
-
-        // Set texture unit for sampler
-        glUniform1i(glGetUniformLocation(program, "volume"), 0);
-        // Active texture unit before use
-        glActiveTexture(GL_TEXTURE0);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture);
-
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W, H, D, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-
-
         // uniforms
         auto tf = parent_transform * transform.getMatrix();
         setUniforms(tf, world_to_clip, cam_pos);
+
+        GLuint textures[3] = {1,2,3};
+        genTexture(texels, 1, textures, 0, "volume");
+        genTexture(texels_2, 2, textures, 1, "volume_2");
+        genTexture(texels_4, 4, textures, 2, "volume_4");
 
         // render
         //glEnable(GL_CULL_FACE);
@@ -229,7 +238,7 @@ public:
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
-        glDeleteTextures(1, &texture);
+        glDeleteTextures(1, textures);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
 
@@ -238,6 +247,28 @@ public:
             bonobo::renderBasis(basis_width, basis_length, world_to_clip, tf);
         }
         utils::opengl::debug::endDebugGroup();
+    }
+
+    void genTexture(GLubyte *data, int size_divider, GLuint textures[], int index,  std::string name) {
+        // generate texture object
+        glGenTextures(1, &textures[index]);
+        // Set texture unit for sampler
+        glUniform1i(glGetUniformLocation(program, name.c_str()), index);
+        // Active texture unit before use
+        glActiveTexture(GL_TEXTURE0 + index);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, textures[index]);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, textures[index]);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W/size_divider, H/size_divider, D/size_divider, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     data);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     }
 
 private:
