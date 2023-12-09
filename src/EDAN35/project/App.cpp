@@ -63,7 +63,7 @@ public:
                 if (freeView)
                     playerBody->render(
                             frozen_view_matrix,
-                            camera->mWorld.GetMatrix(), true, true, true
+                            camera->mWorld.GetMatrix(), false, false, false
                     );
                 //hitMin->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), false, false, false);
                 //hitMax->render(camera->GetWorldToClipMatrix(), glm::mat4(1.0f), false, false, false);
