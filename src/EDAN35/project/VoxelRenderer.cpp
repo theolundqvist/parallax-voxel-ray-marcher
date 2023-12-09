@@ -33,7 +33,7 @@ public:
         auto tf = Transform()
                 .scale(3.0f);
                 //.rotateAroundX(glm::pi<float>() * 1.5f);
-        createVolume(4, tf);
+        createVolume(16, tf);
 /*
         for (int x = 0; x < 3; ++x) {
             for (int z = 0; z < 3; ++z) {
