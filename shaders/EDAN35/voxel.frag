@@ -79,7 +79,8 @@ hit_t fixed_step(){
     vec3 V = normalize(fV) * voxel_size/15;// fixed step
     vec3 P = findStartPos();// P is in 0-1.0 space
     vec3 last_voxel = floor(P * voxel_size);
-    for (int i = 0; i < 700; i++){
+    int max_step = int(15*15/voxel_size);
+    for (int i = 0; i < max_step; i++){
         if (isInside(P) < 0.5) discard;
         vec3 norm = floor(P * voxel_size) - last_voxel;
         last_voxel -= norm;
