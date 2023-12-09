@@ -70,12 +70,22 @@ start_t findStartPos(){
     vec3 far =  origin + dir * (tmax);
     // if camera is closer to the pos on the backface than the intersect, return the camera pos
     if (length(near-pos) > length(model_cam_pos - pos)){
-        return start_t(model_cam_pos, vec3(1,0,0));// 0.0 - 1.0
+        return start_t(model_cam_pos, vec3(0,0,0));// 0.0 - 1.0
     }
     // find normal
-    vec3 normal = near / max(max(near.x, near.y), near.z);
-    normal = clamp(normal, vec3(0.0,0.0,0.0), vec3(1.0,1.0,1.0));
-    normal = normalize(floor(normal * 1.0000001));
+    vec3 hit_to_center = near - vec3(0.5);
+    vec3 abs_hit_to_center = abs(hit_to_center);
+    float max_component = max(max(abs_hit_to_center.x, abs_hit_to_center.y), abs_hit_to_center.z);
+
+    // Assume the box extends from 0 to 1 in each axis.
+    vec3 normal;
+    if (abs_hit_to_center.x == max_component) {
+        normal = vec3(sign(hit_to_center.x), 0.0, 0.0);
+    } else if (abs_hit_to_center.y == max_component) {
+        normal = vec3(0.0, sign(hit_to_center.y), 0.0);
+    } else {
+        normal = vec3(0.0, 0.0, sign(hit_to_center.z));
+    }
     return start_t(near, normal);
 }
 
@@ -162,8 +172,8 @@ void main()
 
     vec3 color = vec3(hit.material/255.0, 0, 0);
     //color = shade(hit);
-    //color = normalize(hit.normal * 0.5f + 0.5f);
-    color = normalize(hit.normal);
+    color = normalize(hit.normal * 0.5f + 0.5f);
+    //color = normalize(hit.normal);
 
     fColor = vec4(color, 1.0);
 }
