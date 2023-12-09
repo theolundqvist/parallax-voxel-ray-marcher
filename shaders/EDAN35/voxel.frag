@@ -70,7 +70,7 @@ start_t findStartPos(){
     vec3 far =  origin + dir * (tmax);
     // if camera is closer to the pos on the backface than the intersect, return the camera pos
     if (length(near-pos) > length(model_cam_pos - pos)){
-        return start_t(model_cam_pos, vec3(0,0,0));// 0.0 - 1.0
+        return start_t(model_cam_pos, vec3(0, 0, 0));// 0.0 - 1.0
     }
     // find normal
     vec3 hit_to_center = near - vec3(0.5);
@@ -108,21 +108,43 @@ hit_t fixed_step(){
     discard;
 }
 
-
+float luminance(vec3 v)
+{
+    return dot(v, vec3(0.2126f, 0.7152f, 0.0722f));
+}
+vec3 reinhard_jodie(vec3 v)
+{
+    float l = luminance(v);
+    vec3 tv = v / (1.0f + v);
+    return mix(v / (1.0f + l), tv, tv);
+}
 // have not tried yet
 vec3 shade(hit_t hit){
     vec3 V=normalize(fV);
     vec3 N=normalize(hit.normal);
+    if (isInside(hit.voxel - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+    }
     vec3 L=normalize(light_direction);
 
-    float diffuse_co=max(dot(L, N), 0);
-    vec3 R=normalize(reflect(-L, N));
-    float specular_co=pow(max(dot(R, -V), 0.0), 4);
+    float diffuse_co= 1.7f * max(dot(L, N), 0);
+    float specular_co = 0.0;
+    bool blinn = true;
+    if(blinn)
+    {
+        vec3 halfwayDir = normalize(L -V);
+        specular_co = pow(max(dot(N, halfwayDir), 0.0), 4.0);
+    }
+    else
+    {
+        vec3 R = reflect(-L, N);
+        specular_co = pow(max(dot(-V, R), 0.0), 1.1);
+    }
     //vec3 voxel_color=vec3(1, 0, 0);
-    vec3 ambient=vec3(0.1);
-    vec3 voxel_color=ambient + diffuse_co*vec3(hit.material/255.0, 0,0) + specular_co*vec3(0.2);//+specular_co*vec3(0, 0, 1);
-    // use material color
-    return voxel_color;
+    vec3 mat_color = vec3(hit.material/255.0, 0, 0);
+    vec3 ambient=vec3(0.4) * mat_color;
+    vec3 v = ambient + diffuse_co * mat_color + specular_co * vec3(0.6);//+specular_co*vec3(0, 0, 1);
+    return reinhard_jodie(v);
 }
 
 // finally works omg
@@ -171,8 +193,8 @@ void main()
     hit = fvta_step();
 
     vec3 color = vec3(hit.material/255.0, 0, 0);
-    //color = shade(hit);
-    color = normalize(hit.normal * 0.5f + 0.5f);
+    color = shade(hit);
+    //color = normalize(hit.normal * 0.5f + 0.5f);
     //color = normalize(hit.normal);
 
     fColor = vec4(color, 1.0);
