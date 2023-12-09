@@ -78,14 +78,11 @@ struct hit_t {
 hit_t fixed_step(){
     vec3 V = normalize(fV) * voxel_size/15;// fixed step
     vec3 P = findStartPos();// P is in 0-1.0 space
-    vec3 last_voxel = floor(P * voxel_size);
     int max_step = int(15*15/voxel_size);
     for (int i = 0; i < max_step; i++){
         if (isInside(P) < 0.5) discard;
-        vec3 norm = floor(P * voxel_size) - last_voxel;
-        last_voxel -= norm;
         int material = int(round(texture(volume, P).r*255));
-        if (material != 0) return hit_t(P, norm, material);
+        if (material != 0) return hit_t(P, vec3(0), material);
         P += V;
     }
     discard;
@@ -95,14 +92,15 @@ hit_t fixed_step(){
 // have not tried yet
 vec3 shade(hit_t hit){
     vec3 V=normalize(fV);
-    vec3 N=normalize(hit.voxel-hit.normal);
+    vec3 N=normalize(hit.normal);
     vec3 L=normalize(light_direction);
 
     float diffuse_co=max(dot(L, N), 0);
     vec3 R=normalize(reflect(-L, N));
-    float specular_co=pow(max(dot(R, V), 0.0), 0.5);
+    float specular_co=pow(max(dot(R, V), 0.0), 4);
     //vec3 voxel_color=vec3(1, 0, 0);
-    vec3 voxel_color=diffuse_co*vec3(0, 1, 0)+specular_co*vec3(0, 0, 1);//+specular_co*vec3(0, 0, 1);
+    vec3 ambient=vec3(0.1, 0.1, 0.1);
+    vec3 voxel_color=ambient + diffuse_co*vec3(hit.material/255.0, 0,0);// + specular_co*vec3(1, 1, 1);//+specular_co*vec3(0, 0, 1);
     // use material color
     return voxel_color;
 }
@@ -113,25 +111,38 @@ vec3 shade(hit_t hit){
 hit_t fvta_step(){
     vec3 ro = findStartPos();
     vec3 rd = normalize(fV);
-    vec3 voxel_pos = voxel_size * floor(ro * (1./voxel_size));
+    vec3 voxel_index = floor(ro * (1./voxel_size));
+    vec3 voxel_pos = voxel_size * voxel_index;
     vec3 rs = sign(rd);
     vec3 deltaDist = voxel_size/rd;
     vec3 sideDist = ((voxel_pos-ro)/voxel_size + 0.5 + rs * 0.5) * deltaDist;
-    voxel_pos = voxel_size * (floor(ro * (1./voxel_size)) + 0.1);
+    voxel_pos = voxel_size * (voxel_index + 0.1);
     int max_steps = int(3.0/voxel_size);
+
+    // calculate first normal
+    //vec3 mm = step(sideDist.yxy, sideDist.xyz) * step(sideDist.zzx, sideDist.xyz);
+    //vec3 normal = mm * vec3(1);
+    vec3 pos_in_voxel = mod(ro, voxel_size);
+    vec3 largest = vec3(
+    float(pos_in_voxel.x > pos_in_voxel.y)*float(pos_in_voxel.x > pos_in_voxel.z),
+    float(pos_in_voxel.y > pos_in_voxel.z)*float(pos_in_voxel.y > pos_in_voxel.x),
+    float(pos_in_voxel.z > pos_in_voxel.x)*float(pos_in_voxel.z > pos_in_voxel.y)
+    );
+    vec3 normal = -rs * largest;
+
     for (int i = 0; i < max_steps; i++){
         if (isInside(voxel_pos) < 0.5) {
             discard;
         }
         int mat = int(round(texture(volume, voxel_pos).r*255));
-        // black magic compare between sideDist.x < sideDist.y && sideDist.x < sideDist.z etc
-        vec3 mm = step(sideDist.xyz, sideDist.yxy)  * step(sideDist.xyz, sideDist.zzx);
-        vec3 norm = -mm * rs;
         if (mat > 0){
-            return hit_t(voxel_pos, norm, mat);
+            return hit_t(voxel_pos, normal, mat);
         }
-        voxel_pos += voxel_size * -norm;
-        sideDist += -norm * deltaDist;
+        // black magic compare between sideDist.x < sideDist.y && sideDist.x < sideDist.z etc
+        vec3 mm = step(sideDist.xyz, sideDist.yxy) * step(sideDist.xyz, sideDist.zzx);
+        normal = -mm * rs;
+        voxel_pos += voxel_size * -normal;
+        sideDist += -normal * deltaDist;
     }
     discard;
 }
@@ -148,9 +159,10 @@ void main()
     //hit = fixed_step();
     hit = fvta_step();
 
-    vec3 color = vec3(hit.voxel);
-    //color = shade(hit);
-    //color = normalize(hit.last_voxel - hit.voxel);
+    vec3 color = vec3(hit.material/255.0, 0, 0);
+    color = shade(hit);
+    //color = normalize(hit.normal * 0.5f + 0.5f);
+    //color = normalize(hit.normal);
 
     fColor = vec4(color, 1.0);
 }

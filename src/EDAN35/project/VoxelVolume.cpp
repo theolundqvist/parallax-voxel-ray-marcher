@@ -166,9 +166,11 @@ public:
                 hit.near = local_origin;
             }
             auto P = transform.apply(hit.near); //world
-            auto step = w_direction * transform.getScale() * voxel_size * 0.10f;
+            float step_size = 1.0/10;
+            auto step = normalize(w_direction * transform.getScale()) * voxel_size * step_size;
             int i = 0;
-            for (i = 0; i < 600; ++i) {
+            int max_step = (int)(1.0/step_size * 1.0/step_size * 1.0/voxel_size);
+            for (i = 0; i < max_step; ++i) {
 /*
                 if (glm::any(glm::lessThan(P, box.min + step)) || glm::any(glm::greaterThan(P, box.max-step))) {
                     printf("out of bounds\n");

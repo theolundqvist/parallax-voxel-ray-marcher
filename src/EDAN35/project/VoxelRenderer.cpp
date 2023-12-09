@@ -16,6 +16,13 @@
 #include <list>
 
 class VoxelRenderer {
+private:
+    std::vector<VoxelVolume *> volumes;
+    FPSCameraf *camera;
+    GLuint voxel_program;
+    float *elapsed_time_s;
+    GLuint elapsed_time_query = createElapsedTimeQuery();
+    GLuint64 pass_elapsed_time;
 public:
     VoxelRenderer(FPSCameraf *cam, ShaderProgramManager *shaderManager,
                   float *elapsed_time_s) {
@@ -36,7 +43,7 @@ public:
         //createVolume(16, tf);
         for (int x = 0; x < 3; ++x) {
             for (int z = 0; z < 3; ++z) {
-                createVolume(128, tf.translated(x * 3, 0, z * 3));
+                createVolume(16, tf.translated(x * 3, 0, z * 3));
             }
         }
         for (auto volume: volumes) {
@@ -157,13 +164,6 @@ public:
     }
 
 private:
-    std::vector<VoxelVolume *> volumes;
-    FPSCameraf *camera;
-    GLuint voxel_program;
-    float *elapsed_time_s;
-    GLuint elapsed_time_query = createElapsedTimeQuery();
-    GLuint64 pass_elapsed_time;
-
     static GLuint createElapsedTimeQuery() {
         GLuint query;
         glGenQueries(1, &query);
