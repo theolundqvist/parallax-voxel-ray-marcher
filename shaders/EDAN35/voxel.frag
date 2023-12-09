@@ -104,25 +104,24 @@ vec3 shade(hit_t hit){
 }
 
 hit_t fvta_step(){
-    //initialization
-    //float sub_voxel_size=voxel_size/15;//to make it looks more smooth
 
     vec3 start = findStartPos();
     vec3 V=normalize(fV);
-    vec3 voxel_index=floor((start)/voxel_size);//vec3(floor(start.x/voxel_size), floor(start.y/voxel_size), floor(start.z/voxel_size));//start from current point, this is the id of the current voxel
+    vec3 voxel_index=floor((start)/voxel_size);
 
     vec3 d = V;
     vec3 step = sign(d);
     vec3 next_position = (voxel_index + step) * voxel_size;
     vec3 tMax = (next_position - start) / d;
-    vec3 tDelta = voxel_size * (step / d);
+    vec3 tDelta = voxel_size / (step * d);
     int max_steps = int(2.0/voxel_size);
     for(int i = 0; i < max_steps; i++){
-        vec3 voxel_pos = (voxel_index) * voxel_size;
+        vec3 voxel_pos = (voxel_index + vec3(0.5)) * voxel_size;
         int material = int(round(texture(volume, voxel_pos).r*255));
         if(material != 0){
             return hit_t(voxel_pos, vec3(0), material);
         }
+        if(isInside(voxel_pos) < 0.5) discard;
         if(tMax.x < tMax.y){
             if(tMax.x < tMax.z){
                 voxel_index.x += step.x;
@@ -141,10 +140,12 @@ hit_t fvta_step(){
                 tMax.z += tDelta.z;
             }
         }
-        if(isInside(voxel_pos) < 0.5) discard;
     }
 
 
+    //vec3(floor(start.x/voxel_size), floor(start.y/voxel_size), floor(start.z/voxel_size));//start from current point, this is the id of the current voxel
+    //initialization
+    //float sub_voxel_size=voxel_size/15;//to make it looks more smooth
 /*
     ivec3 step = ivec3(
     (V.x >= 0) ? 1:-1, // step longth of X. 1 for incremented and -1 for decremented.
