@@ -21,18 +21,20 @@ public:
     int H;
     int D;
 
-    VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH) {
+    VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf) {
         W = WIDTH;
         H = HEIGHT;
         D = DEPTH;
+        this->transform = tf;
 
-        voxel_size = transform.getScale().x / W;
+        voxel_size = 1.0f / (float)W;
 
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
     }
-    ~VoxelVolume(){
+
+    ~VoxelVolume() {
         free(texels);
     }
 
@@ -159,9 +161,9 @@ public:
                         glm::vec3(1.0f) / dir
                 });
         if (!hit.miss) {
-            if(glm::length2(hit.near - hit.far) > glm::length2(local_origin - hit.far)){
+            if (glm::length2(hit.near - hit.far) > glm::length2(local_origin - hit.far)) {
                 //camera inside BB
-               hit.near = local_origin;
+                hit.near = local_origin;
             }
             auto P = transform.apply(hit.near); //world
             auto step = w_direction * transform.getScale() * voxel_size * 0.10f;
@@ -185,7 +187,7 @@ public:
     }
 
 
-    void render( glm::mat4 const &parent_transform,
+    void render(glm::mat4 const &parent_transform,
                 glm::mat4 world_to_clip,
                 glm::vec3 cam_pos,
                 bool show_basis,
@@ -273,6 +275,10 @@ private:
         //cam pos
         glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
                      glm::value_ptr(cam_pos));
+
+        // light direction
+        glUniform3fv(glGetUniformLocation(program, "light_direction"), 1,
+                     glm::value_ptr(glm::vec3(tf * glm::vec4(-0.2f, 0.2f, 0.2f, 0))));
 
     }
 
