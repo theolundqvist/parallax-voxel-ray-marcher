@@ -77,7 +77,6 @@ start_t findStartPos(){
     vec3 abs_hit_to_center = abs(hit_to_center);
     float max_component = max(max(abs_hit_to_center.x, abs_hit_to_center.y), abs_hit_to_center.z);
 
-    // Assume the box extends from 0 to 1 in each axis.
     vec3 normal;
     if (abs_hit_to_center.x == max_component) {
         normal = vec3(sign(hit_to_center.x), 0.0, 0.0);
@@ -91,6 +90,7 @@ start_t findStartPos(){
 
 struct hit_t {
     vec3 voxel;
+    vec3 position;
     vec3 normal;
     int material;
 };
@@ -102,7 +102,7 @@ hit_t fixed_step(){
     for (int i = 0; i < max_step; i++){
         if (isInside(P) < 0.5) discard;
         int material = int(round(texture(volume, P).r*255));
-        if (material != 0) return hit_t(P, vec3(0), material);
+        if (material != 0) return hit_t(P, P, vec3(0), material);
         P += V;
     }
     discard;
@@ -163,24 +163,66 @@ hit_t fvta_step(){
     voxel_pos = voxel_size * (voxel_index + 0.1);
     int max_steps = int(3.0/voxel_size);
 
+    vec3 final_pos = ro * 1./voxel_size;
+
     for (int i = 0; i < max_steps; i++){
         if (isInside(voxel_pos) < 0.5) {
             discard;
         }
         int mat = int(round(texture(volume, voxel_pos).r*255));
         if (mat > 0){
-            return hit_t(voxel_pos, normal, mat);
+            return hit_t(voxel_pos, fract(final_pos), normal, mat);
         }
         // black magic compare between sideDist.x < sideDist.y && sideDist.x < sideDist.z etc
         vec3 mm = step(sideDist.xyz, sideDist.yxy) * step(sideDist.xyz, sideDist.zzx);
         normal = -mm * rs;
         voxel_pos += voxel_size * -normal;
         sideDist += -normal * deltaDist;
+        final_pos += mm * (-normal * deltaDist);
     }
     discard;
 }
+mat4 rotationX( in float angle ) {
+    return mat4(	1.0,		0,			0,			0,
+    0, 	cos(angle),	-sin(angle),		0,
+    0, 	sin(angle),	 cos(angle),		0,
+    0, 			0,			  0, 		1);
+}
 
+mat4 rotationY( in float angle ) {
+    return mat4(	cos(angle),		0,		sin(angle),	0,
+    0,		1.0,			 0,	0,
+    -sin(angle),	0,		cos(angle),	0,
+    0, 		0,				0,	1);
+}
 
+mat4 rotationZ( in float angle ) {
+    return mat4(	cos(angle),		-sin(angle),	0,	0,
+    sin(angle),		cos(angle),		0,	0,
+    0,				0,		1,	0,
+    0,				0,		0,	1);
+}
+float ao(hit_t hit){
+    vec3 N=normalize(hit.normal);
+    vec3 P = hit.position;
+    float ao_inv = 1.0;
+    int nbr_samples = 10;
+    float r = voxel_size * 0.2;
+    vec3 sphere_center = P + N * r;
+    vec3 bitangent = cross(N, vec3(0.5, 0.5, 0.5));
+    for(int i = 0; i < nbr_samples; i++){
+        // rotate bitangent
+        float angle = 2.0 * 3.14159265359 * float(i)/float(nbr_samples);
+        bitangent = normalize((rotationZ(angle * N.z) * rotationX(angle * N.x) * rotationY(angle * N.y) * vec4(bitangent, 1.0)).xyz);
+        vec3 sample_point =  sphere_center + bitangent * r*0.5;
+        if(isInside(sample_point) < 0.5) continue;
+        float material = texture(volume, sample_point).r * 255.0;
+        if (material > 0.0){
+            ao_inv -= 1.0/(nbr_samples+1.0);
+        }
+    }
+    return ao_inv;
+}
 
 void main()
 {
@@ -194,6 +236,8 @@ void main()
 
     vec3 color = vec3(hit.material/255.0, 0, 0);
     color = shade(hit);
+    //color *= ao(hit);
+    //color = hit.position;
     //color = normalize(hit.normal * 0.5f + 0.5f);
     //color = normalize(hit.normal);
 
