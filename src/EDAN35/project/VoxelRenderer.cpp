@@ -31,23 +31,24 @@ public:
 
         std::srand(std::time(nullptr));
         auto tf = Transform()
-                .scale(3.0f)
-                .rotateAroundX(glm::pi<float>() * 1.5f);
-        //createVolume(150, tf);
+                .scale(3.0f);
+                //.rotateAroundX(glm::pi<float>() * 1.5f);
+        createVolume(4, tf);
+/*
         for (int x = 0; x < 3; ++x) {
             for (int z = 0; z < 3; ++z) {
-                createVolume(50, tf.translated(x * 3, 0, z * 3));
+                createVolume(4, tf.translated(x * 3, 0, z * 3));
             }
         }
+*/
         for (auto volume: volumes) {
             updateVolume(volume);
         }
     }
 
     void createVolume(int size, Transform transform = Transform()) {
-        auto volume = new VoxelVolume(size, size, size);
+        auto volume = new VoxelVolume(size, size, size, transform);
         // does not work if not rotated like this ??, something wierd in the shader
-        volume->transform = transform;
         volume->setProgram(voxel_program);
         volumes.push_back(volume);
     }
@@ -71,7 +72,8 @@ public:
             for (int y = 0; y < volume->H; y++) {
                 for (int z = 0; z < volume->D; z++) {
                     auto pos = glm::vec3(x, y, z) + volume_pos;
-                    volume->setVoxel(x, y, z, wave(*elapsed_time_s * 0.001f, pos.x, pos.y, pos.z));
+                    //volume->setVoxel(x, y, z, wave(*elapsed_time_s * 0.001f, pos.x, pos.y, pos.z));
+                    volume->setVoxel(x, y, z, voxel_util::hash(glm::ivec3(x, y, z)));
                 }
             }
         }
