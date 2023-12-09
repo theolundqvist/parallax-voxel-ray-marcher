@@ -1,5 +1,5 @@
 #version 410
-#define Epsilon 0.0000001
+#define Epsilon 0.00001
 
 // uniform vec3 light_position;
 uniform vec3 camera_position;
@@ -33,8 +33,13 @@ float isInside(vec3 pos){
     */
 }
 
+struct start_t{
+    vec3 pos;
+    vec3 normal;
+};
+
 // Work In Progress
-vec3 findStartPos(){
+start_t findStartPos(){
     vec3 dir = normalize(fV);
     // x/0 is undefined behaviour
     //if(dir.x == 0.0) dir.x = 0.0000001;
@@ -61,12 +66,17 @@ vec3 findStartPos(){
 
 
     // first intersection with cube
-    vec3 intersect =  origin + dir * (tmin + 0.00001);
+    vec3 near =  origin + dir * (tmin + Epsilon);
+    vec3 far =  origin + dir * (tmax);
     // if camera is closer to the pos on the backface than the intersect, return the camera pos
-    if (length(intersect-pos) > length(model_cam_pos - pos)){
-        return model_cam_pos;// 0.0 - 1.0
+    if (length(near-pos) > length(model_cam_pos - pos)){
+        return start_t(model_cam_pos, vec3(1,0,0));// 0.0 - 1.0
     }
-    return intersect;
+    // find normal
+    vec3 normal = near / max(max(near.x, near.y), near.z);
+    normal = clamp(normal, vec3(0.0,0.0,0.0), vec3(1.0,1.0,1.0));
+    normal = normalize(floor(normal * 1.0000001));
+    return start_t(near, normal);
 }
 
 struct hit_t {
@@ -77,7 +87,7 @@ struct hit_t {
 
 hit_t fixed_step(){
     vec3 V = normalize(fV) * voxel_size/15;// fixed step
-    vec3 P = findStartPos();// P is in 0-1.0 space
+    vec3 P = findStartPos().pos;// P is in 0-1.0 space
     int max_step = int(15*15/voxel_size);
     for (int i = 0; i < max_step; i++){
         if (isInside(P) < 0.5) discard;
@@ -97,10 +107,10 @@ vec3 shade(hit_t hit){
 
     float diffuse_co=max(dot(L, N), 0);
     vec3 R=normalize(reflect(-L, N));
-    float specular_co=pow(max(dot(R, V), 0.0), 4);
+    float specular_co=pow(max(dot(R, -V), 0.0), 4);
     //vec3 voxel_color=vec3(1, 0, 0);
-    vec3 ambient=vec3(0.1, 0.1, 0.1);
-    vec3 voxel_color=ambient + diffuse_co*vec3(hit.material/255.0, 0,0);// + specular_co*vec3(1, 1, 1);//+specular_co*vec3(0, 0, 1);
+    vec3 ambient=vec3(0.1);
+    vec3 voxel_color=ambient + diffuse_co*vec3(hit.material/255.0, 0,0) + specular_co*vec3(0.2);//+specular_co*vec3(0, 0, 1);
     // use material color
     return voxel_color;
 }
@@ -109,7 +119,9 @@ vec3 shade(hit_t hit){
 // got some help from here
 // https://www.shadertoy.com/view/4dS3RG
 hit_t fvta_step(){
-    vec3 ro = findStartPos();
+    start_t start = findStartPos();
+    vec3 ro = start.pos;
+    vec3 normal = start.normal;
     vec3 rd = normalize(fV);
     vec3 voxel_index = floor(ro * (1./voxel_size));
     vec3 voxel_pos = voxel_size * voxel_index;
@@ -118,17 +130,6 @@ hit_t fvta_step(){
     vec3 sideDist = ((voxel_pos-ro)/voxel_size + 0.5 + rs * 0.5) * deltaDist;
     voxel_pos = voxel_size * (voxel_index + 0.1);
     int max_steps = int(3.0/voxel_size);
-
-    // calculate first normal
-    //vec3 mm = step(sideDist.yxy, sideDist.xyz) * step(sideDist.zzx, sideDist.xyz);
-    //vec3 normal = mm * vec3(1);
-    vec3 pos_in_voxel = mod(ro, voxel_size);
-    vec3 largest = vec3(
-    float(pos_in_voxel.x > pos_in_voxel.y)*float(pos_in_voxel.x > pos_in_voxel.z),
-    float(pos_in_voxel.y > pos_in_voxel.z)*float(pos_in_voxel.y > pos_in_voxel.x),
-    float(pos_in_voxel.z > pos_in_voxel.x)*float(pos_in_voxel.z > pos_in_voxel.y)
-    );
-    vec3 normal = -rs * largest;
 
     for (int i = 0; i < max_steps; i++){
         if (isInside(voxel_pos) < 0.5) {
@@ -160,9 +161,9 @@ void main()
     hit = fvta_step();
 
     vec3 color = vec3(hit.material/255.0, 0, 0);
-    color = shade(hit);
+    //color = shade(hit);
     //color = normalize(hit.normal * 0.5f + 0.5f);
-    //color = normalize(hit.normal);
+    color = normalize(hit.normal);
 
     fColor = vec4(color, 1.0);
 }
