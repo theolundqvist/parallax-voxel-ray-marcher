@@ -5,7 +5,7 @@ target_sources (
 	PRIVATE
 		[[assignment2.hpp]]
 		[[assignment2.cpp]]
-)
+ "util/Cell.cpp" "util/3DCA.cpp" "util/perlinNoise.cpp")
 
 target_link_libraries (EDAN35_Assignment2 PRIVATE assignment_setup)
 
@@ -22,7 +22,7 @@ target_sources (
 	PRIVATE
 		[[project.hpp]]
 		[[project.cpp]]
-)
+ "util/Cell.cpp" "util/3DCA.cpp" "util/perlinNoise.cpp")
 
 target_link_libraries (EDAN35_Project PRIVATE assignment_setup)
 

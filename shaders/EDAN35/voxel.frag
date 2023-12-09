@@ -6,13 +6,12 @@ uniform sampler3D voxels;
 uniform float voxel_size;
 uniform ivec3 grid_size;
 
-
-
+// color palette
+uniform vec3 terrainColorPalette[256];
 
 in vec3 fV;
 in vec3 pos;
 out vec4 fColor;
-
 
 bool isInside(vec3 pos){
   if(pos.x < 0.0 || pos.x > 1.0) return false;
@@ -34,14 +33,9 @@ vec3 trace(){
   discard;
 }
 
-
-
 void main()
 {
-
-
   vec3 color = trace();
 
   fColor = vec4(color, 1);
 }
-
