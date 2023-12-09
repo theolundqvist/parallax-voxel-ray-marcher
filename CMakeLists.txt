@@ -32,6 +32,8 @@ if (NOT CMAKE_BUILD_TYPE)
 endif (NOT CMAKE_BUILD_TYPE)
 set_property (CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS ${CMAKE_CONFIGURATION_TYPES})
 
+# set cmake standard
+set(CMAKE_CXX_STANDARD 20)
 
 # To be able to dowload and compile the dependencies
 find_package (Git REQUIRED)
