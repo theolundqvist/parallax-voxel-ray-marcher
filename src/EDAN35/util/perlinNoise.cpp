@@ -95,5 +95,10 @@ namespace Noise {
 			return grad(hash, p.x, p.y);
 		}
 
+		static glm::vec3* generateTerrainColorPalette(std::vector<glm::vec3> terrainColors,
+													  std::vector<glm::vec2> heightRange) {
+
+		}
+
 	};
 }

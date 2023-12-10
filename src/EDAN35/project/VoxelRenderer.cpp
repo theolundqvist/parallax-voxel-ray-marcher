@@ -17,6 +17,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
 
+static CA::CARule caRule = CA::chooseCARule(CA::CARuleName::pyroclastic);
+
 class VoxelRenderer {
 public:
 	VoxelRenderer(FPSCameraf* cam, ShaderProgramManager* shaderManager,
@@ -32,17 +34,32 @@ public:
 			voxel_program);
 
 		std::srand(std::time(nullptr));
-		int boundary = 100;
+		int boundary = 50;
 		auto tf = Transform().rotateAroundX(glm::radians(90.0f)).scale(3.0f);
 		createVolume(boundary, tf);
 
-		// init cells
-		int state = 2;
-		glm::vec3 center = glm::vec3(boundary / 2);
-		cells = CA::createCells(boundary);
-		CA::randomizeCells(cells, center, boundary, boundary, boundary, state);
+		// -------------------------------ca------------------------------------	
+		VoxelVolume::generateColorPalette(CA::colorsRed2Green, glm::vec2(0, 255));
 
-		// like init volume
+		// init cells
+		glm::vec3 center = glm::vec3(boundary / 2);
+		cells = CA::createCells(boundary, caRule.state);
+		CA::randomizeCells(cells, center, boundary, boundary, boundary, caRule.state);
+		//CA::randomizeCells(cells, center, 30, 30, 30, state);
+		// -------------------------------ca------------------------------------
+
+
+		// ----------------------------terrain----------------------------------
+
+
+
+
+
+
+
+
+		// ----------------------------terrain----------------------------------
+
 		for (auto volume : volumes) {
 			updateVolume(volume);
 		}
@@ -73,33 +90,65 @@ public:
 		for (int x = 0; x < volume->W; x++) {
 			for (int y = 0; y < volume->H; y++) {
 				for (int z = 0; z < volume->D; z++) {
+					// -------------------------------ca------------------------------------
 					int index = CA::convert3dIndexTo1d(x, y, z);
-					//auto pos = glm::vec3(x, y, z) + volume_pos;
-					//volume->setVoxel(x, y, z, wave(*elapsed_time_s * 0.001f, pos.x, pos.y, pos.z));
-					//volume->setVoxel(x, y, z, voxel_util::hash(glm::ivec3(x, y, z)));
-					volume->setVoxel(x, y, z, cells[index].getHp());
+					//volume->setVoxel(x, y, z, voxel_util::drawMode::pos2RGB, cells[index]);
+					//volume->setVoxel(x, y, z, voxel_util::drawMode::distance2RGB, cells[index]);
+					//volume->setVoxel(x, y, z, voxel_util::drawMode::density2RGB, cells[index]);
+					volume->setVoxel(x, y, z, voxel_util::drawMode::hp2RGB, cells[index]);
+					// -------------------------------ca------------------------------------
+
+					// ----------------------------terrain----------------------------------
+
+
+
+
+
+
+
+
+					// ----------------------------terrain----------------------------------
 				}
 			}
 		}
 	}
 
 
-
 	float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness) {
 
 		// sort volumes by distance to camera
 		glBeginQuery(GL_TIME_ELAPSED, elapsed_time_query);
+
 		for (auto volume : volumes) {
+
 			// set texel data
 			for (int x = 0; x < volume->W; x++) {
 				for (int y = 0; y < volume->H; y++) {
 					for (int z = 0; z < volume->D; z++) {
+						// -------------------------------ca------------------------------------
 						int index = CA::convert3dIndexTo1d(x, y, z);
-						volume->setVoxel(x, y, z, cells[index].getHp());
+						//volume->setVoxel(x, y, z, voxel_util::drawMode::pos2RGB, cells[index]);
+						//volume->setVoxel(x, y, z, voxel_util::drawMode::distance2RGB, cells[index]);
+						//volume->setVoxel(x, y, z, voxel_util::drawMode::density2RGB, cells[index]);
+						volume->setVoxel(x, y, z, voxel_util::drawMode::hp2RGB, cells[index]);
+						// -------------------------------ca------------------------------------
+
+						// ----------------------------terrain----------------------------------
+
+
+
+
+
+
+
+
+						// ----------------------------terrain----------------------------------
 					}
 				}
 			}
+
 			// render with texel data
+			// in this function will pass uniform to shader
 			volume->render(
 				glm::mat4(1.0f),
 				world_to_clip,
@@ -109,20 +158,13 @@ public:
 				basis_thickness
 			);
 
-			// update texels in volume
-			int state = 2;
-			bool survival[27] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1 };
-			bool spawn[27] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0,0,0,0,0,0,0 };
-			CA::updateCells(cells, survival, spawn, state);
 
-			for (int x = 0; x < volume->W; x++) {
-				for (int y = 0; y < volume->H; y++) {
-					for (int z = 0; z < volume->D; z++) {
-						//int index = CA::convert3dIndexTo1d(x, y, z);
-						volume->setVoxel(x, y, z, 0);
-					}
-				}
-			}
+			// -------------------------------ca------------------------------------
+			CA::updateCells(cells, caRule.survival, caRule.spawn, caRule.state);
+
+			volume->cleanVoxel();
+			// -------------------------------ca------------------------------------
+
 		}
 		glEndQuery(GL_TIME_ELAPSED);
 		glGetQueryObjectui64v(elapsed_time_query, GL_QUERY_RESULT,

@@ -5,16 +5,108 @@
 #include <cmath>
 
 namespace CA {
-	static int caCellBoundary = Cell::getCellBoundary();
-	static int caTotalCells = caCellBoundary * caCellBoundary * caCellBoundary;
-	static enum drawMode {
-		pos2RGB = 0,
-		distance2RGB = 1,
-		density2RGB = 2,
-		hp2RGB = 3
+	// this two line make ever time obatin the same cell boundary
+	//static int caCellBoundary = Cell::getCellBoundary();
+	//static int caTotalCells = caCellBoundary * caCellBoundary * caCellBoundary;
+
+	static struct CARule
+	{
+		int state;
+		std::vector<bool> survival;
+		std::vector<bool> spawn;
+	};
+
+	static std::vector<CARule> caRules = {
+		// pyroclastic
+		{
+			10, // state
+			{ 0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 },// survival
+			{ 0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 } // spawn
+		},
+		// 445
+		{
+			5, // state
+			{ 0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 },// survival
+			{ 0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 } // spawn
+		},
+		// 678
+		{
+			3, // state
+			{ 0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 },// survival
+			{ 0,0,0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 } // spawn
+		},
+		// amoeba
+		{
+			5, // state
+			{ 0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1 },// survival
+			{ 0,0,0,0,0,1,1,1,0,0,0,0,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0 } // spawn
+		},
+		// builder
+		{
+			10, // state
+			{ 0,0,1,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 },// survival
+			{ 0,0,0,0,1,0,1,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 }   // spawn
+		},
+		// cloud1
+		{
+			2, // state
+			{ 0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1 },// survival
+			{ 0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,0,0,0,0,0,0,0 }   // spawn
+		},
+		// spike growth
+		{
+			4, // state
+			{ 0,1,1,1,0,0,0,1,1,1,0,1,1,1,0,0,0,0,1,0,0,1,1,0,1,0,1 },// survival
+			{ 0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,1,1,1,1,1,0,1 }   // spawn
+		},
+	};
+
+	static enum CARuleName {
+		pyroclastic = 0,
+		rule445 = 1,
+		rule678 = 2,
+		amoeba = 3,
+		builder = 4,
+		cloud = 5,
+		spikeGrowth = 6
+	};
+
+	static CARule chooseCARule(int name) {
+		// should check name is in the carulename or not
+		return caRules[name];
+	}
+
+	// generate color palette
+	static std::vector<glm::vec3> colorsRed2Green = {
+		glm::vec3(0.0f, 0.0f, 0.0f),
+		// light red
+		glm::vec3(255, 153, 153),
+		// light orange
+		glm::vec3(255,204,153),
+		// light yellow
+		glm::vec3(255,255,153),
+		// green
+		glm::vec3(204, 255,153),
+		// light green
+		glm::vec3(153, 255, 153),
+	};
+
+	static std::vector<glm::vec3> colorsBlue2Pink = {
+		glm::vec3(153,255,255),
+		// light red
+		glm::vec3(153,204,255),
+		// light orange
+		glm::vec3(153,153,255),
+		// light yellow
+		glm::vec3(204,153,255),
+		// light green
+		glm::vec3(255,153,255),
+		// light blue
+		glm::vec3(255,204,229),
 	};
 
 	static int convert3dIndexTo1d(int x, int y, int z) {
+		int caCellBoundary = Cell::getCellBoundary();
 		return x + caCellBoundary * (y + caCellBoundary * z);
 	}
 
@@ -23,6 +115,7 @@ namespace CA {
 	}
 
 	static bool isValidIndex(int x, int y, int z, glm::ivec3 offset) {
+		int caCellBoundary = Cell::getCellBoundary();
 		if ((x + offset.x >= 0 && x + offset.x < caCellBoundary) &&
 			(y + offset.y >= 0 && y + offset.y < caCellBoundary) &&
 			(z + offset.z >= 0 && z + offset.z < caCellBoundary))
@@ -31,12 +124,11 @@ namespace CA {
 	}
 
 	// create cells with cell boundary
-	static std::vector<Cell> createCells(int cellBoundary) {
+	static std::vector<Cell> createCells(int cellBoundary, int state) {
 		std::vector<Cell> temp;
 		// don't forget to set the cellBoundary if it's not same as inpur parameter
-		if (caCellBoundary != cellBoundary) {
-			Cell::setCellBoundary(cellBoundary);
-		}
+		Cell::setCellBoundary(cellBoundary);
+		Cell::setCellState(state);
 		temp.reserve(cellBoundary * cellBoundary * cellBoundary);
 
 		for (int x = 0; x < cellBoundary; x++) {
@@ -74,6 +166,8 @@ namespace CA {
 
 	static void randomizeCells(std::vector<Cell>& cells, glm::vec3 center, int width,
 		int height, int depth, int state) {
+		int caCellBoundary = Cell::getCellBoundary();
+		int caTotalCells = caCellBoundary * caCellBoundary * caCellBoundary;
 		// reset all the cell in cells
 		for (int i = 0; i < caTotalCells; i++) {
 			// reset the hp and neighbours
@@ -91,6 +185,7 @@ namespace CA {
 	}
 
 	static void updateNeighbour(std::vector<Cell>& cells, std::vector<glm::ivec3>& offset, int state, int totalOffset) {
+		int caCellBoundary = Cell::getCellBoundary();
 		for (int x = 0; x < caCellBoundary; x++) {
 			for (int y = 0; y < caCellBoundary; y++) {
 				for (int z = 0; z < caCellBoundary; z++) {
@@ -110,7 +205,7 @@ namespace CA {
 						int sampleY = (y + offset[i].y + caCellBoundary) % caCellBoundary;
 						int sampleZ = (z + offset[i].z + caCellBoundary) % caCellBoundary;
 						int hp = cells[convert3dIndexTo1d(sampleX, sampleY, sampleZ)].getHp();
-						neighbours += (hp == (state-1));
+						neighbours += (hp == (state - 1));
 						//neighbours += (hp != 0);
 					}
 					cells[index].setNeightbour(neighbours);
@@ -119,7 +214,9 @@ namespace CA {
 		}
 	}
 
-	static void updateCells(std::vector<Cell>& cells, bool* survival, bool* spawn, int state) {
+	static void updateCells(std::vector<Cell>& cells, std::vector<bool>& survival,
+		std::vector<bool>& spawn, int state) {
+		int caCellBoundary = Cell::getCellBoundary();
 		int totalOffset = 26;
 		std::vector<glm::ivec3> offsets = getOffset(-1, 1);
 
@@ -164,17 +261,13 @@ namespace CA {
 		}
 	}
 
-	static void drawCells(std::vector<Cell>& cells, int drawMode) {
+	// need state - 1 colors cause 0 doesn't need a color, it disappear
+	static glm::vec3* generateStateColorPalette(int state, glm::vec3* colors) {
 
 	}
 
+	// assume the center
+	static glm::vec3* generateDisColorPalette(int boundary, glm::vec3 center, glm::vec3* colors) {
 
-	// caculate color
-	// method 1: using pos
-
-	// method 2: using distance from center
-
-	// method 3: using state
-
-	// method 4: using neighbour density
+	}
 };

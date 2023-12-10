@@ -8,6 +8,10 @@ uniform float voxel_size;
 uniform ivec3 grid_size;
 uniform vec3 light_direction;
 
+// cell color palette
+// don't forget to change the size here
+uniform vec3 colorPalette[256];
+
 // world space
 flat in float face_dot_v;
 
@@ -196,7 +200,8 @@ hit_t fvta_step(){
 
         if (isInside(voxel_position) < 0.5) discard;
 
-        int material = int(round(texture(volume, voxel_position).r*255));//select a point which is a little bit inside the voxel
+        //int material = int(round(texture(volume, voxel_position).r*255));//select a point which is a little bit inside the voxel
+        int material = texture(volume, voxel_position).r);//select a point which is a little bit inside the voxel
         if (material != 0)
         {
             return hit_t(
@@ -213,6 +218,8 @@ hit_t fvta_step(){
 }
 
 
+// do the pos2RGB in gpu, it will faster
+
 
 void main()
 {
@@ -224,7 +231,8 @@ void main()
     //hit = fixed_step();
     hit = fvta_step();
 
-    vec3 color = vec3(hit.voxel);
+    //vec3 color = vec3(hit.voxel);
+    vec3 color = colorPalette[hit.material];
     //color = shade(hit);
     //color = normalize(hit.last_voxel - hit.voxel);
 
