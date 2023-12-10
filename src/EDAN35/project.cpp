@@ -115,7 +115,7 @@ void edan35::Project::run() {
 
 
     glClearDepthf(1.0f);
-    glClearColor(1.0f, 1.0f, 0.94f, 1.0f);
+    glClearColor(0.85f, 0.85f, 0.74f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
     auto lastTime = std::chrono::high_resolution_clock::now();
@@ -190,7 +190,7 @@ void edan35::Project::run() {
 
         mWindowManager.NewImGuiFrame();
 
-        glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+        glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         // RENDER
         app->render(show_basis, basis_length_scale, basis_thickness_scale, dt);

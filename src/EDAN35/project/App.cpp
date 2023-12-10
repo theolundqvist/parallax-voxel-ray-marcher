@@ -17,6 +17,30 @@
 #include <iostream>
 
 class App {
+private:
+    VoxelRenderer *renderer;
+    bool showCrosshair = false;
+    bool dragToMove = true;
+    bool showFps = true;
+    bool freeView = false;
+    UI *ui;
+    InputHandler *inputHandler;
+    GLFWwindow *window;
+    FPSCameraf *camera;
+
+    GameObject *hitMax;
+    GameObject *hitMin;
+
+    typedef struct key_cooldown_t {
+        float cooldown;
+        float last_press;
+    } key_cooldown_t;
+    std::map<int, key_cooldown_t> cooldowns = {};
+
+    float *elapsed;
+    settings_t settings;
+    GameObject *playerBody;
+
 public:
     App(GLFWwindow *window, FPSCameraf *cam, InputHandler *inputHandler,
         ShaderProgramManager *shaderManager, float *elapsed_time_ms) {
@@ -169,28 +193,4 @@ public:
         return pressed;
     }
 
-private:
-    VoxelRenderer *renderer;
-    bool showCrosshair = false;
-    bool dragToMove = true;
-    bool showFps = true;
-    bool freeView = false;
-    UI *ui;
-    InputHandler *inputHandler;
-    GLFWwindow *window;
-    FPSCameraf *camera;
-
-    GameObject *hitMax;
-    GameObject *hitMin;
-
-    typedef struct key_cooldown_t {
-        float cooldown;
-        float last_press;
-    } key_cooldown_t;
-    std::map<int, key_cooldown_t> cooldowns = {};
-
-
-    float *elapsed;
-    settings_t settings;
-    GameObject *playerBody;
 };

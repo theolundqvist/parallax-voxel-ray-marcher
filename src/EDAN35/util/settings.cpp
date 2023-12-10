@@ -3,6 +3,6 @@
 //
 #pragma once
 typedef struct settings_t{
-    float edit_size = 0.5f;
-    float edit_cooldown = 100.0f;
+    float edit_size = 0.8f;
+    float edit_cooldown = 50.0f;
 } settings_t;
