@@ -67,37 +67,37 @@ public:
         auto tf = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
         renderer->remove_volumes();
         //for(int i = 0; i < scene->volumes; i++){
-           renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
+        renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
         //}
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
         setupScene();
     }
 
 
-
-    void setupScene(){
+    void setupScene() {
         int rule = scene->rule;
         float time = *this->elapsed;
-        switch(scene->nbr){
+        switch (scene->nbr) {
             case SCENES::QUAD_FIXED:
                 scene->voxel_count = scene->volume_size * scene->volume_size;
-                renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev){
-                    if(rule == 2){
-                        if(!voxel_util::wave(0.01f, x, y, z, 8)) return 0;
+                renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+                    if (rule == 1) return 255;
+                    if (rule == 3) {
+                        if (!voxel_util::wave(0.01f, x, y, z, 8)) return 0;
                     }
                     return voxel_util::hash(glm::ivec3(x, y, z));
                 });
                 break;
             case SCENES::CUBE_FIXED:
-                renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev){
-                    if(rule >= 2){
-                        if(!voxel_util::wave(time*0.001f, x, y, z, 8)) return 0;
+                renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+                    if (rule >= 2) {
+                        if (!voxel_util::wave(rule == 4 ? 1.0f : time * 0.001f, x, y, z, 8)) return 0;
                     }
                     return voxel_util::hash(glm::ivec3(x, y, z));
                 });
                 break;
             case SCENES::CUBE_FVTA_STEP:
-                renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev){
+                renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
                     return voxel_util::hash(glm::ivec3(x, y, z));
                 });
                 break;
@@ -117,16 +117,17 @@ public:
                 break;
         }
     }
-    void updateScene(const std::chrono::microseconds deltaTimeUs){
-        switch(scene->nbr){
+
+    void updateScene(const std::chrono::microseconds deltaTimeUs) {
+        switch (scene->nbr) {
             case SCENES::QUAD_FIXED:
-                if(scene->ruled_changed){
+                if (scene->ruled_changed) {
                     scene->ruled_changed = false;
                     setupScene();
                 }
                 break;
             case SCENES::CUBE_FIXED:
-                if(scene->ruled_changed || scene->rule >= 2){
+                if (scene->ruled_changed || scene->rule >= 2) {
                     scene->ruled_changed = false;
                     setupScene();
                 }
@@ -151,24 +152,25 @@ public:
         }
 
         int rule = scene->rule;
-        if (getKey(GLFW_KEY_DOWN)) rule-=1;
-        if (getKey(GLFW_KEY_UP)) rule+=1;
+        if (getKey(GLFW_KEY_DOWN)) rule -= 1;
+        if (getKey(GLFW_KEY_UP)) rule += 1;
         rule = glm::clamp(rule, 1, scene->highest_rule);
-        if(rule != scene->rule) {
+        if (rule != scene->rule) {
             scene->rule = rule;
             scene->ruled_changed = true;
         }
 
-        if (getKey(GLFW_KEY_LEFT)) current_scene-=1;
-        if (getKey(GLFW_KEY_RIGHT)) current_scene+=1;
-        current_scene = glm::clamp(current_scene, 0, (int)NBR_SCENES-1);
+        if (getKey(GLFW_KEY_LEFT)) current_scene -= 1;
+        if (getKey(GLFW_KEY_RIGHT)) current_scene += 1;
+        current_scene = glm::clamp(current_scene, 0, (int) NBR_SCENES - 1);
         if (current_scene != scene->nbr) setScene(current_scene);
 
-        if(scene->orbit) renderer->orbit(deltaTimeUs.count() * 0.001f);
+        if (scene->orbit) renderer->orbit(deltaTimeUs.count() * 0.001f);
 
         // dev
-        if(getKey(GLFW_KEY_O)) {
-            printf("cam pos: %f, %f, %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y, camera->mWorld.GetTranslation().z);
+        if (getKey(GLFW_KEY_O)) {
+            printf("cam pos: %f, %f, %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y,
+                   camera->mWorld.GetTranslation().z);
         }
 
     }

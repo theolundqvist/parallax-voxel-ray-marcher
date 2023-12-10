@@ -49,8 +49,8 @@ typedef struct scene_settings_t {
 } scene_settings_t;
 
 scene_settings_t scenes[] = {
-        {0, "Quad fixed",     camera_positions[QUAD],         2, 0},
-        {1, "Cube fixed",     camera_positions[CUBE],         3, 0},
+        {0, "Quad fixed",     camera_positions[QUAD],         3, 0},
+        {1, "Cube fixed",     camera_positions[CUBE],         4, 0},
         {2, "Cube FVTA step", camera_positions[CUBE],         4, 1},
         {3, "Shaders",        camera_positions[CUBE],         3, 1},
         {4, "Free view",      camera_positions[CUBE],         1, 16,  1, 0,  false, true},
