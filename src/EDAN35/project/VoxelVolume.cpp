@@ -227,9 +227,9 @@ public:
         setUniforms(tf, world_to_clip, cam_pos);
 
         // render
-        //glEnable(GL_CULL_FACE);
-        //glFrontFace(GL_CW);
-        //glCullFace(GL_FRONT);
+        glEnable(GL_CULL_FACE);
+        glFrontFace(GL_CCW);
+        glCullFace(GL_FRONT);
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
