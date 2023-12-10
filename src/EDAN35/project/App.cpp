@@ -16,6 +16,7 @@
 #include <map>
 #include <iostream>
 
+
 class App {
 private:
     VoxelRenderer *renderer;
@@ -133,11 +134,22 @@ public:
                 showCrosshair = !showCrosshair;
                 dragToMove = !dragToMove;
             }
+            if(getKey(GLFW_KEY_Z))
+            {
+                is_using_FVTA = !is_using_FVTA;
+            }
             if (getKey(GLFW_KEY_F))
                 showFps = !showFps;
 
             if (getKey(GLFW_KEY_P)) {
                 freeView = !freeView;
+            }
+            if (getKey(GLFW_KEY_X)) {
+                choose_color++;
+            }
+            if (choose_color > 7)
+            {
+                choose_color = 0;
             }
 
             if (getKey(GLFW_KEY_SPACE, PRESSED, settings.edit_cooldown) ||

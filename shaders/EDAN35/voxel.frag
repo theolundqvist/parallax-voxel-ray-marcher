@@ -7,7 +7,8 @@ uniform sampler3D volume;
 uniform float voxel_size;
 uniform ivec3 grid_size;
 uniform vec3 light_direction;
-
+uniform bool using_FVTA;
+uniform int Choose_color;
 // world space
 flat in float face_dot_v;
 
@@ -305,21 +306,50 @@ void main()
 
     //vec3 color = findStartPos();
     hit_t hit;
-    //hit = fixed_step();
-    hit = fvta_step();
+    if(!using_FVTA)
+    {
+       hit = fixed_step();
+    }
+    else
+    {
+       hit = fvta_step();
+    }
     if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
         discard;
     }
     vec3 color = vec3(hit.material/255.0, 0, 0);
-    color = shade(hit);
-    color *= ao(hit);
-    //color = hit.pixel_pos;
-    //color = hit.voxel_pos;
-    //color = normalize(hit.normal) * 0.5 + 0.5;
-    //color = hit.uvw;
-    //color = vec3(hit.uv, 1.0);
-    //color = vec3(hit.depth);
-
+    if(Choose_color==0)
+    {
+       color = shade(hit);
+    }
+    else if(Choose_color==1)
+    {
+       color *= ao(hit);
+    }
+    else if(Choose_color==2)
+    {
+       color = hit.pixel_pos;
+    }
+    else if(Choose_color==3)
+    {
+       color = hit.voxel_pos;
+    }
+    else if(Choose_color==4)
+    {
+       color = normalize(hit.normal) * 0.5 + 0.5;
+    }
+    else if(Choose_color==5)
+    {
+       color = hit.uvw;
+    }
+    else if(Choose_color==6)
+    {
+       color = vec3(hit.uv, 1.0); 
+    }
+    else if(Choose_color==7)
+    {
+       color = vec3(hit.depth);
+    }
 
     fColor = vec4(color, 1.0);
 }

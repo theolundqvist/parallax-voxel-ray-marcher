@@ -5,6 +5,10 @@
 #include "core/opengl.hpp"
 #include <glm/gtx/component_wise.hpp>
 
+
+bool is_using_FVTA = false;
+int choose_color = 0;
+
 class VoxelVolume {
 private:
     GLubyte *texels;
@@ -247,7 +251,10 @@ public:
 private:
     void setUniforms(glm::mat4 const &tf,
                      glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
-
+        // choose fixed step and FVTA
+        glUniform1i(glGetUniformLocation(program, "using_FVTA"), is_using_FVTA);
+        // choose color
+        glUniform1i(glGetUniformLocation(program, "Choose_color"), choose_color);
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
         // grid size

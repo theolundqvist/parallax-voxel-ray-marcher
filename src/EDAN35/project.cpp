@@ -21,6 +21,7 @@
 
 #include <list>
 #include <map>
+#include "project/App.cpp"
 
 edan35::Project::Project(WindowManager &windowManager)
         : mCamera(0.5f * glm::half_pi<float>(),
@@ -129,6 +130,7 @@ void edan35::Project::run() {
     float basis_length_scale = 1.0f;
     bool camera_free_view = false;
     bool hideMouse = false;
+
     while (!glfwWindowShouldClose(window)) {
         auto const nowTime = std::chrono::high_resolution_clock::now();
         auto const deltaTimeUs =
@@ -217,6 +219,7 @@ void edan35::Project::run() {
         glfwSwapBuffers(window);
         //const auto end = std::chrono::high_resolution_clock::now();
         //printf("frame time: %f ms\n", std::chrono::duration<float>(end - now).count() * 1000.0f);
+        //std::cout << is_using_FVTA;
     }
 }
 
