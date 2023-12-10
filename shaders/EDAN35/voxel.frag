@@ -38,6 +38,41 @@ struct start_t{
     vec3 normal;
 };
 
+vec3 uvw_to_normal(vec3 uvw){
+    // find normal
+    vec3 hit_to_center = uvw - vec3(0.5);
+    vec3 abs_hit_to_center = abs(hit_to_center);
+    float max_component = max(max(abs_hit_to_center.x, abs_hit_to_center.y), abs_hit_to_center.z);
+
+    vec3 normal;
+    if (abs_hit_to_center.x == max_component) {
+        normal = vec3(sign(hit_to_center.x), 0.0, 0.0);
+    } else if (abs_hit_to_center.y == max_component) {
+        normal = vec3(0.0, sign(hit_to_center.y), 0.0);
+    } else {
+        normal = vec3(0.0, 0.0, sign(hit_to_center.z));
+    }
+    return normal;
+}
+
+vec2 uvw_to_uv(vec3 uvw){
+    // Variables to hold the UV coordinates on the cube's face
+    vec2 uv;
+    // Determine which component is dominant (furthest from the cube's center)
+    float maxComponent = max(max(abs(uvw.x), abs(uvw.y)), abs(uvw.z));
+    if (maxComponent == uvw.x) {
+        uv = uvw.zy;
+        if (uvw.x < 0.5) uv.x = 1.0 - uv.x;
+    } else if (maxComponent == uvw.y) {
+        uv = uvw.xz;
+        //if (uvw.y < 0.5) uv.x = 1.0 - uv.x;
+    } else {
+        uv = uvw.xy;
+        //if (uvw.z < 0.5) uv.x = 1.0 - uv.x;
+    }
+    return uv;
+}
+
 // Work In Progress
 start_t findStartPos(){
     vec3 dir = normalize(fV);
@@ -72,20 +107,7 @@ start_t findStartPos(){
     if (length(near-pos) > length(model_cam_pos - pos)){
         return start_t(model_cam_pos, vec3(0, 0, 0));// 0.0 - 1.0
     }
-    // find normal
-    vec3 hit_to_center = near - vec3(0.5);
-    vec3 abs_hit_to_center = abs(hit_to_center);
-    float max_component = max(max(abs_hit_to_center.x, abs_hit_to_center.y), abs_hit_to_center.z);
-
-    vec3 normal;
-    if (abs_hit_to_center.x == max_component) {
-        normal = vec3(sign(hit_to_center.x), 0.0, 0.0);
-    } else if (abs_hit_to_center.y == max_component) {
-        normal = vec3(0.0, sign(hit_to_center.y), 0.0);
-    } else {
-        normal = vec3(0.0, 0.0, sign(hit_to_center.z));
-    }
-    return start_t(near, normal);
+    return start_t(near, uvw_to_normal(near));
 }
 
 struct hit_t {
@@ -160,25 +182,52 @@ hit_t fvta_step(){
     vec3 rs = sign(rd);
     vec3 deltaDist = voxel_size/rd;
     vec3 sideDist = ((voxel_pos-ro)/voxel_size + 0.5 + rs * 0.5) * deltaDist;
-    voxel_pos = voxel_size * (voxel_index + 0.1);
+    //voxel_pos = voxel_size * (voxel_index + 0.1);
     int max_steps = int(3.0/voxel_size);
 
     vec3 final_pos = ro * 1./voxel_size;
+    float t = 0.0;
+    vec3 pos = ro;//voxel_size * (voxel_index + 0.1);
+    vec3 uvw = (pos - voxel_pos)/voxel_size;
+    vec2 uv = uvw_to_uv(uvw);
 
     for (int i = 0; i < max_steps; i++){
-        if (isInside(voxel_pos) < 0.5) {
+        int mat = int(round(texture(volume, pos).r*255));
+        if (mat > 0){
+            return hit_t(pos, vec3(uv, 1), normal, mat);
+        }
+        if (isInside(pos) < 0.5) {
             discard;
         }
-        int mat = int(round(texture(volume, voxel_pos).r*255));
-        if (mat > 0){
-            return hit_t(voxel_pos, fract(final_pos), normal, mat);
+/*
+        if (sideDist.x < sideDist.y && sideDist.x < sideDist.z) {
+            // X-axis traversal.
+            normal = -vec3(1, 0, 0) * rs;
+            t = sideDist.x * rd;
+        } else if (sideDist.y < sideDist.z) {
+            // Y-axis traversal.
+            normal = -vec3(0, 1, 0) * rs;
+            t = sideDist.y * rd;
+        } else {
+            // Z-axis traversal.
+            normal = -vec3(0, 0, 1) * rs;
+            t = sideDist.z * rd;
         }
+*/
         // black magic compare between sideDist.x < sideDist.y && sideDist.x < sideDist.z etc
         vec3 mm = step(sideDist.xyz, sideDist.yxy) * step(sideDist.xyz, sideDist.zzx);
         normal = -mm * rs;
+
         voxel_pos += voxel_size * -normal;
+
+        // other stuff that is nice to know
+        vec3 mini = ((voxel_pos-ro)/voxel_size + 0.5 - 0.5*vec3(rs))*deltaDist;
+        t = max ( mini.x, max ( mini.y, mini.z ) );
+        pos = ro + rd * (t + Epsilon);
+        uvw = (pos - voxel_pos)/voxel_size;
+        uv = vec2(dot(mm.yzx, uvw), dot(mm.zxy, uvw));
+
         sideDist += -normal * deltaDist;
-        final_pos += mm * (-normal * deltaDist);
     }
     discard;
 }
@@ -237,7 +286,7 @@ void main()
     vec3 color = vec3(hit.material/255.0, 0, 0);
     color = shade(hit);
     //color *= ao(hit);
-    //color = hit.position;
+    color = hit.position;
     //color = normalize(hit.normal * 0.5f + 0.5f);
     //color = normalize(hit.normal);
 
