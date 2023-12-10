@@ -301,7 +301,7 @@ float ao(hit_t hit){
 void main()
 {
     // custom front face culling to do it based on cam pos
-    //if (face_dot_v < 0.0) discard;
+    if (face_dot_v < 0.0) discard;
 
     //vec3 color = findStartPos();
     hit_t hit;
