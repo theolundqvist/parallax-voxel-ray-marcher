@@ -1,5 +1,5 @@
 #version 410
-#define Epsilon 0.00001
+#define Epsilon 0.000001
 
 // uniform vec3 light_position;
 uniform vec3 camera_position;
@@ -105,8 +105,8 @@ start_t findStartPos(){
 
 
     // first intersection with cube
-    vec3 near =  origin + dir * (tmin + Epsilon);
-    vec3 far =  origin + dir * (tmax);
+    vec3 near =  origin + dir * (tmin + Epsilon * 10.0f);
+    vec3 far =  origin + dir * (tmax - Epsilon);
     // if camera is closer to the pos on the backface than the intersect, return the camera pos
     if (length(near-pos) > length(model_cam_pos - pos)){
         return start_t(model_cam_pos, vec3(0, 0, 0));// 0.0 - 1.0
