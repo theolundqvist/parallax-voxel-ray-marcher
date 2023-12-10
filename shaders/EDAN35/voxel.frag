@@ -260,25 +260,42 @@ mat4 rotationZ(in float angle) {
     0, 0, 0, 1);
 }
 float ao(hit_t hit){
+    //float edge_x = clamp(pow(abs(hit.uv.x-0.5)+0.5, 20), 0, 1);
+    //float edge_y = clamp(pow(abs(hit.uv.y-0.5)+0.5, 20), 0, 1);
+    //return max(edge_x, edge_y);
     vec3 N=normalize(hit.normal);
     vec3 P = hit.pixel_pos;
-    float ao_inv = 1.0;
-    int nbr_samples = 10;
-    float r = voxel_size * 0.2;
+    float ao = 0.0;
+    int nbr_samples = 4;
+    float r_rel = 0.04;
+    // save some texture reads by only sampling edges
+    if(hit.uv.x > r_rel && hit.uv.x < 1-r_rel && hit.uv.y > r_rel && hit.uv.y < 1-r_rel) return 1.0;
+    float r = voxel_size * r_rel;
+    //if(hit.uv.y > r && hit.uv.y < 1.0 - r) return 1.0;
     vec3 sphere_center = P + N * r;
-    vec3 bitangent = cross(N, vec3(0.5, 0.5, 0.5));
+    vec3 tangent = vec3(1) - abs(N);
+    mat4 rot = mat4(1.0f);
+    float angle = 3.14159265359*2.0 * 1/nbr_samples;
+    if(abs(N.x) > 0.01){
+        rot = rotationX(angle);
+    }
+    else if(abs(N.y) > 0.01){
+        rot = rotationY(angle);
+    }
+    else {
+        rot = rotationZ(angle);
+    }
     for (int i = 0; i < nbr_samples; i++){
         // rotate bitangent
-        float angle = 2.0 * 3.14159265359 * float(i)/float(nbr_samples);
-        bitangent = normalize((rotationZ(angle * N.z) * rotationX(angle * N.x) * rotationY(angle * N.y) * vec4(bitangent, 1.0)).xyz);
-        vec3 sample_point =  sphere_center + bitangent * r*0.5;
+        tangent = normalize((rot * vec4(tangent,1)).xyz);
+        vec3 sample_point =  sphere_center + tangent * r;
         if (isInside(sample_point) < 0.5) continue;
         float material = texture(volume, sample_point).r * 255.0;
         if (material > 0.0){
-            ao_inv -= 1.0/(nbr_samples+1.0);
+            ao += 1.0/(nbr_samples*2.0);
         }
     }
-    return ao_inv;
+    return mix(smoothstep(0, 1, 1-2*ao), 1 , 1-ao);
 }
 
 void main()
@@ -295,7 +312,7 @@ void main()
     }
     vec3 color = vec3(hit.material/255.0, 0, 0);
     color = shade(hit);
-    //color *= ao(hit);
+    color *= ao(hit);
     //color = hit.pixel_pos;
     //color = hit.voxel_pos;
     //color = normalize(hit.normal) * 0.5 + 0.5;
