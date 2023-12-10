@@ -43,7 +43,7 @@ public:
         //createVolume(16, tf);
         for (int x = 0; x < 3; ++x) {
             for (int z = 0; z < 3; ++z) {
-                createVolume(16, tf.translated(x * 3, 0, z * 3));
+                createVolume(128, tf.translated(x * 3, 0, z * 3));
             }
         }
         for (auto volume: volumes) {

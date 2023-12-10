@@ -312,7 +312,7 @@ void main()
     }
     vec3 color = vec3(hit.material/255.0, 0, 0);
     color = shade(hit);
-    color *= ao(hit);
+    //color *= ao(hit);
     //color = hit.pixel_pos;
     //color = hit.voxel_pos;
     //color = normalize(hit.normal) * 0.5 + 0.5;

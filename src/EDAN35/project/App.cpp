@@ -73,8 +73,7 @@ public:
     void render(bool show_basis, float basis_length_scale,
                 float basis_thickness_scale, float dt) {
         const auto now = std::chrono::high_resolution_clock::now();
-        float gpu_time;
-        float cpu_time = dt;
+        float gpu_time, cpu_time;
         switch (state) {
             case RUNNING:
                 if (!freeView) frozen_view_matrix = camera->GetWorldToClipMatrix();
@@ -84,6 +83,7 @@ public:
                         show_basis,
                         basis_length_scale,
                         basis_thickness_scale);
+                cpu_time = dt - gpu_time;
                 if (freeView)
                     playerBody->render(
                             frozen_view_matrix,
