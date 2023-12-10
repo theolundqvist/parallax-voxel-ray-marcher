@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <imgui.h>
 #include "AppState.cpp"
+#include "demo_scenes.cpp"
 #include "settings.cpp"
 
 class UI {
@@ -70,6 +71,24 @@ public:
         ImGui::End();
     }
 
+    void displaySceneSettings(scene_settings_t *scene){
+        auto flags = ImGuiWindowFlags_NoDecoration |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
+        ImGui::Begin("SCENE", nullptr, flags);
+        int h = window_size.y / window_scale.y;
+        int number_rows = 3;
+        float font_scale = 0.25f;
+        ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
+        ImGui::SetWindowFontScale(font_scale);
+        ImGui::PushFont(font1);
+        ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr, scene->name.c_str());
+        ImGui::TextColored(ImColor(0,0,0),"Current rule: %d/%d", scene->rule, scene->highest_rule);
+        ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", scene->voxel_count);
+        ImGui::PopFont();
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::End();
+    }
 
     void displaySettings(settings_t settings){
         auto flags = ImGuiWindowFlags_NoDecoration |

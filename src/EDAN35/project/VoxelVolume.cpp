@@ -70,7 +70,16 @@ public:
         return setVoxel(index.x, index.y, index.z, value);
     }
 
-    void setVolumeData(GLubyte *data) { texels = data; }
+    void updateVoxels(std::function<GLubyte(int x,int y,int z, GLubyte previous)> const get_material){
+        for (int x = 0; x < W; x++) {
+            for (int y = 0; y < H; y++) {
+                for (int z = 0; z < D; z++) {
+                    int prev = texels[x + y * W + z * W * H];
+                    texels[x + y * W + z * W * H] = get_material(x,y,z, prev);
+                }
+            }
+        }
+    }
 
     void setVolumeData3D(GLubyte ***data) {
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
@@ -174,8 +183,6 @@ public:
             int max_step = (int) (1.0 / step_size * 1.0 / step_size * 1.0 / voxel_size);
             for (i = 0; i < max_step; ++i) {
                 auto INDEX = localToIndex(inverse.apply(P));
-                printf("index: %d %d %d\n", INDEX.x, INDEX.y, INDEX.z);
-                printf("local: %f %f %f\n", P.x, P.y, P.z);
                 auto mat = getVoxel(INDEX);
                 if (mat > 0) {
                     return {false, INDEX, (GLubyte)mat, this, P};

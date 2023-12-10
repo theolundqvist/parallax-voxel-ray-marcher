@@ -18,6 +18,7 @@
 #include <stdexcept>
 
 #include "project/App.cpp"
+#include "project/DemoApp.cpp"
 
 #include <list>
 #include <map>
@@ -52,7 +53,7 @@ void edan35::Project::run() {
     // Set up the camera
     mCamera.mWorld.SetTranslate(glm::vec3(0.0f, 0.0f, 6.0f));
     mCamera.mMouseSensitivity = glm::vec2(0.003f);
-    mCamera.mMovementSpeed = glm::vec3(6.0f); // 3 m/s => 10.8 km/h
+    mCamera.mMovementSpeed = glm::vec3(3.0f); // 3 m/s => 10.8 km/h
     //
     // Load all textures.
     //
@@ -111,7 +112,7 @@ void edan35::Project::run() {
     // GameObject::addShaderToLibrary(&program_manager, "shield",
     //                                phong_set_uniforms);
 
-    auto app = new App(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
+    auto app = new DemoApp(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
 
 
     glClearDepthf(1.0f);

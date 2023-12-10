@@ -231,7 +231,7 @@ hit_t fvta_step(){
         // other stuff that is nice to know
         vec3 mini = ((voxel_pos-ro)/voxel_size + 0.5 - 0.5*vec3(rs))*deltaDist;
         t = max (mini.x, max (mini.y, mini.z));
-        pos = ro + rd * (t + Epsilon);
+        pos = ro + rd * (t + Epsilon * 1.0);
         uvw = (pos - voxel_pos)/voxel_size;
         uv = vec2(dot(mm.yzx, uvw), dot(mm.zxy, uvw));
 
