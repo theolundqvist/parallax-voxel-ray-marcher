@@ -10,6 +10,6 @@ public:
     std::hash<std::string> hasher;
     return (GLubyte)hasher(std::to_string(index.x) + std::to_string(index.y) +
                            std::to_string(index.z)) %
-           255;
+           254 + 1;
   }
 };
