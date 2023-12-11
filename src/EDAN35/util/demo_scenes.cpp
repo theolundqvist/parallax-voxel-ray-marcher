@@ -56,7 +56,7 @@ scene_settings_t scenes[] = {
         {5, "SDF",            camera_positions[CUBE_CAM],         4,  1, 128, 1,  true},
         {6, "CA",             camera_positions[CUBE_CAM],         4,  1, 128, 1,  true},
         {7, "Noise",          camera_positions[CUBE_CAM],         3,  1, 128, 1,  true},
-        {8, "Minecraft",      camera_positions[NINE_BY_NINE_CAM], 40, 1, 128, 1,  false, 3},
+        {8, "Minecraft",      camera_positions[NINE_BY_NINE_CAM], 100, 1, 128, 1,  false, 3},
 };
 
 enum SCENES {

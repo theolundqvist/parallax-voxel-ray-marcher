@@ -18,7 +18,7 @@ public:
 
     UI(GLFWwindow *window) {
         io = ImGui::GetIO();
-        font_height = config::resolution_x/10.0f;
+        font_height = config::resolution_x / 10.0f;
         font1 = io.Fonts->AddFontFromFileTTF(
                 config::resources_path("fonts/Poppins-Regular.ttf").c_str(), font_height);
         this->window = window;
@@ -33,64 +33,72 @@ public:
         window_scale = glm::ivec2(xscale, yscale);
         window_size = glm::ivec2(w, h);
         //printf("fbSize=%dx%d, scale=%.2fx%.2f\n", w, h, xscale, yscale);
-        ImGui::SetWindowSize(ImVec2((float)w/xscale, (float)h/yscale));
+        ImGui::SetWindowSize(ImVec2((float) w / xscale, (float) h / yscale));
     }
 
 
     std::list<float> gpu_times = {};
     std::list<float> cpu_times = {};
+
     void fps(float gpu_time, float cpu_time, int sliding_mean = 10) {
         gpu_times.push_back(gpu_time);
         cpu_times.push_back(cpu_time);
-        if(gpu_times.size() > sliding_mean) {
+        if (gpu_times.size() > sliding_mean) {
             gpu_times.pop_front();
             cpu_times.pop_front();
         }
         gpu_time = 0.0;
         cpu_time = 0.0;
-        for(auto time : gpu_times) {
+        for (auto time: gpu_times) {
             gpu_time += time;
         }
-        for(auto time : cpu_times) {
+        for (auto time: cpu_times) {
             cpu_time += time;
         }
-        gpu_time /= (float)gpu_times.size();
-        cpu_time /= (float)cpu_times.size();
+        gpu_time /= (float) gpu_times.size();
+        cpu_time /= (float) cpu_times.size();
         auto flags = ImGuiWindowFlags_NoDecoration |
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
         ImGui::Begin("fps", nullptr, flags);
-        ImGui::SetWindowPos(ImVec2(0,0));
+        ImGui::SetWindowPos(ImVec2(0, 0));
         ImGui::SetWindowFontScale(0.3f);
         ImGui::PushFont(font1);
-        ImGui::TextColored(ImColor(0,0,0),"FPS: %.0f", ImGui::GetIO().Framerate);
-        ImGui::TextColored(ImColor(0,0,0),"GPU: %.2f ms", gpu_time);
-        ImGui::TextColored(ImColor(0,0,0), "CPU: %.2f ms", cpu_time);
+        ImGui::TextColored(ImColor(0, 0, 0), "FPS: %.0f", ImGui::GetIO().Framerate);
+        ImGui::TextColored(ImColor(0, 0, 0), "GPU: %.2f ms", gpu_time);
+        ImGui::TextColored(ImColor(0, 0, 0), "CPU: %.2f ms", cpu_time);
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();
     }
 
-    void displaySceneSettings(scene_settings_t *scene){
+    void displaySceneSettings(scene_settings_t *scene, float elapsed) {
         auto flags = ImGuiWindowFlags_NoDecoration |
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
         ImGui::Begin("SCENE", nullptr, flags);
         int h = window_size.y / window_scale.y;
-        int number_rows = 3;
+        int number_rows = 4;
         float font_scale = 0.25f;
-        ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
+        ImGui::SetWindowPos(ImVec2(0, h - font_height * font_scale * (number_rows + 1)));
         ImGui::SetWindowFontScale(font_scale);
         ImGui::PushFont(font1);
-        ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr+1, scene->name.c_str());
-        ImGui::TextColored(ImColor(0,0,0),"Current rule: %d/%d", scene->rule, scene->highest_rule);
-        ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", scene->voxel_count);
+        ImGui::TextColored(ImColor(0, 0, 0), "Current Scene: %d - (%s)", scene->nbr + 1, scene->name.c_str());
+        ImGui::TextColored(ImColor(0, 0, 0), "Current rule: %d/%d", scene->rule, scene->highest_rule);
+        float count = scene->voxel_count;
+        if (count > 1e6)
+            ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %.1f M", count/1e6);
+        else if (count > 1e3)
+            ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %.1f K", count/1e3);
+        else
+            ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %d", (int)count);
+        ImGui::TextColored(ImColor(0, 0, 0), "Time: %.0f s", elapsed/1000.f);
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();
     }
 
-    void displaySettings(settings_t settings){
+    void displaySettings(settings_t settings) {
         auto flags = ImGuiWindowFlags_NoDecoration |
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
@@ -98,12 +106,12 @@ public:
         int h = window_size.y / window_scale.y;
         int number_rows = 3;
         float font_scale = 0.25f;
-        ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
+        ImGui::SetWindowPos(ImVec2(0, h - font_height * font_scale * (number_rows + 1)));
         ImGui::SetWindowFontScale(font_scale);
         ImGui::PushFont(font1);
-        ImGui::TextColored(ImColor(0,0,0),"Settings");
-        ImGui::TextColored(ImColor(0,0,0),"Edit size: %.2f m", settings.edit_size);
-        ImGui::TextColored(ImColor(0,0,0),"Edit cooldown: %.0f ms", settings.edit_cooldown);
+        ImGui::TextColored(ImColor(0, 0, 0), "Settings");
+        ImGui::TextColored(ImColor(0, 0, 0), "Edit size: %.2f m", settings.edit_size);
+        ImGui::TextColored(ImColor(0, 0, 0), "Edit cooldown: %.0f ms", settings.edit_cooldown);
         //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
         //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
         //ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", settings.voxel_count);
@@ -115,6 +123,7 @@ public:
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();
     }
+
     void crosshair() {
         float crosshairSize = 10.0f;
         float lineWidth = 1.5f;
