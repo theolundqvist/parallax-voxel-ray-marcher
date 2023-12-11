@@ -217,6 +217,17 @@ public:
         if(scene->ruled_changed) scene->ruled_changed = false;
         if (getKey(GLFW_KEY_DOWN)) rule -= 1;
         if (getKey(GLFW_KEY_UP)) rule += 1;
+
+        int intValue_demo = static_cast<int>(S_mananger);
+        if (getKey(GLFW_KEY_N)) {
+            intValue_demo++;
+        }
+        if (intValue_demo > 9)
+        {
+            intValue_demo = 0;
+        }
+        S_mananger = static_cast<shader_setting>(intValue_demo);
+
         rule = glm::clamp(rule, 1, scene->highest_rule);
         if (rule != scene->rule) {
             scene->rule = rule;

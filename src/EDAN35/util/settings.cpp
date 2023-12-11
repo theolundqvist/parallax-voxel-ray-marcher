@@ -10,3 +10,16 @@ typedef struct settings_t{
     bool show_fps = true;
     bool free_view = false;
 } settings_t;
+enum shader_setting
+{
+    fixed_step_material = 0,
+    fvta_step_material,
+    fvta_step_pixel_pos,
+    fvta_step_voxel_pos,
+    fvta_step_normal,
+    fvta_tep_uvw,
+    fvta_step_uv,
+    fvta_step_depth,
+    fvta_step_shaded,
+    fvta_step_shaded_with_simple_AO
+};

@@ -7,7 +7,7 @@ uniform sampler3D volume;
 uniform float voxel_size;
 uniform ivec3 grid_size;
 uniform vec3 light_direction;
-
+uniform int Shader_manager;
 // world space
 flat in float face_dot_v;
 
@@ -312,15 +312,89 @@ void main()
         discard;
     }
     vec3 color = vec3(hit.material/255.0, 0, 0);
-    //color = shade(hit);
-    //color *= ao(hit);
-    //color = hit.pixel_pos;
-    //color = hit.voxel_pos;
-    //color = normalize(hit.normal) * 0.5 + 0.5;
-    //color = hit.uvw;
-    //color = vec3(hit.uv, 1.0);
-    //color = vec3(hit.depth);
 
+
+     if(Shader_manager==0)
+    {
+       hit = fixed_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color =vec3(hit.material/255.0, 0, 0);
+    }
+    else if(Shader_manager==1)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color =vec3(hit.material/255.0, 0, 0);
+    }   
+    else if(Shader_manager==2)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.pixel_pos;
+    }
+    else if(Shader_manager==3)
+    { 
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.voxel_pos;
+    }
+    else if(Shader_manager==4)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = normalize(hit.normal) * 0.5 + 0.5;
+    }
+    else if(Shader_manager==5)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.uvw;
+    }
+    else if(Shader_manager==6)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = vec3(hit.uv, 1.0); 
+    }
+    else if(Shader_manager==7)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = vec3(hit.depth);
+    }
+    else if(Shader_manager==8)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+       discard;
+        }
+       color = shade(hit);
+    }
+    else if(Shader_manager==9)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = shade(hit);
+       color *= ao(hit);
+    }
 
     fColor = vec4(color, 1.0);
 }

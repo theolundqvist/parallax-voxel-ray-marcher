@@ -146,6 +146,30 @@ public:
                 showCrosshair = !showCrosshair;
                 dragToMove = !dragToMove;
             }
+
+            //int intValue = static_cast<int>(S_mananger);
+            /*
+            if (getKey(GLFW_KEY_N)) {
+                intValue--;
+            }
+            if (intValue < 0)
+            {
+                intValue = 9;
+            }
+            */
+            int intValue = static_cast<int>(S_mananger);
+            if (getKey(GLFW_KEY_N)) {
+                intValue++;
+            }
+            if (intValue > 9)
+            {
+                intValue = 0;
+            }
+
+            S_mananger = static_cast<shader_setting>(intValue);
+
+
+
             if (getKey(GLFW_KEY_F))
                 showFps = !showFps;
 
