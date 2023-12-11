@@ -118,7 +118,7 @@ hit_t fvta_step(){
     vec3 next_position = (voxel_index + step) * voxel_size;
     vec3 tMax = (next_position - start) / d;
     vec3 tDelta = voxel_size / (step * d);
-    int max_steps = int(2.0/voxel_size);
+    int max_steps = int(3.0/voxel_size);
     for(int i = 0; i < max_steps; i++){
         vec3 voxel_pos = (voxel_index + vec3(0.5)) * voxel_size;
         int material = int(round(texture(volume, voxel_pos).r*255));
