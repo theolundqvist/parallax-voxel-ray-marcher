@@ -74,10 +74,12 @@ public:
         auto tf = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
         renderer->remove_volumes();
         //for(int i = 0; i < scene->volumes; i++){
-        renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
+        if(scene->nbr != MINECRAFT){
+            renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
+            scene->rule = 1;
+        }
         //}
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
-        scene->rule = 1;
         scene->ruled_changed = true;
     }
 
@@ -132,9 +134,6 @@ public:
                         if (!voxel_util::wave(1.0f, x, y, z, 8)) return 0;
                         return voxel_util::hash(glm::ivec3(x, y, z));
                     });
-                    if (scene->rule == 1) {
-                        checkpoint = {*elapsed, camera->mWorld};
-                    }
                 }
                 if (scene->rule == 3) {
                     scene->shader_setting = fvta_step_material; //show fvta
@@ -142,9 +141,15 @@ public:
                     scene->shader_setting = fixed_step_material;
                     camera->mWorld.SetTranslate(scene->cam.pos);
                     camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+
                 }
                 if (scene->rule > 1)
                     lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
+                else{
+                    camera->mWorld.SetTranslate(scene->cam.pos);
+                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+                    checkpoint = {*elapsed, camera->mWorld};
+                }
                 break;
             case SCENES::SHADERS:
                 if(scene->ruled_changed) {
@@ -199,12 +204,16 @@ public:
                         // remove volume
                         renderer->removeVolume(renderer->numberVolumes()-1);
 
+                    scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->rule;
+
                     auto center = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
                     int size = scene->volume_size;
                     while(rule > renderer->numberVolumes()){
                         //add volume
-                        int n = renderer->numberVolumes() + 1;
-                        auto vol = new VoxelVolume(size, size, size, center.translatedX(n * 3).translateZ(n * 3));
+                        int n = renderer->numberVolumes();
+                        int width = 4;
+                        glm::vec2 pos = glm::vec2(n%width-width/2, n/width);
+                        auto vol = new VoxelVolume(size, size, size, center.translatedX(pos.x*3).translateZ(pos.y*3));
                         vol->updateVoxels([](int x, int y, int z, GLubyte prev) {
                             return voxel_util::hash(glm::ivec3(x, y, z));
                         });
@@ -270,7 +279,7 @@ public:
                 ui->resize();
                 if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
                 if (settings.show_crosshair) ui->crosshair();
-                ui->displaySceneSettings(scene);
+                ui->displaySceneSettings(scene, *elapsed);
                 break;
             case PAUSED:
                 ui->resize();

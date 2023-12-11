@@ -25,13 +25,13 @@ typedef struct cam_pos_t {
 enum CAM {
     QUAD_CAM,
     CUBE_CAM,
-    NINE_BY_NINE_CAM,
+    MC_CAM,
 };
 
 cam_pos_t camera_positions[3] = {
         {glm::vec3(-0.15, -0.65, 6.5), glm::vec3(0, 0, 0)},
         {glm::vec3(4., 3.35, -5.5),    glm::vec3(0)},
-        {glm::vec3(0.15, 6., 17.5),    glm::vec3(3, 0, 3)},
+        {glm::vec3(0, 4, -7.5),    glm::vec3(0, 1, 0)},
 };
 
 typedef struct scene_settings_t {
@@ -58,6 +58,7 @@ scene_settings_t scenes[] = {
         {6, "CA",             camera_positions[CUBE_CAM],         4,  fvta_step_shaded_with_simple_AO, 128, 1,  true},
         {7, "Noise",          camera_positions[CUBE_CAM],         3,  fvta_step_shaded_with_simple_AO, 128, 1,  true},
         {8, "Minecraft",      camera_positions[NINE_BY_NINE_CAM], 40, fvta_step_shaded, 128, 1,  false, 3},
+
 };
 
 enum SCENES {

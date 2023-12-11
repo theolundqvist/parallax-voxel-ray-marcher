@@ -84,7 +84,11 @@ public:
     float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness) {
         // sort volumes by distance to camera
         glBeginQuery(GL_TIME_ELAPSED, elapsed_time_query);
-        for (auto volume: volumes) {
+        std::vector<VoxelVolume*> sorted_volumes = volumes;
+        std::sort(sorted_volumes.begin(), sorted_volumes.end(), [cam_pos](VoxelVolume* a, VoxelVolume* b){
+            return glm::length2(a->transform.getPos() - cam_pos) < glm::length2(b->transform.getPos() - cam_pos);
+        });
+        for (auto volume: sorted_volumes) {
             volume->render(
                     glm::mat4(1.0f),
                     world_to_clip,
