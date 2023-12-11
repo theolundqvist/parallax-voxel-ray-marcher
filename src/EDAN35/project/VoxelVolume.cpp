@@ -15,8 +15,6 @@ private:
 
 	GLuint program{};
 
-	// cell color
-	static std::vector<glm::vec3> colorPalette;
 
 public:
 	Transform transform;
@@ -24,6 +22,8 @@ public:
 	int W;
 	int H;
 	int D;
+
+	static std::vector<glm::vec3> colorPalette;
 
 	VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf) {
 		W = WIDTH;
@@ -289,18 +289,16 @@ public:
 		}
 		utils::opengl::debug::endDebugGroup();
 	}
-
-	// cell color 
-	// let's say max color number is 4, max range is 0-colors.size()
-	static void generateColorPalette(std::vector<glm::vec3>& colors, glm::vec2 colorRange) {
+static std::vector<glm::vec3> generateCAColorPalette(std::vector<glm::vec3>& colors, glm::vec2 colorRange) {
 		// remap from 0-255 to 0-1
 		for (int i = 0; i < colors.size(); i++) {
 			colors[i] /= 255;
 		}
 
+		std::vector<glm::vec3> colorPalette;
 		float length = (colorRange.y - colorRange.x) + 1;
 		colorPalette.reserve(length);
-		for (int i = 1; i < colors.size()-1; i++) {
+		for (int i = 1; i < colors.size() - 1; i++) {
 			glm::ivec2 curRange;
 			curRange.x = (i - 1) * length / (colors.size() - 2);
 			curRange.y = i * length / (colors.size() - 2);
@@ -312,7 +310,7 @@ public:
 				//colorPalette[j] = voxel_util::lerp(j, colors[i], colors[i + 1]);
 				// color should range from 0 -1
 				float scale = voxel_util::remap(j, curRange, glm::vec2(0.0f, 1.0f));
-				colorPalette.push_back(voxel_util::lerp(scale, colors[i], colors[i+1]));
+				colorPalette.push_back(voxel_util::lerp(scale, colors[i], colors[i + 1]));
 			}
 		}
 
@@ -321,7 +319,9 @@ public:
 		}*/
 
 		std::cout << colorPalette.size() << std::endl;
-	}
+
+		return colorPalette;
+	};	
 
 private:
 	void setUniforms(glm::mat4 const& tf,

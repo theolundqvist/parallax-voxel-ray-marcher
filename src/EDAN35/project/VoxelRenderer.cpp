@@ -9,6 +9,8 @@
 #include "../util/IntersectionTests.cpp"
 #include "../util/Cell.hpp"
 #include "../util/3DCA.cpp"
+#include "../util/perlinNoise.cpp"
+#include "../util/terrain.cpp"
 #include "./VoxelVolume.cpp"
 #include "core/FPSCamera.h"
 #include "core/ShaderProgramManager.hpp"
@@ -18,6 +20,7 @@
 #include <list>
 
 static CA::CARule caRule = CA::chooseCARule(CA::CARuleName::pyroclastic);
+static terrain t(50, 50, 50.0f);
 
 class VoxelRenderer {
 public:
@@ -34,24 +37,29 @@ public:
 			voxel_program);
 
 		std::srand(std::time(nullptr));
+
 		int boundary = 50;
-		auto tf = Transform().rotateAroundX(glm::radians(90.0f)).scale(3.0f);
+		auto tf = Transform().scale(3.0f);
 		createVolume(boundary, tf);
-
+		
 		// -------------------------------ca------------------------------------	
-		VoxelVolume::generateColorPalette(CA::colorsRed2Green, glm::vec2(0, 255));
-
-		// init cells
-		glm::vec3 center = glm::vec3(boundary / 2);
-		cells = CA::createCells(boundary, caRule.state);
-		CA::randomizeCells(cells, center, boundary, boundary, boundary, caRule.state);
-		//CA::randomizeCells(cells, center, 30, 30, 30, state);
+		//auto tf = Transform().rotateAroundX(glm::radians(90.0f)).scale(3.0f);
+		//VoxelVolume::colorPalette = CA::generateCAColorPalette(CA::colorsRed2Green, glm::vec2(0, 255));
+	
+		////// init cells
+		//glm::vec3 center = glm::vec3(boundary / 2);
+		//cells = CA::createCells(boundary, caRule.state);
+		//CA::randomizeCells(cells, center, boundary, boundary, boundary, caRule.state);
 		// -------------------------------ca------------------------------------
 
 
 		// ----------------------------terrain----------------------------------
+		VoxelVolume::colorPalette = t.getTerrainColorPalette();
+		std::vector<float> texture = t.getTerrainTexture();
 
-
+		for (int i = 0; i < texture.size(); i++) {
+			std::cout << texture[i] << std::endl;
+		}
 
 
 
@@ -91,22 +99,15 @@ public:
 			for (int y = 0; y < volume->H; y++) {
 				for (int z = 0; z < volume->D; z++) {
 					// -------------------------------ca------------------------------------
-					int index = CA::convert3dIndexTo1d(x, y, z);
-					//volume->setVoxel(x, y, z, voxel_util::drawMode::pos2RGB, cells[index]);
-					//volume->setVoxel(x, y, z, voxel_util::drawMode::distance2RGB, cells[index]);
-					//volume->setVoxel(x, y, z, voxel_util::drawMode::density2RGB, cells[index]);
-					volume->setVoxel(x, y, z, voxel_util::drawMode::hp2RGB, cells[index]);
+					//int index = CA::convert3dIndexTo1d(x, y, z);
+					////volume->setVoxel(x, y, z, voxel_util::drawMode::pos2RGB, cells[index]);
+					////volume->setVoxel(x, y, z, voxel_util::drawMode::distance2RGB, cells[index]);
+					////volume->setVoxel(x, y, z, voxel_util::drawMode::density2RGB, cells[index]);
+					//volume->setVoxel(x, y, z, voxel_util::drawMode::hp2RGB, cells[index]);
 					// -------------------------------ca------------------------------------
 
 					// ----------------------------terrain----------------------------------
-
-
-
-
-
-
-
-
+					volume->setVoxel(x, y, z, t.height2ColorIndex(x,y,z,glm::vec2(0, 255)));
 					// ----------------------------terrain----------------------------------
 				}
 			}
@@ -121,31 +122,22 @@ public:
 
 		for (auto volume : volumes) {
 
+			// -------------------------------ca------------------------------------
 			// set texel data
-			for (int x = 0; x < volume->W; x++) {
-				for (int y = 0; y < volume->H; y++) {
-					for (int z = 0; z < volume->D; z++) {
-						// -------------------------------ca------------------------------------
-						int index = CA::convert3dIndexTo1d(x, y, z);
-						//volume->setVoxel(x, y, z, voxel_util::drawMode::pos2RGB, cells[index]);
-						//volume->setVoxel(x, y, z, voxel_util::drawMode::distance2RGB, cells[index]);
-						//volume->setVoxel(x, y, z, voxel_util::drawMode::density2RGB, cells[index]);
-						volume->setVoxel(x, y, z, voxel_util::drawMode::hp2RGB, cells[index]);
-						// -------------------------------ca------------------------------------
-
-						// ----------------------------terrain----------------------------------
-
-
-
-
-
-
-
-
-						// ----------------------------terrain----------------------------------
-					}
-				}
-			}
+			//for (int x = 0; x < volume->W; x++) {
+			//	for (int y = 0; y < volume->H; y++) {
+			//		for (int z = 0; z < volume->D; z++) {
+			//			// -------------------------------ca------------------------------------
+			//			int index = CA::convert3dIndexTo1d(x, y, z);
+			//			//volume->setVoxel(x, y, z, voxel_util::drawMode::pos2RGB, cells[index]);
+			//			//volume->setVoxel(x, y, z, voxel_util::drawMode::distance2RGB, cells[index]);
+			//			//volume->setVoxel(x, y, z, voxel_util::drawMode::density2RGB, cells[index]);
+			//			volume->setVoxel(x, y, z, voxel_util::drawMode::hp2RGB, cells[index]);
+			//			// -------------------------------ca------------------------------------
+			//		}
+			//	}
+			//}
+			// -------------------------------ca------------------------------------
 
 			// render with texel data
 			// in this function will pass uniform to shader
@@ -160,9 +152,9 @@ public:
 
 
 			// -------------------------------ca------------------------------------
-			CA::updateCells(cells, caRule.survival, caRule.spawn, caRule.state);
+			/*CA::updateCells(cells, caRule.survival, caRule.spawn, caRule.state);
 
-			volume->cleanVoxel();
+			volume->cleanVoxel();*/
 			// -------------------------------ca------------------------------------
 
 		}
@@ -233,6 +225,7 @@ public:
 
 private:
 	std::vector<VoxelVolume*> volumes;
+	// not to have cell in voxel render
 	std::vector<Cell> cells;
 	FPSCameraf* camera;
 	GLuint voxel_program;
