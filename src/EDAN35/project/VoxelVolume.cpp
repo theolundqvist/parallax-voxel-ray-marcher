@@ -217,7 +217,7 @@ public:
         // Set texture unit for sampler
         glUniform1i(glGetUniformLocation(program, "volume"), 0);
         // Active texture unit before use
-        glActiveTexture(texture);
+        glActiveTexture(GL_TEXTURE0);
         // Bind 3D texture
         glBindTexture(GL_TEXTURE_3D, texture);
 
