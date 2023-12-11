@@ -74,11 +74,12 @@ public:
         auto tf = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
         renderer->remove_volumes();
         //for(int i = 0; i < scene->volumes; i++){
-        if(scene->nbr != MINECRAFT)
+        if(scene->nbr != MINECRAFT){
             renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
+            scene->rule = 1;
+        }
         //}
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
-        scene->rule = 1;
         scene->ruled_changed = true;
     }
 
@@ -206,8 +207,10 @@ public:
                     int size = scene->volume_size;
                     while(rule > renderer->numberVolumes()){
                         //add volume
-                        int n = renderer->numberVolumes() + 1;
-                        auto vol = new VoxelVolume(size, size, size, center.translatedX(n * 3).translateZ(n * 3));
+                        int n = renderer->numberVolumes();
+                        int width = 4;
+                        glm::vec2 pos = glm::vec2(n%width-width/2, n/width);
+                        auto vol = new VoxelVolume(size, size, size, center.translatedX(pos.x*3).translateZ(pos.y*3));
                         vol->updateVoxels([](int x, int y, int z, GLubyte prev) {
                             return voxel_util::hash(glm::ivec3(x, y, z));
                         });
