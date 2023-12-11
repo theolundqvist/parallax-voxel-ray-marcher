@@ -306,6 +306,7 @@ void main()
 
     //vec3 color = findStartPos();
     hit_t hit;
+    /*
     if(!using_FVTA)
     {
        hit = fixed_step();
@@ -314,41 +315,82 @@ void main()
     {
        hit = fvta_step();
     }
-    if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-    }
+    */
+
+
     vec3 color = vec3(hit.material/255.0, 0, 0);
     if(Choose_color==0)
     {
-       color = shade(hit);
+       hit = fixed_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.pixel_pos;
     }
     else if(Choose_color==1)
     {
-       color *= ao(hit);
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.pixel_pos;
     }
     else if(Choose_color==2)
-    {
-       color = hit.pixel_pos;
+    { 
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.voxel_pos;
     }
     else if(Choose_color==3)
     {
-       color = hit.voxel_pos;
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = normalize(hit.normal) * 0.5 + 0.5;
     }
     else if(Choose_color==4)
     {
-       color = normalize(hit.normal) * 0.5 + 0.5;
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = hit.uvw;
     }
     else if(Choose_color==5)
     {
-       color = hit.uvw;
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = vec3(hit.uv, 1.0); 
     }
     else if(Choose_color==6)
     {
-       color = vec3(hit.uv, 1.0); 
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = vec3(hit.depth);
     }
     else if(Choose_color==7)
     {
-       color = vec3(hit.depth);
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+       discard;
+        }
+       color = shade(hit);
+    }
+    else if(Choose_color==8)
+    {
+       hit = fvta_step();
+       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+        discard;
+        }
+       color = shade(hit);
+       color *= ao(hit);
     }
 
     fColor = vec4(color, 1.0);

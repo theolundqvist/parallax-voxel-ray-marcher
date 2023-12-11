@@ -134,23 +134,34 @@ public:
                 showCrosshair = !showCrosshair;
                 dragToMove = !dragToMove;
             }
-            if(getKey(GLFW_KEY_Z))
+            /*
+            if(getKey(GLFW_KEY_UP)|| getKey(GLFW_KEY_DOWN))
             {
-                is_using_FVTA = !is_using_FVTA;
+                S_mananger.is_using_FVTA = !S_mananger.is_using_FVTA;
             }
+            */
+            if (getKey(GLFW_KEY_LEFT)) {
+                S_mananger.choose_color--;
+            }
+            if (getKey(GLFW_KEY_RIGHT)) {
+                S_mananger.choose_color++;
+            }
+            if (S_mananger.choose_color > 8)
+            {
+                S_mananger.choose_color = 0;
+            }
+            if (S_mananger.choose_color < 0)
+            {
+                S_mananger.choose_color = 8;
+            }
+            std::cout << "choose_color NO:" << S_mananger.choose_color << std::endl;
             if (getKey(GLFW_KEY_F))
                 showFps = !showFps;
 
             if (getKey(GLFW_KEY_P)) {
                 freeView = !freeView;
             }
-            if (getKey(GLFW_KEY_X)) {
-                choose_color++;
-            }
-            if (choose_color > 7)
-            {
-                choose_color = 0;
-            }
+            
 
             if (getKey(GLFW_KEY_SPACE, PRESSED, settings.edit_cooldown) ||
                 getKey(GLFW_MOUSE_BUTTON_LEFT, PRESSED, settings.edit_cooldown)) {
