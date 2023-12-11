@@ -22,15 +22,15 @@ out vec4 fColor;
 
 float isInside(vec3 pos){
     // this works but did not notice performance difference
-/*
-    return step(0.0, pos.x)*step(pos.x, 1.0) *
-    step(0.0, pos.y)*step(pos.y, 1.0) *
-    step(0.0, pos.z)*step(pos.z, 1.0);
-*/
-        if (pos.x < 0.0 || pos.x > 1.0) return 0.0;
-        if (pos.y < 0.0 || pos.y > 1.0) return 0.0;
-        if (pos.z < 0.0 || pos.z > 1.0) return 0.0;
-        return 1.0;
+    /*
+        return step(0.0, pos.x)*step(pos.x, 1.0) *
+        step(0.0, pos.y)*step(pos.y, 1.0) *
+        step(0.0, pos.z)*step(pos.z, 1.0);
+    */
+    if (pos.x < 0.0 || pos.x > 1.0) return 0.0;
+    if (pos.y < 0.0 || pos.y > 1.0) return 0.0;
+    if (pos.z < 0.0 || pos.z > 1.0) return 0.0;
+    return 1.0;
 }
 
 struct start_t{
@@ -56,12 +56,12 @@ vec3 uvw_to_normal(vec3 uvw){
 }
 
 vec2 uvw_to_uv(vec3 uvw){
-    if(uvw.x == 0.0 && uvw.y == 0.0 && uvw.z == 0.0) return vec2(0.0, 0.0);
-    if(uvw.x == 1.0 && uvw.y == 1.0 && uvw.z == 1.0) return vec2(1.0, 1.0);
-    if(uvw.x == 0.0 && uvw.y == 1.0 && uvw.z == 1.0) return vec2(0.0, 1.0);
-    if(uvw.x == 1.0 && uvw.y == 0.0 && uvw.z == 1.0) return vec2(1.0, 0.0);
-    if(uvw.x == 1.0 && uvw.y == 1.0 && uvw.z == 0.0) return vec2(1.0, 0.0);
-    if(uvw.x == 0.0 && uvw.y == 0.0 && uvw.z == 1.0) return vec2(0.0, 1.0);
+    if (uvw.x == 0.0 && uvw.y == 0.0 && uvw.z == 0.0) return vec2(0.0, 0.0);
+    if (uvw.x == 1.0 && uvw.y == 1.0 && uvw.z == 1.0) return vec2(1.0, 1.0);
+    if (uvw.x == 0.0 && uvw.y == 1.0 && uvw.z == 1.0) return vec2(0.0, 1.0);
+    if (uvw.x == 1.0 && uvw.y == 0.0 && uvw.z == 1.0) return vec2(1.0, 0.0);
+    if (uvw.x == 1.0 && uvw.y == 1.0 && uvw.z == 0.0) return vec2(1.0, 0.0);
+    if (uvw.x == 0.0 && uvw.y == 0.0 && uvw.z == 1.0) return vec2(0.0, 1.0);
     vec3 tangents = vec3(1) - abs(uvw_to_normal(uvw));
     vec3 a, b;
     if (tangents.x == 0.0f) {
@@ -270,17 +270,17 @@ float ao(hit_t hit){
     int nbr_samples = 4;
     float r_rel = 0.04;
     // save some texture reads by only sampling edges
-    if(hit.uv.x > r_rel && hit.uv.x < 1-r_rel && hit.uv.y > r_rel && hit.uv.y < 1-r_rel) return 1.0;
+    if (hit.uv.x > r_rel && hit.uv.x < 1-r_rel && hit.uv.y > r_rel && hit.uv.y < 1-r_rel) return 1.0;
     float r = voxel_size * r_rel;
     //if(hit.uv.y > r && hit.uv.y < 1.0 - r) return 1.0;
     vec3 sphere_center = P + N * r;
     vec3 tangent = vec3(1) - abs(N);
     mat4 rot = mat4(1.0f);
     float angle = 3.14159265359*2.0 * 1/nbr_samples;
-    if(abs(N.x) > 0.01){
+    if (abs(N.x) > 0.01){
         rot = rotationX(angle);
     }
-    else if(abs(N.y) > 0.01){
+    else if (abs(N.y) > 0.01){
         rot = rotationY(angle);
     }
     else {
@@ -288,7 +288,7 @@ float ao(hit_t hit){
     }
     for (int i = 0; i < nbr_samples; i++){
         // rotate bitangent
-        tangent = normalize((rot * vec4(tangent,1)).xyz);
+        tangent = normalize((rot * vec4(tangent, 1)).xyz);
         vec3 sample_point =  sphere_center + tangent * r;
         if (isInside(sample_point) < 0.5) continue;
         float material = texture(volume, sample_point).r * 255.0;
@@ -296,7 +296,7 @@ float ao(hit_t hit){
             ao += 1.0/(nbr_samples*2.0);
         }
     }
-    return mix(smoothstep(0, 1, 1-2*ao), 1 , 1-ao);
+    return mix(smoothstep(0, 1, 1-2*ao), 1, 1-ao);
 }
 
 void main()
@@ -304,96 +304,56 @@ void main()
     // custom front face culling to do it based on cam pos
     if (face_dot_v < 0.0) discard;
 
-    //vec3 color = findStartPos();
     hit_t hit;
-    hit = fixed_step();
-    //hit = fvta_step();
+    vec3 color = vec3(0, 0, 0);
+
+    // fixed step
+    if (Shader_manager==0)
+    {
+        hit = fixed_step();
+        if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
+            discard;
+        }
+        color =vec3(hit.material/255.0, 0, 0);
+        fColor = vec4(color, 1.0);
+        return;
+    }
+
+    // fvta step
+    hit = fvta_step();
     if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
         discard;
     }
-    vec3 color = vec3(hit.material/255.0, 0, 0);
 
-
-     if(Shader_manager==0)
-    {
-       hit = fixed_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color =vec3(hit.material/255.0, 0, 0);
-    }
-    else if(Shader_manager==1)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color =vec3(hit.material/255.0, 0, 0);
-    }   
-    else if(Shader_manager==2)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = hit.pixel_pos;
-    }
-    else if(Shader_manager==3)
-    { 
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = hit.voxel_pos;
-    }
-    else if(Shader_manager==4)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = normalize(hit.normal) * 0.5 + 0.5;
-    }
-    else if(Shader_manager==5)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = hit.uvw;
-    }
-    else if(Shader_manager==6)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = vec3(hit.uv, 1.0); 
-    }
-    else if(Shader_manager==7)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = vec3(hit.depth);
-    }
-    else if(Shader_manager==8)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-       discard;
-        }
-       color = shade(hit);
-    }
-    else if(Shader_manager==9)
-    {
-       hit = fvta_step();
-       if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
-        discard;
-        }
-       color = shade(hit);
-       color *= ao(hit);
+    switch (Shader_manager){
+        case 1:
+        color = vec3(hit.material/255.0, 0, 0);
+        break;
+        case 2:
+        color = hit.pixel_pos;
+        break;
+        case 3:
+        color = hit.voxel_pos;
+        break;
+        case 4:
+        color = normalize(hit.normal) * 0.5 + 0.5;
+        break;
+        case 5:
+        color = hit.uvw;
+        break;
+        case 6:
+        color = vec3(hit.uv, 1.0);
+        break;
+        case 7:
+        color = vec3(hit.depth);
+        break;
+        case 8:
+        color = shade(hit);
+        break;
+        case 9:
+        color = shade(hit);
+        color *= ao(hit);
+        break;
     }
 
     fColor = vec4(color, 1.0);
