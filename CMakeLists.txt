@@ -114,7 +114,7 @@ target_compile_options (
 	INTERFACE
 		$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/utf-8;/Zc:__cplusplus>
 )
-target_compile_features (CG_Labs_options INTERFACE cxx_std_14)
+target_compile_features (CG_Labs_options INTERFACE cxx_std_20)
 
 
 # Define another “fake” library that provides a common setup for all
