@@ -96,6 +96,8 @@ namespace CA {
 	};
 
 	static std::vector<glm::vec3> colorsBlue2Pink = {
+		// color 0 will be discard
+		glm::vec3(0.0f, 0.0f, 0.0f),
 		glm::vec3(153,255,255),
 		// light red
 		glm::vec3(153,204,255),

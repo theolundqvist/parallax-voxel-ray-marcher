@@ -8,9 +8,10 @@
 #include "core/helpers.hpp"
 #include "core/opengl.hpp"
 
-static std::vector<glm::vec3> defaultColos = {
+static std::vector<glm::vec3> defaultColors = {
+	glm::vec3(0.0f, 0.0f, 0.0f),
 	// dirt1
-	glm::vec3(240, 230,140),
+	glm::vec3(240,230,140),
 	// dirt2
 	glm::vec3(238, 232,170),
 	// grass1
@@ -22,7 +23,7 @@ static std::vector<glm::vec3> defaultColos = {
 	// stone2
 	glm::vec3(70,50,50),
 	// snow
-	//glm::vec3(255,255,255)
+	glm::vec3(255,255,255)
 };
 
 class terrain {
@@ -38,7 +39,7 @@ public:
 													 m_Elevation(elevation) {
 		generateTerrainTexture(width, depth);
 		// use default colors
-		generateTerrainColorPalette(defaultColos, glm::vec2(0, 255));
+		generateTerrainColorPalette(defaultColors, glm::vec2(0, 255));
 	}
 
 	terrain(int width, int depth, float elevation, std::vector<glm::vec3>& colors) : m_Width(width), m_Depth(depth),
@@ -55,7 +56,7 @@ public:
 		for (int i = 0; i < width; i++) {
 			for (int j = 0; j < depth; j++) {
 				//m_TerrainTexture[index] = Noise::perlinNoise::fbm(i, j, 4, 5.0f, 0.5f, 2.0f);
-				m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, 5.0f, 0.5f, 2.0f)*0.5f + 0.5f);
+				m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, 100.0f, 0.5f, 2.0f)*0.5f + 0.5f);
 			}
 		}
 	}
@@ -68,11 +69,13 @@ public:
 
 		float length = (colorRange.y - colorRange.x) + 1;
 		m_ColorPalette.reserve(length);
-		for (int i = 0; i < colors.size()-1; i++) {
+		for (int i = 1; i < colors.size() - 1; i++) {
 			glm::ivec2 curRange;
-			curRange.x = i * length / (colors.size() - 1);
-			curRange.y = (i+1) * length / (colors.size() - 1);
+			curRange.x = (i - 1) * length / (colors.size() - 2);
+			curRange.y = i * length / (colors.size() - 2);
+			// print range
 			std::cout << curRange << std::endl;
+			// interpolate the color
 			for (int j = curRange.x; j < curRange.y; j++) {
 				float scale = voxel_util::remap(j, curRange, glm::vec2(0.0f, 1.0f));
 				m_ColorPalette.push_back(voxel_util::lerp(scale, colors[i], colors[i + 1]));
@@ -91,8 +94,12 @@ public:
 		float height = getHeight(x, z);
 		//std::cout << height << std::endl;
 		if (isInsideTerrain(y, height)) {
-			glm::vec2 oldRange = glm::vec2(0, 1);
-			return std::round(voxel_util::remap(height, oldRange, colorRange));
+			//wrong: glm::vec2 oldRange = glm::vec2(0, 1);
+			//wrong: return std::round(voxel_util::remap(height, oldRange, colorRange));
+			glm::vec2 oldRange = glm::vec2(0, m_Elevation);
+			return std::round(voxel_util::remap(y, oldRange, colorRange));
+			//std::pair<int, float> test = std::make_pair(index, height);
+			//std::cout << "[" << test.first << ", " << test.second << "]" << std::endl;
 		}
 		else
 			// if not inside, the index is 0

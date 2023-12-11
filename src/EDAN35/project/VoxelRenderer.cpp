@@ -20,7 +20,7 @@
 #include <list>
 
 static CA::CARule caRule = CA::chooseCARule(CA::CARuleName::pyroclastic);
-static terrain t(50, 50, 50.0f);
+static terrain t(200, 200, 100.0f);
 
 class VoxelRenderer {
 public:
@@ -38,7 +38,7 @@ public:
 
 		std::srand(std::time(nullptr));
 
-		int boundary = 50;
+		int boundary = 200;
 		auto tf = Transform().scale(3.0f);
 		createVolume(boundary, tf);
 		
@@ -55,11 +55,11 @@ public:
 
 		// ----------------------------terrain----------------------------------
 		VoxelVolume::colorPalette = t.getTerrainColorPalette();
-		std::vector<float> texture = t.getTerrainTexture();
 
-		for (int i = 0; i < texture.size(); i++) {
-			std::cout << texture[i] << std::endl;
-		}
+		//std::vector<float> texture = t.getTerrainTexture();
+		//for (int i = 0; i < texture.size(); i++) {
+		//	std::cout << texture[i] << std::endl;
+		//}
 
 
 
@@ -107,6 +107,7 @@ public:
 					// -------------------------------ca------------------------------------
 
 					// ----------------------------terrain----------------------------------
+					//float perlinValue = Noise::perlinNoise::fbm(glm::vec2(x,z),)
 					volume->setVoxel(x, y, z, t.height2ColorIndex(x,y,z,glm::vec2(0, 255)));
 					// ----------------------------terrain----------------------------------
 				}
