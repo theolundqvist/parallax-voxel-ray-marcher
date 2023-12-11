@@ -74,7 +74,8 @@ public:
         auto tf = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
         renderer->remove_volumes();
         //for(int i = 0; i < scene->volumes; i++){
-        renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
+        if(scene->nbr != MINECRAFT)
+            renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
         //}
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
         scene->rule = 1;
@@ -132,19 +133,19 @@ public:
                         if (!voxel_util::wave(1.0f, x, y, z, 8)) return 0;
                         return voxel_util::hash(glm::ivec3(x, y, z));
                     });
-                    if (scene->rule == 1) {
-                        checkpoint = {*elapsed, camera->mWorld};
-                    }
                 }
                 if (scene->rule == 3) {
                     scene->shader_setting = 1; //show fvta
                 } else {
                     scene->shader_setting = 0;
-                    camera->mWorld.SetTranslate(scene->cam.pos);
-                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
                 }
                 if (scene->rule > 1)
                     lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
+                else{
+                    camera->mWorld.SetTranslate(scene->cam.pos);
+                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+                    checkpoint = {*elapsed, camera->mWorld};
+                }
                 break;
             case SCENES::SHADERS:
                 if(scene->ruled_changed) {
