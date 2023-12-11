@@ -266,7 +266,7 @@ public:
                 ui->resize();
                 if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
                 if (settings.show_crosshair) ui->crosshair();
-                ui->displaySceneSettings(scene);
+                ui->displaySceneSettings(scene, *elapsed);
                 break;
             case PAUSED:
                 ui->resize();
