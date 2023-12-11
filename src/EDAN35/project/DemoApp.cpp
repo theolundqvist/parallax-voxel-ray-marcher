@@ -199,6 +199,8 @@ public:
                         // remove volume
                         renderer->removeVolume(renderer->numberVolumes()-1);
 
+                    scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->rule;
+
                     auto center = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
                     int size = scene->volume_size;
                     while(rule > renderer->numberVolumes()){
