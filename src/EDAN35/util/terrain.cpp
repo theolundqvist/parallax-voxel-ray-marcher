@@ -23,7 +23,7 @@ static std::vector<glm::vec3> defaultColors = {
 	// stone2
 	glm::vec3(70,50,50),
 	// snow
-	glm::vec3(255,255,255)
+	glm::vec3(255,255,255),
 };
 
 class terrain {
@@ -31,6 +31,7 @@ private:
 	int m_Width;
 	int m_Depth;
 	float m_Elevation;
+	float m_MaxHeight = 0.0f;
 	std::vector<float> m_TerrainTexture;
 	std::vector<glm::vec3> m_ColorPalette;
 
@@ -38,6 +39,8 @@ public:
 	terrain(int width, int depth, float elevation) : m_Width(width), m_Depth(depth),
 													 m_Elevation(elevation) {
 		generateTerrainTexture(width, depth);
+		// set max height
+		findMaxHeight();
 		// use default colors
 		generateTerrainColorPalette(defaultColors, glm::vec2(0, 255));
 	}
@@ -56,7 +59,7 @@ public:
 		for (int i = 0; i < width; i++) {
 			for (int j = 0; j < depth; j++) {
 				//m_TerrainTexture[index] = Noise::perlinNoise::fbm(i, j, 4, 5.0f, 0.5f, 2.0f);
-				m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, 100.0f, 0.5f, 2.0f)*0.5f + 0.5f);
+				m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, width/2, 0.5f, 2.0f)*0.5f + 0.5f);
 			}
 		}
 	}
@@ -81,6 +84,12 @@ public:
 				m_ColorPalette.push_back(voxel_util::lerp(scale, colors[i], colors[i + 1]));
 			}
 		}
+
+		//print the color
+		/*for (int i = 0; i < m_ColorPalette.size(); i++) {
+			std::cout << m_ColorPalette[i] << std::endl;
+		}*/
+
 	}
 
 	bool isInsideTerrain(int x, float height) {
@@ -92,14 +101,16 @@ public:
 	// must turn height into sample index
 	int height2ColorIndex(int x, int y, int z, glm::vec2 colorRange) {
 		float height = getHeight(x, z);
-		//std::cout << height << std::endl;
+		// find the max height
+		// float maxHeight = findMaxHeight();
 		if (isInsideTerrain(y, height)) {
 			//wrong: glm::vec2 oldRange = glm::vec2(0, 1);
 			//wrong: return std::round(voxel_util::remap(height, oldRange, colorRange));
-			glm::vec2 oldRange = glm::vec2(0, m_Elevation);
-			return std::round(voxel_util::remap(y, oldRange, colorRange));
+			glm::vec2 oldRange = glm::vec2(0, m_MaxHeight);
+			int index = std::round(voxel_util::remap(y, oldRange, colorRange));
 			//std::pair<int, float> test = std::make_pair(index, height);
 			//std::cout << "[" << test.first << ", " << test.second << "]" << std::endl;
+			return index;
 		}
 		else
 			// if not inside, the index is 0
@@ -109,6 +120,16 @@ public:
 	// get the elevation of specific point
 	float getHeight(float x, float y) {
 		return m_TerrainTexture[x + m_Depth * y] * m_Elevation;
+	}
+
+	void findMaxHeight() {
+		for (int i = 0; i < m_Width; i++) {
+			for (int j = 0; j < m_Depth; j++) {
+				float height = getHeight(i, j);
+				if (height > m_MaxHeight)
+					m_MaxHeight = height;
+			}
+		}
 	}
 
 	std::vector<float> getTerrainTexture() {

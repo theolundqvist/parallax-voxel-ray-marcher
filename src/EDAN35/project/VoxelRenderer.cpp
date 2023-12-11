@@ -20,7 +20,8 @@
 #include <list>
 
 static CA::CARule caRule = CA::chooseCARule(CA::CARuleName::pyroclastic);
-static terrain t(200, 200, 100.0f);
+// width, depth, elevation
+static terrain t(100, 100, 100.0f);
 
 class VoxelRenderer {
 public:
@@ -38,7 +39,7 @@ public:
 
 		std::srand(std::time(nullptr));
 
-		int boundary = 200;
+		int boundary = 100;
 		auto tf = Transform().scale(3.0f);
 		createVolume(boundary, tf);
 		
