@@ -50,13 +50,13 @@ typedef struct scene_settings_t {
 scene_settings_t scenes[] = {
         {0, "Quad fixed",     camera_positions[QUAD_CAM],         4,  0},
         {1, "Cube fixed",     camera_positions[CUBE_CAM],         5,  0},
-        {2, "Cube FVTA step", camera_positions[CUBE_CAM],         4,  1},
+        {2, "Cube FVTA step", camera_positions[CUBE_CAM],         3,  0},
         {3, "Shaders",        camera_positions[CUBE_CAM],         3,  1},
-        {5, "Larger",         camera_positions[CUBE_CAM],         1,  128, 1, 0,  true},
-        {6, "SDF",            camera_positions[CUBE_CAM],         4,  128, 1, 3,  true},
-        {7, "CA",             camera_positions[CUBE_CAM],         4,  128, 1, 3,  true},
-        {8, "Noise",          camera_positions[CUBE_CAM],         3,  128, 1, 0,  true},
-        {9, "Minecraft",      camera_positions[NINE_BY_NINE_CAM], 10, 128, 1, 20, false, 3},
+        {4, "Larger",         camera_positions[CUBE_CAM],         1,  1, 128, 1,  true},
+        {5, "SDF",            camera_positions[CUBE_CAM],         4,  1, 128, 1,  true},
+        {6, "CA",             camera_positions[CUBE_CAM],         4,  1, 128, 1,  true},
+        {7, "Noise",          camera_positions[CUBE_CAM],         3,  1, 128, 1,  true},
+        {8, "Minecraft",      camera_positions[NINE_BY_NINE_CAM], 40, 1, 128, 1,  false, 3},
 };
 
 enum SCENES {

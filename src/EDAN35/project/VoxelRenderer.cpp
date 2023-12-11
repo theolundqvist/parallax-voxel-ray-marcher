@@ -55,6 +55,17 @@ public:
         }
         volumes.clear();
     }
+    VoxelVolume* getVolume(int index){
+        return volumes[index];
+    }
+    void removeVolume(int index){
+        auto volume = volumes[index];
+        volumes.erase(volumes.begin()+index);
+        delete volume;
+    }
+    int numberVolumes(){
+        return volumes.size();
+    }
 
     void update(InputHandler *inputHandler, float dt) {
 
@@ -62,9 +73,6 @@ public:
 
     void orbit(float dt){
         volumes[0]->transform.rotateAroundY(glm::pi<float>()*dt*0.0001f);
-    }
-    VoxelVolume* getVolume(int index){
-        return volumes[index];
     }
 
     void setShaderSetting(int setting){

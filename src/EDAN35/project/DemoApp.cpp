@@ -77,7 +77,7 @@ public:
         renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
         //}
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
-        scene->rule = 0;
+        scene->rule = 1;
         scene->ruled_changed = true;
     }
 
@@ -90,7 +90,6 @@ public:
             // red/hashed texels/wave texels, rest black/rest transparent
             case SCENES::QUAD:
                 if (scene->ruled_changed) {
-                    scene->ruled_changed = false;
                     scene->voxel_count = scene->volume_size * scene->volume_size;
                     renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
                         if (rule == 1) return 255;
@@ -99,10 +98,9 @@ public:
                     });
                 }
                 break;
-            // red/hashed texels/wave texels, rest black/rest transparent
+            // red/hashed texels/free_view/wave texels, rest black/rest transparent
             case SCENES::CUBE:
                 if (scene->ruled_changed || scene->rule == 5) {
-                    scene->ruled_changed = false;
                     renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
                         if(rule == 1) return 255;
                         if (rule >= 4) {
@@ -127,39 +125,96 @@ public:
                     playerBody->transform.lookAt(scene->cam.look_at, Direction::up);
                 }
                 break;
+            // wave/zoom in/switch to FVTA/show different shaders
             case SCENES::FVTA:
                 if(scene->ruled_changed) {
                     renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        if (!voxel_util::wave(1.0f, x, y, z, 8)) return 0;
                         return voxel_util::hash(glm::ivec3(x, y, z));
                     });
-                    if (scene->rule == 4) {
+                    if (scene->rule == 1) {
                         checkpoint = {*elapsed, camera->mWorld};
                     }
                 }
-                if (scene->rule == 2) {
+                if (scene->rule == 3) {
                     scene->shader_setting = 1; //show fvta
                 } else {
                     scene->shader_setting = 0;
                     camera->mWorld.SetTranslate(scene->cam.pos);
                     camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
                 }
-                if (scene->rule >= 1)
+                if (scene->rule > 1)
                     lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
                 break;
             case SCENES::SHADERS:
+                if(scene->ruled_changed) {
+                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        if (!voxel_util::wave(1.0f, x, y, z, 8)) return 0;
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
+                }
                 break;
             case SCENES::LARGER:
+                if(scene->ruled_changed) {
+                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        if (!voxel_util::wave(1.0f, x, y, z, 64)) return 0;
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
+                }
                 break;
             case SCENES::SDF:
+                if(scene->ruled_changed) {
+                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        // ??
+                        return 1;
+                    });
+                }
                 break;
             case SCENES::CA:
+                if(scene->ruled_changed) {
+                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        // reset generation
+                        return 1;
+                    });
+                }
+                renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                    // next generation
+                    return 1;
+                });
                 break;
             case SCENES::NOISE:
+                if(scene->ruled_changed) {
+                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        // ??
+                        return 1;
+                    });
+                }
                 break;
             case SCENES::MINECRAFT:
+                if(scene->ruled_changed) {
+                    // create volumes
+                    // figure out which volumes to add/remove
+                    if(rule == renderer->numberVolumes()) break;
+                    while(rule < renderer->numberVolumes())
+                        // remove volume
+                        renderer->removeVolume(renderer->numberVolumes()-1);
+
+                    auto center = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
+                    int size = scene->volume_size;
+                    while(rule > renderer->numberVolumes()){
+                        //add volume
+                        int n = renderer->numberVolumes() + 1;
+                        auto vol = new VoxelVolume(size, size, size, center.translatedX(n * 3).translateZ(n * 3));
+                        vol->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                            return voxel_util::hash(glm::ivec3(x, y, z));
+                        });
+                        renderer->add_volume(vol);
+                    }
+                }
                 break;
         }
 
+        if(scene->ruled_changed) scene->ruled_changed = false;
         if (getKey(GLFW_KEY_DOWN)) rule -= 1;
         if (getKey(GLFW_KEY_UP)) rule += 1;
         rule = glm::clamp(rule, 1, scene->highest_rule);

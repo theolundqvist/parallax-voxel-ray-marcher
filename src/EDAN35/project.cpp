@@ -112,6 +112,9 @@ void edan35::Project::run() {
     // GameObject::addShaderToLibrary(&program_manager, "shield",
     //                                phong_set_uniforms);
 
+    // CHANGE HERE FOR DEMOAPP OR REGULAR APP
+    // new App...
+    // new DemoApp...
     auto app = new DemoApp(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
 
 
