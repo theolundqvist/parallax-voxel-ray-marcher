@@ -166,28 +166,42 @@ public:
                 break;
             case SCENES::SDF:
                 if(scene->ruled_changed) {
-                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                        // ??
+                    renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+                        // is it possible to animate the sdf from center to edge
                         return 1;
                     });
                 }
                 break;
             case SCENES::CA:
                 if(scene->ruled_changed) {
-                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                    //rule is init to 1
+                    //if rule changed, I need to change color palette and ca rule
+                    renderer->getVolume(0)->updateVoxels([rule](int x, int y, int z, GLubyte prev) {
                         // reset generation
+                        //maybe need to get center of the volume
+                        //create cells here and init cells with random specific state
+                        // make sure rule 1->end->1
+                        switch (rule)
+                        {
+                        case :
+                            break;
+                        default:
+                            break;
+                        }
                         return 1;
                     });
+                    // use swith(rule) to switch between different color palette and ca rule
                 }
+                // keep update the based on the current ca rule if rule doesn't change
                 renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                    // next generation
                     return 1;
                 });
                 break;
             case SCENES::NOISE:
                 if(scene->ruled_changed) {
-                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                        // ??
+                    renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+                        // rule = 1 still, rule = 2 animated
+                        // use time as offset to animate the terrain
                         return 1;
                     });
                 }

@@ -280,6 +280,8 @@ private:
         glUniformMatrix3fv(glGetUniformLocation(program, "normal_model_to_world"),
                            1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(tf))));
 */
+        // color palette
+        // set color palette here
 
         // vertex to clip
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),
