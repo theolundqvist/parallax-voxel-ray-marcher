@@ -22,15 +22,15 @@ typedef struct cam_pos_t {
 } cam_pos_t;
 
 enum CAM {
-    QUAD,
-    CUBE,
-    NINE_BY_NINE,
+    QUAD_CAM,
+    CUBE_CAM,
+    NINE_BY_NINE_CAM,
 };
 
 cam_pos_t camera_positions[3] = {
-        {glm::vec3(-0.15, -0.65, 6.5),   glm::vec3(0, 0, 0)},
-        {glm::vec3(4., 3.35, -5.5), glm::vec3(0)},
-        {glm::vec3(0.15, 6., 17.5), glm::vec3(3, 0, 3)},
+        {glm::vec3(-0.15, -0.65, 6.5), glm::vec3(0, 0, 0)},
+        {glm::vec3(4., 3.35, -5.5),    glm::vec3(0)},
+        {glm::vec3(0.15, 6., 17.5),    glm::vec3(3, 0, 3)},
 };
 
 typedef struct scene_settings_t {
@@ -42,31 +42,28 @@ typedef struct scene_settings_t {
     int volume_size = 16;
     int volumes = 1;
     bool orbit = false;
-    bool free_view = false;
     int rule = 1;
     int voxel_count = 0;
-    bool ruled_changed = false;
+    bool ruled_changed = true;
 } scene_settings_t;
 
 scene_settings_t scenes[] = {
-        {0, "Quad fixed",     camera_positions[QUAD],         3, 0},
-        {1, "Cube fixed",     camera_positions[CUBE],         4, 0},
-        {2, "Cube FVTA step", camera_positions[CUBE],         4, 1},
-        {3, "Shaders",        camera_positions[CUBE],         3, 1},
-        {4, "Free view",      camera_positions[CUBE],         1, 16,  1, 0,  false, true},
-        {5, "Larger",         camera_positions[CUBE],         1, 128, 1, 0,  true},
-        {6, "SDF",            camera_positions[CUBE],         4, 128, 1, 3,  true},
-        {7, "CA",             camera_positions[CUBE],         4, 128, 1, 3,  true},
-        {8, "Noise",          camera_positions[CUBE],         3, 128, 1, 0,  true},
-        {9, "Minecraft",      camera_positions[NINE_BY_NINE], 10, 128, 1, 20, false, false, 3},
+        {0, "Quad fixed",     camera_positions[QUAD_CAM],         4,  0},
+        {1, "Cube fixed",     camera_positions[CUBE_CAM],         5,  0},
+        {2, "Cube FVTA step", camera_positions[CUBE_CAM],         4,  1},
+        {3, "Shaders",        camera_positions[CUBE_CAM],         3,  1},
+        {5, "Larger",         camera_positions[CUBE_CAM],         1,  128, 1, 0,  true},
+        {6, "SDF",            camera_positions[CUBE_CAM],         4,  128, 1, 3,  true},
+        {7, "CA",             camera_positions[CUBE_CAM],         4,  128, 1, 3,  true},
+        {8, "Noise",          camera_positions[CUBE_CAM],         3,  128, 1, 0,  true},
+        {9, "Minecraft",      camera_positions[NINE_BY_NINE_CAM], 10, 128, 1, 20, false, 3},
 };
 
 enum SCENES {
-    QUAD_FIXED,
-    CUBE_FIXED,
-    CUBE_FVTA_STEP,
+    QUAD,
+    CUBE,
+    FVTA,
     SHADERS,
-    FREE_VIEW,
     LARGER,
     SDF,
     CA,

@@ -34,8 +34,14 @@ private:
     settings_t settings;
     GameObject *playerBody;
 
-    int current_scene = QUAD_FIXED;
+    int current_scene = SCENES::QUAD;
     scene_settings_t *scene = &scenes[current_scene];
+
+    typedef struct checkpoint_t {
+        float time;
+        TRSTransformf cam;
+    } checkpoint_t;
+    checkpoint_t checkpoint;
 
 public:
     DemoApp(GLFWwindow *window, FPSCameraf *cam, InputHandler *inputHandler,
@@ -49,11 +55,12 @@ public:
         this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
 
         this->playerBody = new GameObject("playerbody");
-        playerBody->setMesh(parametric_shapes::createSphere(0.25f, 10, 10));
+        playerBody->setMesh(parametric_shapes::createSphere(.25f, 10, 10));
         GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         playerBody->setShader("fallback");
         setScene(0);
     }
+
 
     void setScene(int index) {
         current_scene = index;
@@ -70,104 +77,76 @@ public:
         renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
         //}
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
-        setupScene();
+        scene->rule = 0;
+        scene->ruled_changed = true;
     }
 
-
-    void setupScene() {
-        int rule = scene->rule;
-        float time = *this->elapsed;
-        switch (scene->nbr) {
-            case SCENES::QUAD_FIXED:
-                scene->voxel_count = scene->volume_size * scene->volume_size;
-                renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
-                    if (rule == 1) return 255;
-                    if (!voxel_util::wave(0.01f, x, y, z, 8)) return rule == 2 ? 1 : 0;
-                    return voxel_util::hash(glm::ivec3(x, y, z));
-                });
-                break;
-            case SCENES::CUBE_FIXED:
-                renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
-                    if (rule >= 2) {
-                        if (!voxel_util::wave(rule == 3 ? time * 0.001f : 1.0f, x, y, z, 8)) return rule == 2 ? 1 : 0;
-                    }
-                    return voxel_util::hash(glm::ivec3(x, y, z));
-                });
-                break;
-            case SCENES::CUBE_FVTA_STEP:
-                renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                    return voxel_util::hash(glm::ivec3(x, y, z));
-                });
-                break;
-            case SCENES::SHADERS:
-                break;
-            case SCENES::FREE_VIEW:
-                break;
-            case SCENES::LARGER:
-                break;
-            case SCENES::SDF:
-                break;
-            case SCENES::CA:
-                break;
-            case SCENES::NOISE:
-                break;
-            case SCENES::MINECRAFT:
-                break;
-        }
-    }
-
-    typedef struct checkpoint_t {
-        float time;
-        TRSTransformf cam;
-    } checkpoint_t;
-    checkpoint_t checkpoint;
-
-    void lookAtBlock(checkpoint_t check, glm::vec3 block_index, glm::vec3 cam_block_index, float time = 1000.0f){
-        auto volume = renderer->getVolume(0);
-        auto inverse = volume->transform;//.get_inverse();
-        auto end_pos = inverse.apply(cam_block_index*volume->voxel_size);
-        auto block_pos = inverse.apply(block_index*volume->voxel_size);
-        camera->mWorld.SetTranslate(
-                voxel_util::lerp(check.cam.GetTranslation(), end_pos,
-                                 glm::smoothstep(check.time, check.time + time, *elapsed)));
-        camera->mWorld.LookAt(
-                voxel_util::lerp(scene->cam.look_at, block_pos,
-                                 glm::smoothstep(check.time, check.time + time, *elapsed)), Direction::up);
-    }
 
     void updateScene(const std::chrono::microseconds deltaTimeUs) {
+        settings.free_view = false;
+        int rule = scene->rule;
+        float time = *elapsed;
         switch (scene->nbr) {
-            case SCENES::QUAD_FIXED:
+            // red/hashed texels/wave texels, rest black/rest transparent
+            case SCENES::QUAD:
                 if (scene->ruled_changed) {
                     scene->ruled_changed = false;
-                    setupScene();
+                    scene->voxel_count = scene->volume_size * scene->volume_size;
+                    renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+                        if (rule == 1) return 255;
+                        if (rule > 2 && !voxel_util::wave(0.01f, x, y, z, 8)) return rule == 3 ? 1 : 0;
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
                 }
                 break;
-            case SCENES::CUBE_FIXED:
-                if (scene->ruled_changed || scene->rule == 3) {
+            // red/hashed texels/wave texels, rest black/rest transparent
+            case SCENES::CUBE:
+                if (scene->ruled_changed || scene->rule == 5) {
                     scene->ruled_changed = false;
-                    setupScene();
-                    if (scene->rule == 4) {
+                    renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+                        if(rule == 1) return 255;
+                        if (rule >= 4) {
+                            if (!voxel_util::wave(rule == 5 ? time * 0.001f : 1.0f, x, y, z, 8)) return rule == 4 ? 1 : 0;
+                        }
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
+                    if(scene->rule == 3){
                         checkpoint = {*elapsed, camera->mWorld};
                     }
-                    else if(scene->rule == 5){
-                        scene->shader_setting = 1; //show fvta
-                    }
                     else {
-                        scene->shader_setting = 0;
                         camera->mWorld.SetTranslate(scene->cam.pos);
                         camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
                     }
                 }
-                if (scene->rule >= 4)
-                    lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
-                scene->orbit = scene->rule == 3;
+                scene->orbit = scene->rule == 5;
+                settings.free_view = scene->rule == 3;
+                if(scene->rule == 3){
+                    camera->mWorld.SetTranslate(checkpoint.cam.GetTranslation() * 2.0f);
+                    playerBody->transform.setPos(checkpoint.cam.GetTranslation()*1.04f - glm::vec3(0,0.1,0));
+                    playerBody->transform.rotateAroundY(0.0005f * (checkpoint.time-time));
+                    playerBody->transform.lookAt(scene->cam.look_at, Direction::up);
+                }
                 break;
-            case SCENES::CUBE_FVTA_STEP:
+            case SCENES::FVTA:
+                if(scene->ruled_changed) {
+                    renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
+                    if (scene->rule == 4) {
+                        checkpoint = {*elapsed, camera->mWorld};
+                    }
+                }
+                if (scene->rule == 2) {
+                    scene->shader_setting = 1; //show fvta
+                } else {
+                    scene->shader_setting = 0;
+                    camera->mWorld.SetTranslate(scene->cam.pos);
+                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+                }
+                if (scene->rule >= 1)
+                    lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
                 break;
             case SCENES::SHADERS:
-                break;
-            case SCENES::FREE_VIEW:
                 break;
             case SCENES::LARGER:
                 break;
@@ -181,7 +160,6 @@ public:
                 break;
         }
 
-        int rule = scene->rule;
         if (getKey(GLFW_KEY_DOWN)) rule -= 1;
         if (getKey(GLFW_KEY_UP)) rule += 1;
         rule = glm::clamp(rule, 1, scene->highest_rule);
@@ -206,7 +184,6 @@ public:
     }
 
 
-    glm::mat4 frozen_view_matrix;
 
     void render(bool show_basis, float basis_length_scale,
                 float basis_thickness_scale, float dt) {
@@ -215,19 +192,18 @@ public:
         float gpu_time, cpu_time;
         switch (state) {
             case RUNNING:
-                if (!scene->free_view) frozen_view_matrix = camera->GetWorldToClipMatrix();
                 renderer->setShaderSetting(scene->shader_setting);
                 gpu_time = renderer->render(
-                        frozen_view_matrix,
-                        camera->mWorld.GetTranslation(),
+                        camera->GetWorldToClipMatrix(),
+                        settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
                         show_basis,
                         basis_length_scale,
                         basis_thickness_scale);
                 cpu_time = dt - gpu_time;
-                if (scene->free_view)
+                if (settings.free_view)
                     playerBody->render(
-                            frozen_view_matrix,
-                            camera->mWorld.GetMatrix(), true, true, true
+                            camera->GetWorldToClipMatrix(),
+                            glm::mat4(1.0), true, basis_length_scale,basis_thickness_scale
                     );
                 ui->resize();
                 if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
@@ -324,6 +300,19 @@ public:
             }
         }
         return pressed;
+    }
+
+    void lookAtBlock(checkpoint_t check, glm::vec3 block_index, glm::vec3 cam_block_index, float time = 1000.0f) {
+        auto volume = renderer->getVolume(0);
+        auto inverse = volume->transform;//.get_inverse();
+        auto end_pos = inverse.apply(cam_block_index * volume->voxel_size);
+        auto block_pos = inverse.apply(block_index * volume->voxel_size);
+        camera->mWorld.SetTranslate(
+                voxel_util::lerp(check.cam.GetTranslation(), end_pos,
+                                 glm::smoothstep(check.time, check.time + time, *elapsed)));
+        camera->mWorld.LookAt(
+                voxel_util::lerp(scene->cam.look_at, block_pos,
+                                 glm::smoothstep(check.time, check.time + time, *elapsed)), Direction::up);
     }
 
 };
