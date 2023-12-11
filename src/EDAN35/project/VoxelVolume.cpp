@@ -197,6 +197,9 @@ public:
     }
 
 
+    void setShaderSetting(int setting) {
+    }
+
     void render(glm::mat4 const &parent_transform,
                 glm::mat4 world_to_clip,
                 glm::vec3 cam_pos,

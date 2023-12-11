@@ -82,7 +82,7 @@ public:
         ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
         ImGui::SetWindowFontScale(font_scale);
         ImGui::PushFont(font1);
-        ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr, scene->name.c_str());
+        ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr+1, scene->name.c_str());
         ImGui::TextColored(ImColor(0,0,0),"Current rule: %d/%d", scene->rule, scene->highest_rule);
         ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", scene->voxel_count);
         ImGui::PopFont();

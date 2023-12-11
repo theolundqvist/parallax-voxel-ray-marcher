@@ -67,7 +67,11 @@ public:
         return volumes[index];
     }
 
-
+    void setShaderSetting(int setting){
+        for (auto volume: volumes) {
+            volume->setShaderSetting(setting);
+        }
+    }
 
     float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness) {
         // sort volumes by distance to camera

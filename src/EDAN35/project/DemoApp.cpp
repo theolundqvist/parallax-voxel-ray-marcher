@@ -82,16 +82,14 @@ public:
                 scene->voxel_count = scene->volume_size * scene->volume_size;
                 renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
                     if (rule == 1) return 255;
-                    if (rule == 3) {
-                        if (!voxel_util::wave(0.01f, x, y, z, 8)) return 0;
-                    }
+                    if (!voxel_util::wave(0.01f, x, y, z, 8)) return rule == 2 ? 1 : 0;
                     return voxel_util::hash(glm::ivec3(x, y, z));
                 });
                 break;
             case SCENES::CUBE_FIXED:
                 renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
                     if (rule >= 2) {
-                        if (!voxel_util::wave(rule == 4 ? 1.0f : time * 0.001f, x, y, z, 8)) return 0;
+                        if (!voxel_util::wave(rule == 3 ? time * 0.001f : 1.0f, x, y, z, 8)) return rule == 2 ? 1 : 0;
                     }
                     return voxel_util::hash(glm::ivec3(x, y, z));
                 });
@@ -118,6 +116,25 @@ public:
         }
     }
 
+    typedef struct checkpoint_t {
+        float time;
+        TRSTransformf cam;
+    } checkpoint_t;
+    checkpoint_t checkpoint;
+
+    void lookAtBlock(checkpoint_t check, glm::vec3 block_index, glm::vec3 cam_block_index, float time = 1000.0f){
+        auto volume = renderer->getVolume(0);
+        auto inverse = volume->transform;//.get_inverse();
+        auto end_pos = inverse.apply(cam_block_index*volume->voxel_size);
+        auto block_pos = inverse.apply(block_index*volume->voxel_size);
+        camera->mWorld.SetTranslate(
+                voxel_util::lerp(check.cam.GetTranslation(), end_pos,
+                                 glm::smoothstep(check.time, check.time + time, *elapsed)));
+        camera->mWorld.LookAt(
+                voxel_util::lerp(scene->cam.look_at, block_pos,
+                                 glm::smoothstep(check.time, check.time + time, *elapsed)), Direction::up);
+    }
+
     void updateScene(const std::chrono::microseconds deltaTimeUs) {
         switch (scene->nbr) {
             case SCENES::QUAD_FIXED:
@@ -127,10 +144,23 @@ public:
                 }
                 break;
             case SCENES::CUBE_FIXED:
-                if (scene->ruled_changed || scene->rule >= 2) {
+                if (scene->ruled_changed || scene->rule == 3) {
                     scene->ruled_changed = false;
                     setupScene();
+                    if (scene->rule == 4) {
+                        checkpoint = {*elapsed, camera->mWorld};
+                    }
+                    else if(scene->rule == 5){
+                        scene->shader_setting = 1; //show fvta
+                    }
+                    else {
+                        scene->shader_setting = 0;
+                        camera->mWorld.SetTranslate(scene->cam.pos);
+                        camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+                    }
                 }
+                if (scene->rule >= 4)
+                    lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
                 scene->orbit = scene->rule == 3;
                 break;
             case SCENES::CUBE_FVTA_STEP:
@@ -186,6 +216,7 @@ public:
         switch (state) {
             case RUNNING:
                 if (!scene->free_view) frozen_view_matrix = camera->GetWorldToClipMatrix();
+                renderer->setShaderSetting(scene->shader_setting);
                 gpu_time = renderer->render(
                         frozen_view_matrix,
                         camera->mWorld.GetTranslation(),

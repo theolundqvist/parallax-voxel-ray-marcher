@@ -124,10 +124,11 @@ struct hit_t {
 };
 
 hit_t fixed_step(){
-    vec3 V = normalize(fV) * voxel_size/15;// fixed step
+    float step_size_inv = 10;
+    vec3 V = normalize(fV) * voxel_size/step_size_inv;// fixed step
     start_t start = findStartPos();// P is in 0-1.0 space
     vec3 P = start.pos;
-    int max_step = int(15*15/voxel_size);
+    int max_step = int(step_size_inv*step_size_inv/voxel_size);
     for (int i = 0; i < max_step; i++){
         if (isInside(P) < 0.5) discard;
         int material = int(round(texture(volume, P).r*255));
@@ -305,13 +306,13 @@ void main()
 
     //vec3 color = findStartPos();
     hit_t hit;
-    //hit = fixed_step();
-    hit = fvta_step();
+    hit = fixed_step();
+    //hit = fvta_step();
     if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
         discard;
     }
     vec3 color = vec3(hit.material/255.0, 0, 0);
-    color = shade(hit);
+    //color = shade(hit);
     //color *= ao(hit);
     //color = hit.pixel_pos;
     //color = hit.voxel_pos;

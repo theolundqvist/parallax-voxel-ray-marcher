@@ -17,4 +17,7 @@ public:
         float surfaceY = (std::sin(offset + x * 0.3f) * 0.5f + 0.5f) * maxY * 0.5 + maxY / 2.0;
         return y < surfaceY;
     }
+    static glm::vec3 lerp(glm::vec3 A, glm::vec3 B, float t ){
+        return A*(1.f - t) + B*(t) ;
+    }
 };
