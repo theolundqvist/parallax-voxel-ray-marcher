@@ -5,7 +5,6 @@
 #include "core/opengl.hpp"
 #include <glm/gtx/component_wise.hpp>
 
-shader_setting S_mananger = fixed_step_material;
 
 class VoxelVolume {
 private:
@@ -15,6 +14,7 @@ private:
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
 
     GLuint program{};
+    shader_setting_t shader_setting = fixed_step_material;
 
 public:
     Transform transform;
@@ -199,7 +199,8 @@ public:
     }
 
 
-    void setShaderSetting(int setting) {
+    void setShaderSetting(shader_setting_t setting) {
+        shader_setting = setting;
     }
 
     void render(glm::mat4 const &parent_transform,
@@ -261,7 +262,7 @@ private:
     void setUniforms(glm::mat4 const &tf,
                      glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
         // shader manager
-        glUniform1i(glGetUniformLocation(program, "Shader_manager"), S_mananger);
+        glUniform1i(glGetUniformLocation(program, "Shader_manager"), shader_setting);
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
         // grid size

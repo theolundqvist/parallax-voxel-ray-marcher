@@ -20,7 +20,7 @@ public:
         io = ImGui::GetIO();
         font_height = config::resolution_x/10.0f;
         font1 = io.Fonts->AddFontFromFileTTF(
-                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), font_height);
+                config::resources_path("fonts/PoppinsRegular.ttf").c_str(), font_height);
         this->window = window;
     }
 
@@ -77,7 +77,7 @@ public:
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
         ImGui::Begin("SCENE", nullptr, flags);
         int h = window_size.y / window_scale.y;
-        int number_rows = 3;
+        int number_rows = 4;
         float font_scale = 0.25f;
         ImGui::SetWindowPos(ImVec2(0,h - font_height * font_scale * (number_rows + 1)));
         ImGui::SetWindowFontScale(font_scale);
@@ -85,6 +85,7 @@ public:
         ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr+1, scene->name.c_str());
         ImGui::TextColored(ImColor(0,0,0),"Current rule: %d/%d", scene->rule, scene->highest_rule);
         ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", scene->voxel_count);
+        ImGui::TextColored(ImColor(0,0,0),"Shader: %d", scene->shader_setting);
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();

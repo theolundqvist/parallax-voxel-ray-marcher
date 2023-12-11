@@ -137,9 +137,9 @@ public:
                     }
                 }
                 if (scene->rule == 3) {
-                    scene->shader_setting = 1; //show fvta
+                    scene->shader_setting = fvta_step_material; //show fvta
                 } else {
-                    scene->shader_setting = 0;
+                    scene->shader_setting = fixed_step_material;
                     camera->mWorld.SetTranslate(scene->cam.pos);
                     camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
                 }
@@ -217,22 +217,18 @@ public:
         if(scene->ruled_changed) scene->ruled_changed = false;
         if (getKey(GLFW_KEY_DOWN)) rule -= 1;
         if (getKey(GLFW_KEY_UP)) rule += 1;
-
-        int intValue_demo = static_cast<int>(S_mananger);
-        if (getKey(GLFW_KEY_N)) {
-            intValue_demo++;
-        }
-        if (intValue_demo > 9)
-        {
-            intValue_demo = 0;
-        }
-        S_mananger = static_cast<shader_setting>(intValue_demo);
-
         rule = glm::clamp(rule, 1, scene->highest_rule);
         if (rule != scene->rule) {
             scene->rule = rule;
             scene->ruled_changed = true;
         }
+
+        int shader = static_cast<int>(scene->shader_setting);
+        if (getKey(GLFW_KEY_COMMA)) shader--;
+        if (getKey(GLFW_KEY_PERIOD)) shader++;
+        shader = glm::clamp(shader, 0, (int) NBR_SHADER_SETTINGS - 1);
+        scene->shader_setting = static_cast<shader_setting_t>(shader);
+        settings.shader_setting = scene->shader_setting;
 
         if (getKey(GLFW_KEY_LEFT)) current_scene -= 1;
         if (getKey(GLFW_KEY_RIGHT)) current_scene += 1;
@@ -258,7 +254,7 @@ public:
         float gpu_time, cpu_time;
         switch (state) {
             case RUNNING:
-                renderer->setShaderSetting(scene->shader_setting);
+                renderer->setShaderSetting(settings.shader_setting);
                 gpu_time = renderer->render(
                         camera->GetWorldToClipMatrix(),
                         settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
