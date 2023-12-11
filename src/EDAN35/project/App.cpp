@@ -45,7 +45,8 @@ public:
     App(GLFWwindow *window, FPSCameraf *cam, InputHandler *inputHandler,
         ShaderProgramManager *shaderManager, float *elapsed_time_ms) {
         this->window = window;
-        this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
+
+
         this->inputHandler = inputHandler;
         this->camera = cam;
         this->elapsed = elapsed_time_ms;
@@ -65,6 +66,18 @@ public:
         //GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         //hitMin->setShader("fallback");
         //hitMax->setShader("fallback");
+        this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
+        // create volumes and renderer
+        auto tf = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
+        //renderer->remove_volumes();
+        for (int i = 0; i < 9; i++) {
+            auto vol = new VoxelVolume(128, 128, 128, tf.translatedX((i % 3)*3).translatedZ((i / 3)*3));
+            vol->updateVoxels([](int x, int y, int z, GLubyte prev) {
+                return voxel_util::hash(glm::ivec3(x, y, z));
+            });
+            renderer->add_volume(vol);
+        }
+
     }
 
 
@@ -73,8 +86,7 @@ public:
     void render(bool show_basis, float basis_length_scale,
                 float basis_thickness_scale, float dt) {
         const auto now = std::chrono::high_resolution_clock::now();
-        float gpu_time;
-        float cpu_time = dt;
+        float gpu_time, cpu_time;
         switch (state) {
             case RUNNING:
                 if (!freeView) frozen_view_matrix = camera->GetWorldToClipMatrix();
@@ -84,6 +96,7 @@ public:
                         show_basis,
                         basis_length_scale,
                         basis_thickness_scale);
+                cpu_time = dt - gpu_time;
                 if (freeView)
                     playerBody->render(
                             frozen_view_matrix,

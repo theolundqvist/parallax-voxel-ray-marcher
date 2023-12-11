@@ -14,10 +14,11 @@
 #include <cstdio>
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
+#include <iostream>
 
 class VoxelRenderer {
 private:
-    std::vector<VoxelVolume *> volumes;
+    std::vector<VoxelVolume*> volumes;
     FPSCameraf *camera;
     GLuint voxel_program;
     float *elapsed_time_s;
@@ -37,54 +38,48 @@ public:
                 voxel_program);
 
         std::srand(std::time(nullptr));
-        auto tf = Transform()
-                .scale(3.0f);
-                //.rotateAroundX(glm::pi<float>() * 1.5f);
-        //createVolume(16, tf);
-        for (int x = 0; x < 3; ++x) {
-            for (int z = 0; z < 3; ++z) {
-                createVolume(16, tf.translated(x * 3, 0, z * 3));
-            }
-        }
-        for (auto volume: volumes) {
-            updateVolume(volume);
-        }
     }
-
-    void createVolume(int size, Transform transform = Transform()) {
-        auto volume = new VoxelVolume(size, size, size, transform);
-        // does not work if not rotated like this ??, something wierd in the shader
-        volume->setProgram(voxel_program);
+    ~VoxelRenderer(){
+        for (auto vol:volumes) {
+            delete vol;
+        }
+        glDeleteQueries(1, &elapsed_time_query);
+    }
+    void add_volume(VoxelVolume *volume) {
         volumes.push_back(volume);
+        volume->setProgram(voxel_program);
+    }
+    void remove_volumes(){
+        for (auto vol:volumes) {
+            delete vol;
+        }
+        volumes.clear();
+    }
+    VoxelVolume* getVolume(int index){
+        return volumes[index];
+    }
+    void removeVolume(int index){
+        auto volume = volumes[index];
+        volumes.erase(volumes.begin()+index);
+        delete volume;
+    }
+    int numberVolumes(){
+        return volumes.size();
     }
 
     void update(InputHandler *inputHandler, float dt) {
-        // try this rotation
-        //volumes[0]->transform.rotateAroundX(glm::pi<float>()*dt*0.0001f);
 
-/*
+    }
+
+    void orbit(float dt){
+        volumes[0]->transform.rotateAroundY(glm::pi<float>()*dt*0.0001f);
+    }
+
+    void setShaderSetting(int setting){
         for (auto volume: volumes) {
-            updateVolume(volume);
-        }
-*/
-
-    }
-
-    void updateVolume(VoxelVolume *volume) {
-        // run whatever algorithm for updating the voxels
-        auto volume_pos = volume->transform.getPos() * glm::vec3(volume->W, volume->H, volume->D);
-        for (int x = 0; x < volume->W; x++) {
-            for (int y = 0; y < volume->H; y++) {
-                for (int z = 0; z < volume->D; z++) {
-                    auto pos = glm::vec3(x, y, z) + volume_pos;
-                    //volume->setVoxel(x, y, z, wave(*elapsed_time_s * 0.001f, pos.x, pos.y, pos.z));
-                    volume->setVoxel(x, y, z, voxel_util::hash(glm::ivec3(x, y, z)));
-                }
-            }
+            volume->setShaderSetting(setting);
         }
     }
-
-
 
     float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness) {
         // sort volumes by distance to camera
@@ -149,18 +144,6 @@ public:
             }
         }
         return result;
-    }
-
-
-
-    GLubyte wave(float offset, float x, float y, float z, int maxY = 22) {
-        float surfaceY =
-                (std::sin(offset + x * 0.3f) * 0.5f + 0.5f) * maxY * 0.5 +
-                maxY / 2.0;
-        if (y > surfaceY) {
-            return voxel_util::hash(glm::ivec3(x, y, z));
-        } else
-            return 0;
     }
 
 private:

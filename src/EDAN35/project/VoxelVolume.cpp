@@ -27,7 +27,7 @@ public:
         D = DEPTH;
         this->transform = tf;
 
-        voxel_size = 1.0f / (float)W;
+        voxel_size = 1.0f / (float) W;
 
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
@@ -49,11 +49,13 @@ public:
 
     void setProgram(GLuint shaderProgram) { this->program = shaderProgram; }
 
-    GLubyte getVoxel(int x, int y, int z) const {
+    int getVoxel(int x, int y, int z) const {
+        int index = x + y * W + z * W * H;
+        if (index >= W * H * D || index < 0) return -1;
         return texels[x + y * W + z * W * H];
     }
 
-    GLubyte getVoxel(glm::ivec3 index) const {
+    int getVoxel(glm::ivec3 index) const {
         return getVoxel(index.x, index.y, index.z);
     }
 
@@ -68,7 +70,16 @@ public:
         return setVoxel(index.x, index.y, index.z, value);
     }
 
-    void setVolumeData(GLubyte *data) { texels = data; }
+    void updateVoxels(std::function<GLubyte(int x,int y,int z, GLubyte previous)> const get_material){
+        for (int x = 0; x < W; x++) {
+            for (int y = 0; y < H; y++) {
+                for (int z = 0; z < D; z++) {
+                    int prev = texels[x + y * W + z * W * H];
+                    texels[x + y * W + z * W * H] = get_material(x,y,z, prev);
+                }
+            }
+        }
+    }
 
     void setVolumeData3D(GLubyte ***data) {
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
@@ -98,7 +109,7 @@ public:
         return {
                 .miss=false,
                 .index=index,
-                .material=getVoxel(index),
+                .material=(GLubyte)getVoxel(index),
                 .volume=this,
                 .world_pos=world_pos
         };
@@ -166,21 +177,18 @@ public:
                 hit.near = local_origin;
             }
             auto P = transform.apply(hit.near); //world
-            float step_size = 1.0/10;
+            float step_size = 1.0 / 10;
             auto step = normalize(w_direction * transform.getScale()) * voxel_size * step_size;
             int i = 0;
-            int max_step = (int)(1.0/step_size * 1.0/step_size * 1.0/voxel_size);
+            int max_step = (int) (1.0 / step_size * 1.0 / step_size * 1.0 / voxel_size);
             for (i = 0; i < max_step; ++i) {
-/*
-                if (glm::any(glm::lessThan(P, box.min + step)) || glm::any(glm::greaterThan(P, box.max-step))) {
-                    printf("out of bounds\n");
-                    break;
-                }
-*/
                 auto INDEX = localToIndex(inverse.apply(P));
                 auto mat = getVoxel(INDEX);
                 if (mat > 0) {
-                    return {false, INDEX, mat, this, P};
+                    return {false, INDEX, (GLubyte)mat, this, P};
+                }
+                else if (mat == -1) {
+                    return {true };
                 }
                 P += step;
             }
@@ -188,6 +196,9 @@ public:
         return {.miss = true};
     }
 
+
+    void setShaderSetting(int setting) {
+    }
 
     void render(glm::mat4 const &parent_transform,
                 glm::mat4 world_to_clip,
@@ -206,7 +217,7 @@ public:
         // Set texture unit for sampler
         glUniform1i(glGetUniformLocation(program, "volume"), 0);
         // Active texture unit before use
-        glActiveTexture(GL_TEXTURE0);
+        glActiveTexture(texture);
         // Bind 3D texture
         glBindTexture(GL_TEXTURE_3D, texture);
 
@@ -227,9 +238,9 @@ public:
         setUniforms(tf, world_to_clip, cam_pos);
 
         // render
-        glEnable(GL_CULL_FACE);
-        glFrontFace(GL_CCW);
-        glCullFace(GL_FRONT);
+        //glEnable(GL_CULL_FACE);
+        //glFrontFace(GL_CCW);
+        //glCullFace(GL_FRONT);
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
