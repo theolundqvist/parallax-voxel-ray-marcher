@@ -86,8 +86,14 @@ public:
 
         ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr+1, scene->name.c_str());
         ImGui::TextColored(ImColor(0,0,0),"Current rule: %d/%d", scene->rule, scene->highest_rule);
-        ImGui::TextColored(ImColor(0,0,0),"Voxel count: %d", scene->voxel_count);
-        ImGui::TextColored(ImColor(0,0,0),"Shader: %d", scene->shader_setting);
+        float count = scene->voxel_count;
+        if (count > 1e6)
+            ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %.1f M", count/1e6);
+        else if (count > 1e3)
+            ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %.1f K", count/1e3);
+        else
+            ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %d", (int)count);
+        ImGui::TextColored(ImColor(0, 0, 0), "Time: %.0f s", elapsed/1000.f);        ImGui::TextColored(ImColor(0,0,0),"Shader: %d", scene->shader_setting);
 
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
