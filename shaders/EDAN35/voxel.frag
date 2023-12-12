@@ -268,7 +268,7 @@ float ao(hit_t hit){
     vec3 P = hit.pixel_pos;
     float ao = 0.0;
     int nbr_samples = 4;
-    float r_rel = 0.04;
+    float r_rel = 0.08;
     // save some texture reads by only sampling edges
     if (hit.uv.x > r_rel && hit.uv.x < 1-r_rel && hit.uv.y > r_rel && hit.uv.y < 1-r_rel) return 1.0;
     float r = voxel_size * r_rel;
@@ -293,10 +293,10 @@ float ao(hit_t hit){
         if (isInside(sample_point) < 0.5) continue;
         float material = texture(volume, sample_point).r * 255.0;
         if (material > 0.0){
-            ao += 1.0/(nbr_samples*2.0);
+            ao += 1.0/(nbr_samples*1.0);
         }
     }
-    return mix(smoothstep(0, 1, 1-2*ao), 1, 1-ao);
+    return mix(smoothstep(0, 1, 1-2*ao), 1, 1-2*ao);
 }
 
 void main()
