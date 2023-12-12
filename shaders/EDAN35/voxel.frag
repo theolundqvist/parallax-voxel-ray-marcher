@@ -360,12 +360,10 @@ void main()
         color *= ao(hit);
         break;
         case 10:
-        vec3 albedo = colorPalette[hit.material];
-        color = shade(hit, albedo);
+        color = shade(hit, colorPalette[hit.material]);
         break;
         case 11:
-        vec3 albedo = colorPalette[hit.material];
-        color = shade(hit, albedo);
+        color = shade(hit, colorPalette[hit.material]);
         color *= ao(hit);
         break;
     }
