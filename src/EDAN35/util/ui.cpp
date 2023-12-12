@@ -20,7 +20,7 @@ public:
         io = ImGui::GetIO();
         font_height = config::resolution_x / 10.0f;
         font1 = io.Fonts->AddFontFromFileTTF(
-                config::resources_path("fonts/Poppins-Regular.ttf").c_str(), font_height);
+                config::resources_path("fonts/PoppinsRegular.ttf").c_str(), font_height);
         this->window = window;
     }
 
@@ -83,8 +83,9 @@ public:
         ImGui::SetWindowPos(ImVec2(0, h - font_height * font_scale * (number_rows + 1)));
         ImGui::SetWindowFontScale(font_scale);
         ImGui::PushFont(font1);
-        ImGui::TextColored(ImColor(0, 0, 0), "Current Scene: %d - (%s)", scene->nbr + 1, scene->name.c_str());
-        ImGui::TextColored(ImColor(0, 0, 0), "Current rule: %d/%d", scene->rule, scene->highest_rule);
+
+        ImGui::TextColored(ImColor(0,0,0),"Current Scene: %d - (%s)", scene->nbr+1, scene->name.c_str());
+        ImGui::TextColored(ImColor(0,0,0),"Current rule: %d/%d", scene->rule, scene->highest_rule);
         float count = scene->voxel_count;
         if (count > 1e6)
             ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %.1f M", count/1e6);
@@ -92,7 +93,8 @@ public:
             ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %.1f K", count/1e3);
         else
             ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %d", (int)count);
-        ImGui::TextColored(ImColor(0, 0, 0), "Time: %.0f s", elapsed/1000.f);
+        ImGui::TextColored(ImColor(0, 0, 0), "Time: %.0f s", elapsed/1000.f);        ImGui::TextColored(ImColor(0,0,0),"Shader: %d", scene->shader_setting);
+
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
         ImGui::End();

@@ -151,10 +151,13 @@ public:
 					});
 			}
 			if (scene->rule == 3) {
-				scene->shader_setting = 1; //show fvta
+				scene->shader_setting = fvta_step_material; //show fvta
 			}
 			else {
-				scene->shader_setting = 0;
+				scene->shader_setting = fixed_step_material;
+                    camera->mWorld.SetTranslate(scene->cam.pos);
+                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+
 			}
 			if (scene->rule > 1)
 				lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
@@ -270,14 +273,21 @@ public:
 			break;
 		}
 
-		if (scene->ruled_changed) scene->ruled_changed = false;
-		if (getKey(GLFW_KEY_DOWN)) rule -= 1;
-		if (getKey(GLFW_KEY_UP)) rule += 1;
-		rule = glm::clamp(rule, 1, scene->highest_rule);
-		if (rule != scene->rule) {
-			scene->rule = rule;
-			scene->ruled_changed = true;
-		}
+        if(scene->ruled_changed) scene->ruled_changed = false;
+        if (getKey(GLFW_KEY_DOWN)) rule -= 1;
+        if (getKey(GLFW_KEY_UP)) rule += 1;
+        rule = glm::clamp(rule, 1, scene->highest_rule);
+        if (rule != scene->rule) {
+            scene->rule = rule;
+            scene->ruled_changed = true;
+        }
+
+        int shader = static_cast<int>(scene->shader_setting);
+        if (getKey(GLFW_KEY_COMMA)) shader--;
+        if (getKey(GLFW_KEY_PERIOD)) shader++;
+        shader = glm::clamp(shader, 0, (int) NBR_SHADER_SETTINGS - 1);
+        scene->shader_setting = static_cast<shader_setting_t>(shader);
+        settings.shader_setting = scene->shader_setting;
 
 		if (getKey(GLFW_KEY_LEFT)) current_scene -= 1;
 		if (getKey(GLFW_KEY_RIGHT)) current_scene += 1;
@@ -297,38 +307,38 @@ public:
 
 
 
-	void render(bool show_basis, float basis_length_scale,
-		float basis_thickness_scale, float dt) {
-		//printf("cam pos: %f %f %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y, camera->mWorld.GetTranslation().z);
-		const auto now = std::chrono::high_resolution_clock::now();
-		float gpu_time, cpu_time;
-		switch (state) {
-		case RUNNING:
-			renderer->setShaderSetting(scene->shader_setting);
-			gpu_time = renderer->render(
-				camera->GetWorldToClipMatrix(),
-				settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
-				show_basis,
-				basis_length_scale,
-				basis_thickness_scale);
-			cpu_time = dt - gpu_time;
-			if (settings.free_view)
-				playerBody->render(
-					camera->GetWorldToClipMatrix(),
-					glm::mat4(1.0), true, basis_length_scale, basis_thickness_scale
-				);
-			ui->resize();
-			if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
-			if (settings.show_crosshair) ui->crosshair();
-			ui->displaySceneSettings(scene, *elapsed);
-			break;
-		case PAUSED:
-			ui->resize();
-			ui->pauseMenu();
-			break;
-		}
-		const auto end = std::chrono::high_resolution_clock::now();
-	}
+    void render(bool show_basis, float basis_length_scale,
+                float basis_thickness_scale, float dt) {
+        //printf("cam pos: %f %f %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y, camera->mWorld.GetTranslation().z);
+        const auto now = std::chrono::high_resolution_clock::now();
+        float gpu_time, cpu_time;
+        switch (state) {
+            case RUNNING:
+                renderer->setShaderSetting(settings.shader_setting);
+                gpu_time = renderer->render(
+                        camera->GetWorldToClipMatrix(),
+                        settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
+                        show_basis,
+                        basis_length_scale,
+                        basis_thickness_scale);
+                cpu_time = dt - gpu_time;
+                if (settings.free_view)
+                    playerBody->render(
+                            camera->GetWorldToClipMatrix(),
+                            glm::mat4(1.0), true, basis_length_scale,basis_thickness_scale
+                    );
+                ui->resize();
+                if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
+                if (settings.show_crosshair) ui->crosshair();
+                ui->displaySceneSettings(scene, *elapsed);
+                break;
+            case PAUSED:
+                ui->resize();
+                ui->pauseMenu();
+                break;
+        }
+        const auto end = std::chrono::high_resolution_clock::now();
+    }
 
 	void update(const std::chrono::microseconds deltaTimeUs) {
 		const auto now = std::chrono::high_resolution_clock::now();
