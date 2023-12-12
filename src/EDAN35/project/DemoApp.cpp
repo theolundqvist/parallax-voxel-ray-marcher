@@ -185,11 +185,15 @@ public:
 			break;
 		case SCENES::SDF:
 			if (scene->ruled_changed) {
-				renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
-					// is it possible to animate the sdf from center to edge
-					return 1;
-					});
+                checkpoint = { *elapsed, camera->mWorld };
 			}
+            if(rule == 1){ //sphere
+                auto r = scene->volume_size/2 * glm::smoothstep(checkpoint.time, checkpoint.time+1000, *elapsed);
+                renderer->getVolume(0)->updateVoxels([r](int x, int y, int z, GLubyte prev) {
+                    //if(sdf::sphere(x,y,z, r)) return 0;
+                    return voxel_util::hash(glm::ivec3(x, y, z));
+                });
+            }
 			break;
 		case SCENES::CA:
 			// that's mean I will create ca3d every frame
