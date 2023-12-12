@@ -2,6 +2,20 @@
 
 
 void cellularAutomata::updateCAState(int state, glm::vec3 size, glm::vec3 randomStateSize, std::vector<glm::vec3> colors, int drawMode) {
+	this->m_State = state;
+	this->m_Size = size;
+	randomizeCells(randomStateSize);
+	this->colorPalette = colors;
+	this->drawMode = drawMode;
+
+	//for (int x = 0; x < m_Size.x; x++) {
+	//	for (int y = 0; y < m_Size.y; y++) {
+	//		for (int z = 0; z < m_Size.z; z++) {
+	//			std::cout << m_Cells[x + m_Size.y * (y + m_Size.z * z)].getHp() << std::endl;
+	//		}
+	//	}
+	//}
+
 
 }
 
@@ -29,14 +43,14 @@ void cellularAutomata::randomizeCells(glm::vec3 randomStateSize) {
 	resetCells();
 	// randomize cells in a certain region
 	glm::vec3 center = m_Size / 2;
-	for (int x = center.x - randomStateSize.x / 2; x < center.x + randomStateSize.x / 2; x++) {
-		for (int y = center.y - randomStateSize.y / 2; y < center.y + randomStateSize.y / 2; y++) {
-			for (int z = center.z - randomStateSize.z / 2; z < center.z + randomStateSize.z / 2; z++) {
+	for (int x = center.x - (randomStateSize.x / 2); x < (center.x + randomStateSize.x / 2); x++) {
+		for (int y = center.y - (randomStateSize.y / 2); y < (center.y + randomStateSize.y / 2); y++) {
+			for (int z = center.z - (randomStateSize.z / 2); z < (center.z + randomStateSize.z / 2); z++) {
 				m_Cells[voxel_util::conv3dTo1d(x, y, z, m_Size)].randomizeState(m_State);
+				//m_Cells[voxel_util::conv3dTo1d(x, y, z, m_Size)].updateHp(m_State-1);
 			}
 		}
 	}
-
 }
 
 void cellularAutomata::updateNeighbors(std::vector<glm::ivec3>& offset) {

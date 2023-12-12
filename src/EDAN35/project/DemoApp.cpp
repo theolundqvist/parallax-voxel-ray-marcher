@@ -180,56 +180,19 @@ public:
 			// rule - 1 cause rule is from 1 - scene->highest rule
 		{
 			glm::vec3 volumeSize = renderer->getVolume(0)->size();
-			cellularAutomata ca3d(cellularAutomata::CARules[rule - 1].state, volumeSize, volumeSize,
+			cellularAutomata ca3d(cellularAutomata::CARules[5].state, volumeSize, volumeSize,
 				defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(rule));
+			renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
 			if (scene->ruled_changed) {
-				//rule is init to 1
-				//if rule changed, I need to change color palette and ca rule
-				// volume size will change when scene nbr change, see setScene for detail
-				// need to capture ca3d
-				renderer->getVolume(0)->updateVoxels([this, &ca3d, volumeSize, rule](int x, int y, int z, GLubyte prev) {
-					// reset generation
-					//maybe need to get center of the volume
-					//create cells here and init cells with random specific state
-					// make sure rule 1->end->1
-					//int cellIndex = voxel_util::conv3dTo1d(x, y, z);
-					int colorIndex = 0;
-					switch (rule)
-					{
-						// rule1: cloud, CAColorsBlue2Pink dis2colorIndex
-					case 1:
-						// update the ca instance
-						ca3d.updateCAState(cellularAutomata::CARules[0].state, volumeSize, volumeSize,
-							defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(1));
-						// set up color palette
-						renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
-						// find the color index based on the draw mode
-						colorIndex = ca3d.findColorIndex(glm::vec3(x, y, z));
-						break;
-
-						// rule2: pyroclastic, CAColorsBlue2Pink hp2colorIndex
-						// rule3: 678, CAColorsRed2Green, density2colorIndex
-						// rule4: 445, CAColorsRed2Green, pos2colorIndex
-					default:
-						break;
-					}
-					// should return 
-					return colorIndex;
-					});
-				// use swith(rule) to switch between different color palette and ca rule
-			}
-			// keep update the based on the current ca rule if rule doesn't change
-			// update the cells in ca instance
-			ca3d.updateCells(cellularAutomata::CARules[rule-1].survival, cellularAutomata::CARules[rule-1].spawn);
-			renderer->getVolume(0)->updateVoxels([this, &ca3d, rule](int x, int y, int z, GLubyte prev) {
-				// find color index like before
-				int colorIndex = 0;
 				switch (rule)
 				{
 					// rule1: cloud, CAColorsBlue2Pink dis2colorIndex
 				case 1:
-					// find the color index based on the draw mode
-					colorIndex = ca3d.findColorIndex(glm::vec3(x, y, z));
+					// update the ca instance
+					/*ca3d.updateCAState(cellularAutomata::CARules[6].state, volumeSize, volumeSize,
+						defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(1));*/
+					// set up color palette
+					//renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
 					break;
 
 					// rule2: pyroclastic, CAColorsBlue2Pink hp2colorIndex
@@ -238,11 +201,26 @@ public:
 				default:
 					break;
 				}
-				// should return 
-				return colorIndex;
-				});
+				renderer->getVolume(0)->updateVoxels([&ca3d](int x, int y, int z, GLubyte prev) {
+					// reset generation
+					//maybe need to get center of the volume
+					//create cells here and init cells with random specific state
+					// make sure rule 1->end->1
+					//int cellIndex = voxel_util::conv3dTo1d(x, y, z);
+					std::cout << ca3d.findColorIndex(glm::vec3(x, y, z)) << std::endl;
+					return ca3d.findColorIndex(glm::vec3(x, y, z));
+					});
+				// use swith(rule) to switch between different color palette and ca rule
+			}
+			// keep update the based on the current ca rule if rule doesn't change
 			// clean the texel value
 			renderer->getVolume(0)->cleanVoxel();
+			// update the cells in ca instance
+			ca3d.updateCells(cellularAutomata::CARules[5].survival, cellularAutomata::CARules[5].spawn);
+			renderer->getVolume(0)->updateVoxels([&ca3d](int x, int y, int z, GLubyte prev) {
+				// find color index like before
+				return ca3d.findColorIndex(glm::vec3(x, y, z));
+				});
 		}
 		break;
 		case SCENES::NOISE:

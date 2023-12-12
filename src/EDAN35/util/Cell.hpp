@@ -15,7 +15,7 @@ public:
 	Cell(float x, float y, float z) : m_Position(glm::vec3(x,y,z)) {}
 	Cell(glm::vec3 pos) : m_Position(pos) {}
 
-	int randomizeState(int state);
+	void randomizeState(int state);
 	int pos2colorIndex(glm::vec2 posRange, glm::vec2 colorRange);
 	int dis2colorIndex(glm::vec3 center, glm::vec2 desRange, glm::vec2 colorRange);
 	int density2colorIndex(glm::vec2 densityRange, glm::vec2 colorRange);

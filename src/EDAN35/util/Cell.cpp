@@ -1,10 +1,10 @@
 #include "Cell.hpp"
 
-int Cell::randomizeState(int state) {
+void Cell::randomizeState(int state) {
 	std::random_device rd;
 	std::mt19937 gen(rd());
 	std::uniform_int_distribution<> dis(0, state - 1);
-	return dis(gen);
+	m_Hp = dis(gen);
 }
 
 int Cell::pos2colorIndex(glm::vec2 posRange, glm::vec2 colorRange) {
@@ -25,5 +25,5 @@ int Cell::density2colorIndex(glm::vec2 densityRange, glm::vec2 colorRange) {
 }
 
 int Cell::hp2colorIndex(glm::vec2 hpRange, glm::vec2 colorRange) {
-	return voxel_util::remap(m_Hp, hpRange, colorRange);
+	return std::round(voxel_util::remap(m_Hp, hpRange, colorRange));
 }

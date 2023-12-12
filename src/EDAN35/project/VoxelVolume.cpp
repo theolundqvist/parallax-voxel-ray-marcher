@@ -299,7 +299,8 @@ private:
         // color palette
         // set color palette here
         // error!!!
-        glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(), glm::value_ptr(colorPalette[0]));
+        glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(), 
+                     glm::value_ptr(colorPalette[0]));
 
         // vertex to clip
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),
