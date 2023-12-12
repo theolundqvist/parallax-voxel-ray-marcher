@@ -47,7 +47,7 @@ public:
 	void CreateCells(int state, glm::vec3 size);
 	void randomizeCells(glm::vec3 randomStateSize); // take center of a volume as default
 	void updateNeighbors(std::vector<glm::ivec3>& offset);
-	void updateCells(std::vector<bool>& survival, std::vector<bool> spawn);
+	void updateCells(std::vector<bool>& survival, std::vector<bool>& spawn);
 	int findColorIndex(glm::vec3 pos);
 	void resetCells();
 

@@ -26,6 +26,9 @@ private:
 	FPSCameraf* camera;
 	ShaderProgramManager* shaderManager;
 
+	// for ca test
+	cellularAutomata* ca3d;
+
 
 	typedef struct key_cooldown_t {
 		float cooldown;
@@ -56,6 +59,7 @@ public:
 		ui = new UI(window);
 		this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
 
+
 		this->playerBody = new GameObject("playerbody");
 		playerBody->setMesh(parametric_shapes::createSphere(.25f, 10, 10));
 		GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
@@ -81,6 +85,15 @@ public:
 			scene->rule = 1;
 		}
 		//}
+
+		// for ca test
+		if (scene->nbr == CA) {
+			this->ca3d = new cellularAutomata(cellularAutomata::CARules[5].state, glm::vec3(scene->volume_size),
+				glm::vec3(scene->volume_size), defaultColorPalette::CAColorsBlue2Pink,
+				cellularAutomata::drawModes(scene->rule));
+			// set the color palette
+			this->renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::vec2(0, 255));
+		}
 		scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
 		scene->ruled_changed = true;
 	}
@@ -176,13 +189,11 @@ public:
 			}
 			break;
 		case SCENES::CA:
-			// create ca based on the current rule, but should range from
-			// rule - 1 cause rule is from 1 - scene->highest rule
-		{
-			glm::vec3 volumeSize = renderer->getVolume(0)->size();
-			cellularAutomata ca3d(cellularAutomata::CARules[5].state, volumeSize, volumeSize,
-				defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(rule));
-			renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
+			// that's mean I will create ca3d every frame
+			// ca3d need be init in setupScene
+			//cellularAutomata ca3d(cellularAutomata::CARules[5].state, volumeSize, volumeSize,
+			//	defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(rule));
+			//renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
 			if (scene->ruled_changed) {
 				switch (rule)
 				{
@@ -191,8 +202,8 @@ public:
 					// update the ca instance
 					/*ca3d.updateCAState(cellularAutomata::CARules[6].state, volumeSize, volumeSize,
 						defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(1));*/
-					// set up color palette
-					//renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
+						// set up color palette
+						//renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
 					break;
 
 					// rule2: pyroclastic, CAColorsBlue2Pink hp2colorIndex
@@ -201,14 +212,14 @@ public:
 				default:
 					break;
 				}
-				renderer->getVolume(0)->updateVoxels([&ca3d](int x, int y, int z, GLubyte prev) {
+				renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
 					// reset generation
 					//maybe need to get center of the volume
 					//create cells here and init cells with random specific state
 					// make sure rule 1->end->1
 					//int cellIndex = voxel_util::conv3dTo1d(x, y, z);
-					std::cout << ca3d.findColorIndex(glm::vec3(x, y, z)) << std::endl;
-					return ca3d.findColorIndex(glm::vec3(x, y, z));
+					//std::cout << ca3d.findColorIndex(glm::vec3(x, y, z)) << std::endl;
+					return ca3d->findColorIndex(glm::vec3(x, y, z));
 					});
 				// use swith(rule) to switch between different color palette and ca rule
 			}
@@ -216,13 +227,12 @@ public:
 			// clean the texel value
 			renderer->getVolume(0)->cleanVoxel();
 			// update the cells in ca instance
-			ca3d.updateCells(cellularAutomata::CARules[5].survival, cellularAutomata::CARules[5].spawn);
-			renderer->getVolume(0)->updateVoxels([&ca3d](int x, int y, int z, GLubyte prev) {
+			ca3d->updateCells(cellularAutomata::CARules[5].survival, cellularAutomata::CARules[5].spawn);
+			renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
 				// find color index like before
-				return ca3d.findColorIndex(glm::vec3(x, y, z));
+				return ca3d->findColorIndex(glm::vec3(x, y, z));
 				});
-		}
-		break;
+			break;
 		case SCENES::NOISE:
 			if (scene->ruled_changed) {
 				renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {

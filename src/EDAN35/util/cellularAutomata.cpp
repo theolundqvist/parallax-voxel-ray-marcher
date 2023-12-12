@@ -75,7 +75,7 @@ void cellularAutomata::updateNeighbors(std::vector<glm::ivec3>& offset) {
 }
 
 // actually neighbors mode is need: Moore or VN
-void cellularAutomata::updateCells(std::vector<bool>& survival, std::vector<bool> spawn) {
+void cellularAutomata::updateCells(std::vector<bool>& survival, std::vector<bool>& spawn) {
 	// update neighbors of cells
 	updateNeighbors(neighborOffset);
 
@@ -87,8 +87,10 @@ void cellularAutomata::updateCells(std::vector<bool>& survival, std::vector<bool
 				int hp = m_Cells[index].getHp();
 				int neighbour = m_Cells[index].getNeighbors();
 				
+				// dying
 				if (hp < (m_State - 1) && hp > 0)
 					m_Cells[index].updateHp(hp - 1);
+				// start dying next frame
 				else if (hp == (m_State - 1) && !survival[neighbour])
 					m_Cells[index].updateHp(hp - 1);
 				// spawn
