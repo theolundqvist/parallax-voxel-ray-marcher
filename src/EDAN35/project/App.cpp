@@ -90,6 +90,7 @@ public:
         switch (state) {
             case RUNNING:
                 if (!freeView) frozen_view_matrix = camera->GetWorldToClipMatrix();
+                renderer->setShaderSetting(settings.shader_setting);
                 gpu_time = renderer->render(
                         frozen_view_matrix,
                         camera->mWorld.GetTranslation(),
@@ -146,6 +147,26 @@ public:
                 showCrosshair = !showCrosshair;
                 dragToMove = !dragToMove;
             }
+
+            //int intValue = static_cast<int>(shader_setting_t);
+            /*
+            if (getKey(GLFW_KEY_N)) {
+                intValue--;
+            }
+            if (intValue < 0)
+            {
+                intValue = 9;
+            }
+            */
+
+            int shader = static_cast<int>(settings.shader_setting);
+            if (getKey(GLFW_KEY_COMMA)) shader--;
+            if (getKey(GLFW_KEY_PERIOD)) shader++;
+            shader = glm::clamp(shader, 0, (int) NBR_SHADER_SETTINGS - 1);
+            settings.shader_setting = static_cast<shader_setting_t>(shader);
+
+
+
             if (getKey(GLFW_KEY_F))
                 showFps = !showFps;
 

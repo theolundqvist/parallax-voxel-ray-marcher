@@ -75,7 +75,7 @@ public:
         volumes[0]->transform.rotateAroundY(glm::pi<float>()*dt*0.0001f);
     }
 
-    void setShaderSetting(int setting){
+    void setShaderSetting(shader_setting_t setting){
         for (auto volume: volumes) {
             volume->setShaderSetting(setting);
         }

@@ -136,9 +136,12 @@ public:
                     });
                 }
                 if (scene->rule == 3) {
-                    scene->shader_setting = 1; //show fvta
+                    scene->shader_setting = fvta_step_material; //show fvta
                 } else {
-                    scene->shader_setting = 0;
+                    scene->shader_setting = fixed_step_material;
+                    camera->mWorld.SetTranslate(scene->cam.pos);
+                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+
                 }
                 if (scene->rule > 1)
                     lookAtBlock(checkpoint, glm::vec3(8, 6, 8), glm::vec3(12, 8, 12));
@@ -229,6 +232,13 @@ public:
             scene->ruled_changed = true;
         }
 
+        int shader = static_cast<int>(scene->shader_setting);
+        if (getKey(GLFW_KEY_COMMA)) shader--;
+        if (getKey(GLFW_KEY_PERIOD)) shader++;
+        shader = glm::clamp(shader, 0, (int) NBR_SHADER_SETTINGS - 1);
+        scene->shader_setting = static_cast<shader_setting_t>(shader);
+        settings.shader_setting = scene->shader_setting;
+
         if (getKey(GLFW_KEY_LEFT)) current_scene -= 1;
         if (getKey(GLFW_KEY_RIGHT)) current_scene += 1;
         current_scene = glm::clamp(current_scene, 0, (int) NBR_SCENES - 1);
@@ -253,7 +263,7 @@ public:
         float gpu_time, cpu_time;
         switch (state) {
             case RUNNING:
-                renderer->setShaderSetting(scene->shader_setting);
+                renderer->setShaderSetting(settings.shader_setting);
                 gpu_time = renderer->render(
                         camera->GetWorldToClipMatrix(),
                         settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
