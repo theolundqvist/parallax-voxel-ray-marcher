@@ -64,7 +64,7 @@ public:
         playerBody->setShader("fallback");
         setScene(0);
 
-        terrainGenerator = new TerrainGenerator(256, 256, 256, 8);
+        terrainGenerator = new TerrainGenerator(128, 128, 128, 100);
         terrainGenerator->start();
     }
 
