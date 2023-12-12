@@ -3,7 +3,7 @@
 #include <cmath>
 #include <vector>
 #include "glm/glm.hpp"
-#include "../util/perlinNoise.cpp"
+#include "../util/perlin.cpp"
 #include "../util/voxel_util.cpp"
 #include "core/helpers.hpp"
 #include "core/opengl.hpp"
@@ -114,7 +114,7 @@ public:
 			curRange.y = heightRange[i].y * 255;
 
 			// print range
-			std::cout << curRange << std::endl;
+			//std::cout << curRange << std::endl;
 			// interpolate the color
 			for (int j = curRange.x; j < curRange.y; j++) {
 				float scale = voxel_util::remap(j, curRange, glm::vec2(0.0f, 1.0f));
@@ -172,7 +172,7 @@ public:
 					m_MaxHeight = height;
 			}
 		}
-		std::cout << m_MaxHeight << std::endl;
+		//std::cout << m_MaxHeight << std::endl;
 	}
 
 	void findMinHeight() {
@@ -183,7 +183,7 @@ public:
 					m_MinHeight = height;
 			}
 		}
-		std::cout << m_MinHeight << std::endl;
+		//std::cout << m_MinHeight << std::endl;
 	}
 
 	std::vector<float> getTerrainTexture() {
