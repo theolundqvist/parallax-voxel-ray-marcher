@@ -6,6 +6,7 @@
 #include "../util/parametric_shapes.hpp"
 #include "../util/demo_scenes.cpp"
 #include "../util/ui.cpp"
+#include "../util/terrain_generator.cpp"
 #include "VoxelRenderer.cpp"
 #include "core/FPSCamera.h"
 #include <cstddef>
@@ -14,6 +15,7 @@
 #include "../util/AppState.cpp"
 #include <map>
 #include <iostream>
+#include "../util/perlin.cpp"
 
 class DemoApp {
 private:
@@ -43,6 +45,8 @@ private:
     } checkpoint_t;
     checkpoint_t checkpoint;
 
+    TerrainGenerator *terrainGenerator;
+
 public:
     DemoApp(GLFWwindow *window, FPSCameraf *cam, InputHandler *inputHandler,
             ShaderProgramManager *shaderManager, float *elapsed_time_ms) {
@@ -59,6 +63,9 @@ public:
         GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         playerBody->setShader("fallback");
         setScene(0);
+
+        terrainGenerator = new TerrainGenerator(256, 256, 256, 8);
+        terrainGenerator->start();
     }
 
 
@@ -211,11 +218,17 @@ public:
                     while(rule > renderer->numberVolumes()){
                         //add volume
                         int n = renderer->numberVolumes();
-                        int width = 4;
-                        glm::vec2 pos = glm::vec2(n%width-width/2, n/width);
+                        if(!terrainGenerator->terrainExists(n)){
+                           rule--;
+                           continue;
+                        }
+                        auto terrain = terrainGenerator->getTerrain(n);
+                        auto pos = voxel_util::get_chunk_offset(n);
                         auto vol = new VoxelVolume(size, size, size, center.translatedX(pos.x*3).translateZ(pos.y*3));
-                        vol->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                            return voxel_util::hash(glm::ivec3(x, y, z));
+                        vol->updateVoxels([terrain](int x, int y, int z, GLubyte prev) {
+                            //return terrain->getHeight(x, z);
+                            return terrain->height2ColorIndex(x, y, z, glm::vec2(0, 255));
+                            //return voxel_util::hash(glm::ivec3(x, y, z));
                         });
                         renderer->add_volume(vol);
                     }
