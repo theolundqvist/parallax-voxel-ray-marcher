@@ -17,6 +17,8 @@
 
 #include "../util/cellularAutomata.hpp"
 
+#include "../util/terrain.hpp"
+
 class DemoApp {
 private:
 	VoxelRenderer* renderer;
@@ -90,7 +92,7 @@ public:
 		if (scene->nbr == CA) {
 			this->ca3d = new cellularAutomata(cellularAutomata::CARules[0].state, glm::vec3(scene->volume_size),
 				glm::vec3(scene->volume_size), defaultColorPalette::CAColorsBlue2Pink,
-				cellularAutomata::drawModes(scene->rule));
+				cellularAutomata::drawModes(2));
 			// set the color palette
 			this->renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::vec2(0, 255));
 		}
@@ -198,9 +200,9 @@ public:
 		case SCENES::CA:
 			// that's mean I will create ca3d every frame
 			// ca3d need be init in setupScene
-			//cellularAutomata ca3d(cellularAutomata::CARules[5].state, volumeSize, volumeSize,
-			//	defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(rule));
-			//renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
+			// cellularAutomata ca3d(cellularAutomata::CARules[5].state, volumeSize, volumeSize,
+			// defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(rule));
+			// renderer->getVolume(0)->generateColorPalette(ca3d.colorPalette, glm::ivec2(0, 255));
 			if (scene->ruled_changed) {
 				switch (rule)
 				{
@@ -242,10 +244,12 @@ public:
 			break;
 		case SCENES::NOISE:
 			if (scene->ruled_changed) {
-				renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
+				glm::vec3 volumeSize = renderer->getVolume(0)->size();
+				terrain t(volumeSize.x, volumeSize.z, 100.0f);
+				renderer->getVolume(0)->updateVoxels([this, &t, time](int x, int y, int z, GLubyte prev) {
 					// rule = 1 still, rule = 2 animated
 					// use time as offset to animate the terrain
-					return 1;
+					return t.height2ColorIndex(x, y, z, glm::vec2(0, 255));
 					});
 			}
 			break;
