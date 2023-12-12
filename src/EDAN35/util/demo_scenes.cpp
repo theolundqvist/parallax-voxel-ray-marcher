@@ -54,8 +54,8 @@ scene_settings_t scenes[] = {
         {3, "Shaders",        camera_positions[CUBE_CAM],         3,  1},
         {4, "Larger",         camera_positions[CUBE_CAM],         1,  1, 128, 1,  true},
         {5, "SDF",            camera_positions[CUBE_CAM],         4,  1, 128, 1,  true},
-        {6, "CA",             camera_positions[CUBE_CAM],         4,  1, 128, 1,  true},
-        {7, "Noise",          camera_positions[CUBE_CAM],         3,  1, 128, 1,  true},
+        {6, "CA",             camera_positions[CUBE_CAM],         4,  1, 50, 1,  true},
+        {7, "Noise",          camera_positions[CUBE_CAM],         2,  1, 128, 1,  true},
         {8, "Minecraft",      camera_positions[MC_CAM], 100, 1, 128, 1,  false, 3},
 };
 

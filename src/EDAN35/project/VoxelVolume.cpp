@@ -4,6 +4,7 @@
 #include "core/helpers.hpp"
 #include "core/opengl.hpp"
 #include <glm/gtx/component_wise.hpp>
+#include "../util/defaultColorPalette.cpp"
 
 class VoxelVolume {
 private:
@@ -11,6 +12,7 @@ private:
     GLuint texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
+    std::vector<glm::vec3> colorPalette = defaultColorPalette::generateCAColorPalette(defaultColorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
 
     GLuint program{};
 
@@ -68,6 +70,20 @@ public:
 
     bool setVoxel(glm::ivec3 index, GLubyte value) {
         return setVoxel(index.x, index.y, index.z, value);
+    }
+
+    void cleanVoxel() {
+        for (int x = 0; x < W; x++) {
+            for (int y = 0; y < H; y++) {
+                for (int z = 0; z < D; z++) {
+                    setVoxel(x, y, z, 0);
+                }
+            }
+        }
+    }
+
+    void generateColorPalette(std::vector<glm::vec3> colors, glm::vec2 colorRange) {
+        this->colorPalette = defaultColorPalette::generateCAColorPalette(colors,colorRange);
     }
 
     void updateVoxels(std::function<GLubyte(int x,int y,int z, GLubyte previous)> const get_material){
@@ -282,6 +298,8 @@ private:
 */
         // color palette
         // set color palette here
+        // error!!!
+        glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(), glm::value_ptr(colorPalette[0]));
 
         // vertex to clip
         glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),

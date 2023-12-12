@@ -1,6 +1,7 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <vector>
 #include <string>
 #include <glad/glad.h>
 
@@ -17,7 +18,31 @@ public:
         float surfaceY = (std::sin(offset + x * 0.3f) * 0.5f + 0.5f) * maxY * 0.5 + maxY / 2.0;
         return y < surfaceY;
     }
+
     static glm::vec3 lerp(glm::vec3 A, glm::vec3 B, float t ){
         return A*(1.f - t) + B*(t) ;
+    }
+
+    static int conv3dTo1d(int x, int y, int z, glm::vec3 size) {
+        return x + size.y * (y + size.z * z);
+    }
+
+    static int remap(float x, glm::vec2 rangeOne, glm::vec2 rangeTwo) {
+        return (((x - rangeOne.x) * (rangeTwo.y - rangeTwo.x)) / (rangeOne.y - rangeOne.x)) + rangeTwo.x;
+    }
+
+    static std::vector<glm::ivec3> generateOffset(int start, int end) {
+        std::vector<glm::ivec3> offsets;
+        for (int x = start; x < end + 1; x++) {
+            for (int y = start; y < end + 1; y++) {
+                for (int z = start; z < end + 1; z++) {
+                    // remove the central point itself
+                    if (x != 0 || y != 0 || z != 0) {
+                        offsets.push_back(glm::ivec3(x, y, z));
+                    }
+                }
+            }
+        }
+        return offsets;
     }
 };

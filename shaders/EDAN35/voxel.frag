@@ -8,6 +8,9 @@ uniform float voxel_size;
 uniform ivec3 grid_size;
 uniform vec3 light_direction;
 
+// color palette
+uniform vec3 colorPalette[256];
+
 // world space
 flat in float face_dot_v;
 
@@ -141,6 +144,27 @@ hit_t fixed_step(){
     }
     discard;
 }
+
+// use material as color index
+hit_t fixed_step_index(){
+    float step_size_inv = 10;
+    vec3 V = normalize(fV) * voxel_size/step_size_inv;// fixed step
+    start_t start = findStartPos();// P is in 0-1.0 space
+    vec3 P = start.pos;
+    int max_step = int(step_size_inv*step_size_inv/voxel_size);
+    for (int i = 0; i < max_step; i++){
+        if (isInside(P) < 0.5) discard;
+        int colorIndex = int(round(texture(volume, P).r));
+        if (colorIndex != 0) {
+            float t = length(P - start.pos);
+            vec3 index = floor(P/voxel_size);
+            return hit_t(t, index, P, (P - vec3(index))/voxel_size, uvw_to_uv((P - vec3(index))/voxel_size), start.normal, colorIndex);
+        }
+        P += V;
+    }
+    discard;
+}
+
 
 float luminance(vec3 v)
 {
@@ -306,12 +330,17 @@ void main()
 
     //vec3 color = findStartPos();
     hit_t hit;
-    hit = fixed_step();
+    //hit = fixed_step();
+    hit = fixed_step_index();
     //hit = fvta_step();
     if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
         discard;
     }
-    vec3 color = vec3(hit.material/255.0, 0, 0);
+    //vec3 color = vec3(hit.material/255.0, 0, 0);
+    
+    // using color palette
+    vec3 color = colorPalette[hit.material];
+
     //color = shade(hit);
     //color *= ao(hit);
     //color = hit.pixel_pos;
