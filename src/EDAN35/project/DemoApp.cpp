@@ -88,7 +88,7 @@ public:
 
 		// for ca test
 		if (scene->nbr == CA) {
-			this->ca3d = new cellularAutomata(cellularAutomata::CARules[5].state, glm::vec3(scene->volume_size),
+			this->ca3d = new cellularAutomata(cellularAutomata::CARules[0].state, glm::vec3(scene->volume_size),
 				glm::vec3(scene->volume_size), defaultColorPalette::CAColorsBlue2Pink,
 				cellularAutomata::drawModes(scene->rule));
 			// set the color palette
@@ -234,7 +234,7 @@ public:
 			// clean the texel value
 			renderer->getVolume(0)->cleanVoxel();
 			// update the cells in ca instance
-			ca3d->updateCells(cellularAutomata::CARules[5].survival, cellularAutomata::CARules[5].spawn);
+			ca3d->updateCells(cellularAutomata::CARules[0].survival, cellularAutomata::CARules[0].spawn);
 			renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
 				// find color index like before
 				return ca3d->findColorIndex(glm::vec3(x, y, z));
@@ -242,7 +242,7 @@ public:
 			break;
 		case SCENES::NOISE:
 			if (scene->ruled_changed) {
-				renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
+				renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
 					// rule = 1 still, rule = 2 animated
 					// use time as offset to animate the terrain
 					return 1;
