@@ -128,9 +128,21 @@ public:
 		}
 	}
 
-	void generateTerrainColorPalette(std::vector<glm::vec3>& colors, std::vector<glm::vec2> heightRange, glm::vec2 colorRange) {
+	void generateTerrainColorPalette(std::vector<glm::vec3>& colors_will_copy, std::vector<glm::vec2> heightRange, glm::vec2 colorRange) {
 		// remap from 0-255 to 0-1
+        auto colors = std::vector<glm::vec3>(colors_will_copy.size());
+        for (auto col:colors_will_copy) {
+            colors.emplace_back(col);
+        }
 		for (int i = 0; i < colors.size(); i++) {
+            if(colors[i].x > 255 || colors[i].x < 0){
+                std::cout << "Color value out of range 0" << std::endl;
+                //continue;
+            }
+            if(colors[i].y > 255 || colors[i].y < 0){
+                std::cout << "Color value out of range 1" << std::endl;
+                //continue;
+            }
 			colors[i] /= 255;
 		}
 
@@ -145,6 +157,14 @@ public:
 
 			// print range
 			std::cout << curRange << std::endl;
+            if(curRange.x > 255 || curRange.x < 0){
+                std::cout << "Color value out of range 2" << std::endl;
+                continue;
+            }
+            if(curRange.y > 255 || curRange.y < 0){
+                std::cout << "Color value out of range 3" << std::endl;
+                continue;
+            }
 			// interpolate the color
 			for (int j = curRange.x; j < curRange.y; j++) {
 				float scale = voxel_util::remap(j, curRange, glm::vec2(0.0f, 1.0f));

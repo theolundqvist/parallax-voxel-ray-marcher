@@ -15,7 +15,15 @@ public:
 	static std::vector<glm::vec3> generateCAColorPalette(std::vector<glm::vec3>& colors, glm::vec2 colorRange) {
 		// remap from 0-255 to 0-1
 		for (int i = 0; i < colors.size(); i++) {
-			colors[i] /= 255;
+            if(colors[i].x > 255 || colors[i].x < 0){
+                std::cout << "Color value out of range CAColorPalette: x=" << colors[i].x << std::endl;
+                //return colors;
+            }
+            if(colors[i].y > 255 || colors[i].y < 0){
+                std::cout << "Color value out of range CAColorPalette: y=" << colors[i].y << std::endl;
+                //return colors;
+            }
+			else colors[i] /= 255;
 		}
 
 		std::vector<glm::vec3> colorPalette;

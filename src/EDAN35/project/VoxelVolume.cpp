@@ -21,6 +21,7 @@ private:
 public:
     Transform transform;
     float voxel_size = 0.1f;
+    int LOD = 1;
     int W;
     int H;
     int D;
@@ -36,6 +37,10 @@ public:
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
+    }
+
+    void setLOD(int lod) {
+        LOD = lod;
     }
 
     ~VoxelVolume() {
@@ -281,6 +286,7 @@ private:
         glUniform1i(glGetUniformLocation(program, "Shader_manager"), shader_setting);
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
+        glUniform1f(glGetUniformLocation(program, "lod"), LOD);
         // grid size
         glUniform3iv(glGetUniformLocation(program, "grid_size"), 1,
                      glm::value_ptr(glm::ivec3(W, H, D)));

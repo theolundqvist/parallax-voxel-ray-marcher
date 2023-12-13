@@ -5,6 +5,7 @@
 uniform vec3 camera_position;
 uniform sampler3D volume;
 uniform float voxel_size;
+uniform float lod;
 uniform ivec3 grid_size;
 uniform vec3 light_direction;
 
@@ -190,18 +191,19 @@ hit_t fvta_step(){
     vec3 ro = start.pos;
     vec3 normal = start.normal;
     vec3 rd = normalize(fV);
-    vec3 voxel_index = floor(ro * (1./voxel_size));
-    vec3 voxel_pos = voxel_size * voxel_index;
+    float voxel_size_local = voxel_size*lod;
+    vec3 voxel_index = floor(ro * (1./voxel_size_local));
+    vec3 voxel_pos = voxel_size_local * voxel_index;
     vec3 rs = sign(rd);
-    vec3 deltaDist = voxel_size/rd;
-    vec3 sideDist = ((voxel_pos-ro)/voxel_size + 0.5 + rs * 0.5) * deltaDist;
-    //voxel_pos = voxel_size * (voxel_index + 0.1);
-    int max_steps = int(3.0/voxel_size);
+    vec3 deltaDist = voxel_size_local/rd;
+    vec3 sideDist = ((voxel_pos-ro)/voxel_size_local + 0.5 + rs * 0.5) * deltaDist;
+    //voxel_pos = voxel_size_local * (voxel_index + 0.1);
+    int max_steps = int(3.0/voxel_size_local);
 
-    vec3 final_pos = ro * 1./voxel_size;
+    vec3 final_pos = ro * 1./voxel_size_local;
     float t = 0.0;
-    vec3 pos = ro;//voxel_size * (voxel_index + 0.1);
-    vec3 uvw = (pos - voxel_pos)/voxel_size;
+    vec3 pos = ro;//voxel_size_local * (voxel_index + 0.1);
+    vec3 uvw = (pos - voxel_pos)/voxel_size_local;
     vec2 uv = uvw_to_uv(uvw);
 
     for (int i = 0; i < max_steps; i++){
@@ -209,7 +211,7 @@ hit_t fvta_step(){
             //return hit_t(t, voxel_pos, pos, uvw, uv, vec3(1,0,0), 0);
             discard;
         }
-        int mat = int(round(texture(volume, pos).r*255));
+        int mat = int(round(texture(volume, voxel_pos + 0.1 * voxel_size).r*255));
         if (mat > 0){
             return hit_t(t, voxel_pos, pos, uvw, uv, normal, mat);
         }
@@ -232,13 +234,13 @@ hit_t fvta_step(){
         vec3 mm = step(sideDist.xyz, sideDist.yxy) * step(sideDist.xyz, sideDist.zzx);
         normal = -mm * rs;
 
-        voxel_pos += voxel_size * -normal;
+        voxel_pos += voxel_size_local * -normal;
 
         // other stuff that is nice to know
-        vec3 mini = ((voxel_pos-ro)/voxel_size + 0.5 - 0.5*vec3(rs))*deltaDist;
+        vec3 mini = ((voxel_pos-ro)/voxel_size_local + 0.5 - 0.5*vec3(rs))*deltaDist;
         t = max (mini.x, max (mini.y, mini.z));
         pos = ro + rd * (t + Epsilon * 2.0);
-        uvw = (pos - voxel_pos)/voxel_size;
+        uvw = (pos - voxel_pos)/voxel_size_local;
         uv = vec2(dot(mm.yzx, uvw), dot(mm.zxy, uvw));
 
         sideDist += -normal * deltaDist;

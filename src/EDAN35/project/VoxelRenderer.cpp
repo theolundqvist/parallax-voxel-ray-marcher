@@ -15,6 +15,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <list>
 #include <iostream>
+#include <algorithm>
 
 class VoxelRenderer {
 private:
@@ -81,14 +82,19 @@ public:
         }
     }
 
-    float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness) {
+    float render(glm::mat4 world_to_clip, glm::vec3 cam_pos, bool show_basis, float basis_length, float basis_thickness, bool lod = false) {
         // sort volumes by distance to camera
         glBeginQuery(GL_TIME_ELAPSED, elapsed_time_query);
         std::vector<VoxelVolume*> sorted_volumes = volumes;
         std::sort(sorted_volumes.begin(), sorted_volumes.end(), [cam_pos](VoxelVolume* a, VoxelVolume* b){
             return glm::length2(a->transform.getPos() - cam_pos) < glm::length2(b->transform.getPos() - cam_pos);
         });
+        int i = 1;
         for (auto volume: sorted_volumes) {
+            if(lod){
+                float distance = glm::length(volume->transform.getPos() - cam_pos);
+                volume->setLOD((int)std::max(distance/10.f, 1.f));
+            }
             volume->render(
                     glm::mat4(1.0f),
                     world_to_clip,

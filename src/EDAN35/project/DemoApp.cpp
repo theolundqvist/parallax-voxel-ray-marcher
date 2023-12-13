@@ -94,6 +94,7 @@ public:
         if (scene->nbr != MINECRAFT) {
             renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
             scene->rule = 1;
+            scene->lod = true;
         }
         //}
 
@@ -273,7 +274,7 @@ public:
                 if (scene->ruled_changed) {
                     checkpoint = {.time=*elapsed, .terrain_offset=glm::vec2(0, 0)};
                     volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
-                    delete t;
+                    //delete t;
                     t = new terrain(size.x * 4, size.z * 4, size.y * 0.7, 1.0f, 4, 0.5f, 2.0f, rule,
                                     glm::ivec2(32, 32));
 
@@ -284,7 +285,8 @@ public:
                     });
                 }
                 // offset the terrain with time
-                if (rule != 1 && *elapsed > checkpoint.time + 40) {
+                if (rule > 3 && *elapsed > checkpoint.time + 40) {
+                    volume0->setLOD(1);
                     volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
                     checkpoint.time = *elapsed;
                     glm::vec2 offset = checkpoint.terrain_offset;
@@ -294,6 +296,10 @@ public:
                         return t->height2ColorIndex(x + offset.x, y, z + offset.y, glm::vec2(0, 255));
                     });
                     checkpoint.terrain_offset += glm::vec2(1, 1);
+                }
+                else {
+                    int lods[] = {1,2,4};
+                    volume0->setLOD(lods[rule-1]);
                 }
                 break;
             case SCENES::MINECRAFT:
@@ -386,7 +392,8 @@ public:
                         settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
                         show_basis,
                         basis_length_scale,
-                        basis_thickness_scale);
+                        basis_thickness_scale,
+                        scene->lod);
                 cpu_time = dt - gpu_time;
                 if (settings.free_view)
                     playerBody->render(
