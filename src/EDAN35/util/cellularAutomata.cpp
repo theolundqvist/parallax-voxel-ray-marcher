@@ -1,3 +1,4 @@
+#pragma once
 #include "cellularAutomata.hpp"
 
 
@@ -137,16 +138,6 @@ int cellularAutomata::findColorIndex(glm::vec3 pos) {
     return colorIndex;
 }
 
-enum CA_rule {
-    R_PYROCLASTIC,
-    R_445,
-    R_678,
-    R_AMOEBA,
-    R_BUILDER,
-    R_CLOUD1,
-    R_SPIKE_GROWTH,
-    NBR_CA_RULES
-};
 
 std::vector<CARule> cellularAutomata::CARules = {
         // pyroclastic

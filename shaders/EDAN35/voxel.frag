@@ -319,8 +319,8 @@ void main()
         if (isInside(hit.pixel_pos - 0.01 * hit.normal * voxel_size) < 0.5){
             discard;
         }
-        //color =vec3(hit.material/255.0, 0, 0);
-        color = colorPalette[hit.material];
+        color =vec3(hit.material/255.0, 0, 0);
+        //color = colorPalette[hit.material];
         fColor = vec4(color, 1.0);
         return;
     }
