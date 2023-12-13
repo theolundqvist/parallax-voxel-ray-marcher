@@ -68,7 +68,7 @@ scene_settings_t scenes[] = {
         {4, "Larger",         camera_positions[CUBE_CAM],         1,  fvta_step_shaded_with_simple_AO, 128, 1,  true},
         {5, "SDF",            camera_positions[CUBE_CAM],         4,  fvta_step_shaded_with_simple_AO, 50, 1,  true},
         {6, "CA",             camera_positions[CUBE_CAM],         4,  fvta_step_shaded_with_simple_AO, 50, 1,  true},
-        {7, "Noise",          camera_positions[CUBE_CAM],         3,  fvta_step_shaded_with_simple_AO, 128, 1,  true},
+        {7, "Noise",          camera_positions[CUBE_CAM],         3,  fvta_step_shaded_with_simple_AO, 100, 1,  true},
         {8, "Minecraft",      camera_positions[MC_CAM], 100, fvta_step_shaded, 128, 1,  false, 4},
 
 };

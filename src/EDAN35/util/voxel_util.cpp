@@ -27,7 +27,7 @@ public:
         return x + size.y * (y + size.z * z);
     }
 
-    static int remap(float x, glm::vec2 rangeOne, glm::vec2 rangeTwo) {
+    static float remap(float x, glm::vec2 rangeOne, glm::vec2 rangeTwo) {
         return (((x - rangeOne.x) * (rangeTwo.y - rangeTwo.x)) / (rangeOne.y - rangeOne.x)) + rangeTwo.x;
     }
 

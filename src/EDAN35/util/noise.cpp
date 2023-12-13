@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 #include <cstdlib>
+#include <random>
 #include "glm/glm.hpp"
 
 namespace Noise {
@@ -56,9 +57,19 @@ namespace Noise {
 			return perlinValue(p.x, p.y);
 		}
 
-		static float fbm(int x, int y, int octave,
-			float scale, float persistance, float lacunarity) {
+		static float fbm(int x, int y, int octave, float scale, float persistance = .5f, 
+						 float lacunarity = 2.f, int seed = 0) {
 			if (scale <= 0) scale = 0.00001f;
+
+			std::vector<glm::vec2> octaveOffset;
+			std::mt19937 gen(seed);
+			std::uniform_real_distribution<float> dis(-10000.0f, 10000.0f);
+
+			for (int i = 0; i < octave; i++) {
+				float offsetX = dis(gen);
+				float offsetY = dis(gen);
+				octaveOffset.push_back(glm::vec2(offsetX, offsetY));
+			}
 
 			float accNoise = 0.0f;
 			//float a = 1.0f;
@@ -66,8 +77,8 @@ namespace Noise {
 			float f = 1.0f;
 
 			for (int i = 0; i < octave; i++) {
-				float sampleX = x / scale * f;
-				float sampleY = y / scale * f;
+				float sampleX = x / scale * f + octaveOffset[i].x;
+				float sampleY = y / scale * f + octaveOffset[i].y;
 				accNoise += a * perlinValue(sampleX, sampleY);
 
 				a *= persistance;
@@ -76,8 +87,8 @@ namespace Noise {
 			return accNoise;
 		}
 
-		static float fbm(glm::vec2 p, int octave, float scale, float persistance, float lacunarity) {
-			return fbm(p.x, p.y, octave, scale, persistance, lacunarity);
+		static float fbm(glm::vec2 p, int octave, float scale, float persistance, float lacunarity, int seed) {
+			return fbm(p.x, p.y, octave, scale, persistance, lacunarity, seed);
 		}
 
 		static float lerp(float t, float a, float b) { return (1 - t) * a + t * b; }

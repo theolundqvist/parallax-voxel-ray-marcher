@@ -30,6 +30,7 @@ private:
 
 	// for ca test
 	cellularAutomata* ca3d;
+	terrain* t;
 
 
 	typedef struct key_cooldown_t {
@@ -66,7 +67,7 @@ public:
 		playerBody->setMesh(parametric_shapes::createSphere(.25f, 10, 10));
 		GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
 		playerBody->setShader("fallback");
-		setScene(0);
+		setScene(7);
 	}
 
 
@@ -91,11 +92,18 @@ public:
 		// for ca test
 		if (scene->nbr == CA) {
 			this->ca3d = new cellularAutomata(cellularAutomata::CARules[0].state, glm::vec3(scene->volume_size),
-				glm::vec3(scene->volume_size), defaultColorPalette::CAColorsBlue2Pink,
+				glm::vec3(scene->volume_size), colorPalette::CAColorsBlue2Pink,
 				cellularAutomata::drawModes(2));
 			// set the color palette
 			this->renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::vec2(0, 255));
 		}
+
+		// for noise test
+		/*if (scene->nbr == NOISE) {
+			glm::vec3 volumeSize = glm::vec3(scene->volume_size);
+			this->t = new terrain(volumeSize.x * 2, volumeSize.z * 2, 50.0f, 4, 0.5f, 2.0f, 0);
+		}*/
+
 		scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
 		scene->ruled_changed = true;
 	}
@@ -157,8 +165,8 @@ public:
 			}
 			else {
 				scene->shader_setting = fixed_step_material;
-                    camera->mWorld.SetTranslate(scene->cam.pos);
-                    camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
+				camera->mWorld.SetTranslate(scene->cam.pos);
+				camera->mWorld.LookAt(scene->cam.look_at, Direction::up);
 
 			}
 			if (scene->rule > 1)
@@ -187,15 +195,15 @@ public:
 			break;
 		case SCENES::SDF:
 			if (scene->ruled_changed) {
-                checkpoint = { *elapsed, camera->mWorld };
+				checkpoint = { *elapsed, camera->mWorld };
 			}
-            if(rule == 1){ //sphere
-                auto r = scene->volume_size/2 * glm::smoothstep(checkpoint.time, checkpoint.time+1000, *elapsed);
-                renderer->getVolume(0)->updateVoxels([r](int x, int y, int z, GLubyte prev) {
-                    //if(sdf::sphere(x,y,z, r)) return 0;
-                    return voxel_util::hash(glm::ivec3(x, y, z));
-                });
-            }
+			if (rule == 1) { //sphere
+				auto r = scene->volume_size / 2 * glm::smoothstep(checkpoint.time, checkpoint.time + 1000, *elapsed);
+				renderer->getVolume(0)->updateVoxels([r](int x, int y, int z, GLubyte prev) {
+					//if(sdf::sphere(x,y,z, r)) return 0;
+					return voxel_util::hash(glm::ivec3(x, y, z));
+					});
+			}
 			break;
 		case SCENES::CA:
 			// that's mean I will create ca3d every frame
@@ -245,11 +253,22 @@ public:
 		case SCENES::NOISE:
 			if (scene->ruled_changed) {
 				glm::vec3 volumeSize = renderer->getVolume(0)->size();
-				terrain t(volumeSize.x, volumeSize.z, 100.0f);
-				renderer->getVolume(0)->updateVoxels([this, &t, time](int x, int y, int z, GLubyte prev) {
+				t = new terrain(volumeSize.x * 2, volumeSize.z * 2, 30.0f, 4, 0.5f, 2.0f, rule);
+
+				renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
 					// rule = 1 still, rule = 2 animated
 					// use time as offset to animate the terrain
-					return t.height2ColorIndex(x, y, z, glm::vec2(0, 255));
+					return t->height2ColorIndex(x, y, z, glm::vec2(0, 255));
+					});
+			}
+			// offset the terrain with time
+			if (rule != 1) {
+				renderer->getVolume(0)->updateVoxels([this, time](int x, int y, int z, GLubyte prev) {
+					// rule = 1 still, rule = 2 animated
+					// use time as offset to animate the terrain
+					//t.updateTerrainTexture(glm::vec2(time));
+					float offset = time * 0.01f;
+					return t->height2ColorIndex(x + offset, y, z + offset, glm::vec2(0, 255));
 					});
 			}
 			break;
@@ -281,21 +300,21 @@ public:
 			break;
 		}
 
-        if(scene->ruled_changed) scene->ruled_changed = false;
-        if (getKey(GLFW_KEY_DOWN)) rule -= 1;
-        if (getKey(GLFW_KEY_UP)) rule += 1;
-        rule = glm::clamp(rule, 1, scene->highest_rule);
-        if (rule != scene->rule) {
-            scene->rule = rule;
-            scene->ruled_changed = true;
-        }
+		if (scene->ruled_changed) scene->ruled_changed = false;
+		if (getKey(GLFW_KEY_DOWN)) rule -= 1;
+		if (getKey(GLFW_KEY_UP)) rule += 1;
+		rule = glm::clamp(rule, 1, scene->highest_rule);
+		if (rule != scene->rule) {
+			scene->rule = rule;
+			scene->ruled_changed = true;
+		}
 
-        int shader = static_cast<int>(scene->shader_setting);
-        if (getKey(GLFW_KEY_COMMA)) shader--;
-        if (getKey(GLFW_KEY_PERIOD)) shader++;
-        shader = glm::clamp(shader, 0, (int) NBR_SHADER_SETTINGS - 1);
-        scene->shader_setting = static_cast<shader_setting_t>(shader);
-        settings.shader_setting = scene->shader_setting;
+		int shader = static_cast<int>(scene->shader_setting);
+		if (getKey(GLFW_KEY_COMMA)) shader--;
+		if (getKey(GLFW_KEY_PERIOD)) shader++;
+		shader = glm::clamp(shader, 0, (int)NBR_SHADER_SETTINGS - 1);
+		scene->shader_setting = static_cast<shader_setting_t>(shader);
+		settings.shader_setting = scene->shader_setting;
 
 		if (getKey(GLFW_KEY_LEFT)) current_scene -= 1;
 		if (getKey(GLFW_KEY_RIGHT)) current_scene += 1;
@@ -315,38 +334,38 @@ public:
 
 
 
-    void render(bool show_basis, float basis_length_scale,
-                float basis_thickness_scale, float dt) {
-        //printf("cam pos: %f %f %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y, camera->mWorld.GetTranslation().z);
-        const auto now = std::chrono::high_resolution_clock::now();
-        float gpu_time, cpu_time;
-        switch (state) {
-            case RUNNING:
-                renderer->setShaderSetting(settings.shader_setting);
-                gpu_time = renderer->render(
-                        camera->GetWorldToClipMatrix(),
-                        settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
-                        show_basis,
-                        basis_length_scale,
-                        basis_thickness_scale);
-                cpu_time = dt - gpu_time;
-                if (settings.free_view)
-                    playerBody->render(
-                            camera->GetWorldToClipMatrix(),
-                            glm::mat4(1.0), true, basis_length_scale,basis_thickness_scale
-                    );
-                ui->resize();
-                if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
-                if (settings.show_crosshair) ui->crosshair();
-                ui->displaySceneSettings(scene, *elapsed);
-                break;
-            case PAUSED:
-                ui->resize();
-                ui->pauseMenu();
-                break;
-        }
-        const auto end = std::chrono::high_resolution_clock::now();
-    }
+	void render(bool show_basis, float basis_length_scale,
+		float basis_thickness_scale, float dt) {
+		//printf("cam pos: %f %f %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y, camera->mWorld.GetTranslation().z);
+		const auto now = std::chrono::high_resolution_clock::now();
+		float gpu_time, cpu_time;
+		switch (state) {
+		case RUNNING:
+			renderer->setShaderSetting(settings.shader_setting);
+			gpu_time = renderer->render(
+				camera->GetWorldToClipMatrix(),
+				settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),
+				show_basis,
+				basis_length_scale,
+				basis_thickness_scale);
+			cpu_time = dt - gpu_time;
+			if (settings.free_view)
+				playerBody->render(
+					camera->GetWorldToClipMatrix(),
+					glm::mat4(1.0), true, basis_length_scale, basis_thickness_scale
+				);
+			ui->resize();
+			if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
+			if (settings.show_crosshair) ui->crosshair();
+			ui->displaySceneSettings(scene, *elapsed);
+			break;
+		case PAUSED:
+			ui->resize();
+			ui->pauseMenu();
+			break;
+		}
+		const auto end = std::chrono::high_resolution_clock::now();
+	}
 
 	void update(const std::chrono::microseconds deltaTimeUs) {
 		const auto now = std::chrono::high_resolution_clock::now();

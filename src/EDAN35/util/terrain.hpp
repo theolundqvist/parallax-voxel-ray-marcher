@@ -2,13 +2,13 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <cfloat>
 #include "glm/glm.hpp"
 #include "../util/noise.cpp"
 #include "../util/voxel_util.cpp"
-//#include "../util/defaultColorPalette.cpp"
 #include "core/helpers.hpp"
 #include "core/opengl.hpp"
-
+#include "../util/colorPalette.hpp"
 
 class terrain {
 private:
@@ -39,14 +39,15 @@ private:
 	};
 
 public:
-	terrain(int width, int depth, float elevation) : m_Width(width), m_Depth(depth),
+	terrain(int width, int depth, float elevation, int octave, float persistance, float lacunarity, int seed) : m_Width(width), m_Depth(depth),
 		m_Elevation(elevation) {
-		generateTerrainTexture(width, depth);
+		//generateTerrainTexture(width/2);
+		generateTerrainTextureWithWater(width/octave, octave, persistance, lacunarity, seed);
 		// set max height
 		findMaxHeight();
 		findMinHeight();
 		// use default colors
-		generateTerrainColorPalette(defaultColorPalette::terrainDefaultColors, m_HeightRange, glm::vec2(0, 255));
+		generateTerrainColorPalette(colorPalette::terrainDefaultColors, m_HeightRange, glm::vec2(0, 255));
 	}
 
 	terrain(int width, int depth, float elevation, std::vector<glm::vec3>& colors, std::vector<glm::vec2>& heightRange) : m_Width(width), m_Depth(depth),
@@ -58,14 +59,71 @@ public:
 		generateTerrainColorPalette(colors, heightRange, glm::vec2(0, 255));
 	}
 
-	void generateTerrainTexture(int width, int depth) {
+	void generateTerrainTexture(float scale, int octave, float persistance = .5f, float lacunarity = 2.f, int seed = 0) {
 		// allocate memory to terrain texture
-		m_TerrainTexture.reserve(width * depth);
+		m_TerrainTexture.reserve(m_Width * m_Depth);
+
+		float maxNoiseHeight = FLT_MIN;
+		float minNoiseHeight = FLT_MAX;
+
 		// use fbm to genereate the 2d texture
-		for (int i = 0; i < width; i++) {
-			for (int j = 0; j < depth; j++) {
-				//m_TerrainTexture[index] = Noise::perlinNoise::fbm(i, j, 4, 5.0f, 0.5f, 2.0f);
-				m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, width / 2, 0.5f, 2.0f) * 0.5f + 0.5f);
+		for (int i = 0; i < m_Width; i++) {
+			for (int j = 0; j < m_Depth; j++) {
+				// range from -1 - 1
+				//m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, scale, persistance, lacunarity));
+				// range fomr 0 - 1
+				//m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, scale, persistance, lacunarity) * .5f + .5f);
+				float noiseHeight = Noise::perlinNoise::fbm(i, j, octave, scale, persistance, lacunarity, seed);
+				if (noiseHeight > maxNoiseHeight) maxNoiseHeight = noiseHeight;
+				else if (noiseHeight < minNoiseHeight) minNoiseHeight = noiseHeight;
+				m_TerrainTexture.push_back(noiseHeight);
+			}
+		}
+
+		// remap noise height from min-max to 0-1 to make more details
+		for (int i = 0; i < m_Width; i++) {
+			for (int j = 0; j < m_Depth; j++) {
+				m_TerrainTexture[i + m_Width * j] = voxel_util::remap(m_TerrainTexture[i + j * m_Width], glm::vec2(minNoiseHeight, maxNoiseHeight), glm::vec2(0.0f, 1.0f));
+			}
+		}
+
+	}
+
+	void generateTerrainTextureWithWater(float scale, int octave, float persistance = .5f, float lacunarity = 2.f, int seed = 0) {
+		// allocate memory to terrain texture
+		m_TerrainTexture.reserve(m_Width * m_Depth);
+
+		float maxNoiseHeight = FLT_MIN;
+		float minNoiseHeight = FLT_MAX;
+
+		// use fbm to genereate the 2d texture
+		for (int i = 0; i < m_Width; i++) {
+			for (int j = 0; j < m_Depth; j++) {
+				// range from -1 - 1
+				//m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, scale, persistance, lacunarity));
+				// range fomr 0 - 1
+				//m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, scale, persistance, lacunarity) * .5f + .5f);
+				float noiseHeight = Noise::perlinNoise::fbm(i, j, octave, scale, persistance, lacunarity, seed);
+				if (noiseHeight > maxNoiseHeight) maxNoiseHeight = noiseHeight;
+				else if (noiseHeight < minNoiseHeight) minNoiseHeight = noiseHeight;
+				m_TerrainTexture.push_back(noiseHeight);
+			}
+		}
+
+		//std::cout << minNoiseHeight << " " << maxNoiseHeight << std::endl;
+
+		float waterHeight = minNoiseHeight + ((maxNoiseHeight - minNoiseHeight) * std::abs(minNoiseHeight / maxNoiseHeight));
+		waterHeight = voxel_util::remap(waterHeight, glm::vec2(0.0f, 1.0f), glm::vec2(0.0f, std::abs(minNoiseHeight)));
+
+		// remap noise height from min-max to 0-1 to make more details
+		for (int i = 0; i < m_Width; i++) {
+			for (int j = 0; j < m_Depth; j++) {
+				// remap noise height to 0 -1
+				float noiseHeight = voxel_util::remap(m_TerrainTexture[i + j * m_Width], glm::vec2(minNoiseHeight, maxNoiseHeight), glm::vec2(0.0f, 1.0f));
+				if (noiseHeight < waterHeight)
+					m_TerrainTexture[i + m_Width * j] = waterHeight;
+				else
+					m_TerrainTexture[i + m_Width * j] = noiseHeight;
 			}
 		}
 	}
@@ -103,7 +161,7 @@ public:
 	// inside is not enough
 	// must turn height into sample index
 	int height2ColorIndex(int x, int y, int z, glm::vec2 colorRange) {
-		float height = getHeight(x, z);
+		float height = getHeight(x % m_Width, z % m_Depth);
 		// first two range should be water
 		float colorRangeStart = m_HeightRange[2].x * 255;
 		float colorEnd = m_HeightRange[1].x * 255;
