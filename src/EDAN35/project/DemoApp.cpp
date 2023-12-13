@@ -2,6 +2,7 @@
 
 #include "../util/Direction.cpp"
 #include "../util/GameObject.cpp"
+#include "../util/sdf.cpp"
 #include "../util/parametric_shapes.cpp"
 #include "../util/parametric_shapes.hpp"
 #include "../util/demo_scenes.cpp"
@@ -71,7 +72,7 @@ public:
         playerBody->setMesh(parametric_shapes::createSphere(.25f, 10, 10));
         GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         playerBody->setShader("fallback");
-        setScene(7);
+        setScene(5);
 
         terrainGenerator = new TerrainGenerator(128, 128, 128, 100);
         terrainGenerator->start();
@@ -215,12 +216,33 @@ public:
             case SCENES::SDF:
                 if (scene->ruled_changed) {
                     checkpoint = {*elapsed, camera->mWorld};
+                    shader_setting_t shaders[] = {
+                            fvta_step_pixel_pos,
+                            fvta_step_shaded,
+                    };
+                    scene->shader_setting = shaders[(rule - 1) % 2];
                 }
-                if (rule == 1) { //sphere
+                if (rule == 1 || rule == 2) { //sphere
                     auto r =
-                            scene->volume_size / 2 * glm::smoothstep(checkpoint.time, checkpoint.time + 1000, *elapsed);
-                    volume0->updateVoxels([r](int x, int y, int z, GLubyte prev) {
-                        //if(sdf::sphere(x,y,z, r)) return 0;
+                            size.x / 2 * glm::smoothstep(checkpoint.time, checkpoint.time + 1000, *elapsed);
+                    volume0->updateVoxels([r, size](int x, int y, int z, GLubyte prev) {
+                        if (!SDF::sphere(glm::vec3(x, y, z), size / 2.f, r)) return 0;
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
+                }
+                if (rule == 3 || rule == 4) {
+                    auto r =
+                            size.x / 2.5 * glm::smoothstep(checkpoint.time, checkpoint.time + 1000, *elapsed);
+                    volume0->updateVoxels([r, size](int x, int y, int z, GLubyte prev) {
+                        if (!SDF::torus(glm::vec3(x, y, z), size / 2.f, glm::vec2(r, r / 3))) return 0;
+                        return voxel_util::hash(glm::ivec3(x, y, z));
+                    });
+                }
+                if (rule == 5 || rule == 6) {
+                    auto r =
+                            size.x / 3 * glm::smoothstep(checkpoint.time, checkpoint.time + 1000, *elapsed);
+                    volume0->updateVoxels([r, size](int x, int y, int z, GLubyte prev) {
+                        if (!SDF::octahedron(glm::vec3(x, y, z), size / 2.f, r)) return 0;
                         return voxel_util::hash(glm::ivec3(x, y, z));
                     });
                 }
@@ -228,18 +250,20 @@ public:
             case SCENES::CA:
                 if (scene->ruled_changed) {
                     checkpoint = {*elapsed, camera->mWorld};
-                    auto ca_setting = ca_settings[rule-1];
+                    auto ca_setting = ca_settings[rule - 1];
                     auto ca_rule = cellularAutomata::CARules[ca_setting.rule];
                     delete this->ca3d;
                     this->ca3d = new cellularAutomata(ca_rule.state, size,
-                                                      size * ca_setting.randomStateSizePercentage, ca_setting.colorPalette,
+                                                      size * ca_setting.randomStateSizePercentage,
+                                                      ca_setting.colorPalette,
                                                       ca_setting.drawMode);
                     volume0->generateColorPalette(ca3d->colorPalette, glm::ivec2(0, 255));
                 }
-                if ( *elapsed > checkpoint.time + 40) {
+                if (*elapsed > checkpoint.time + 40) {
                     checkpoint.time = *elapsed;
                     //volume0->cleanVoxel(); // not needed, we are updating the whole volume
-                    ca3d->updateCells(cellularAutomata::CARules[rule-1].survival, cellularAutomata::CARules[rule-1].spawn);
+                    ca3d->updateCells(cellularAutomata::CARules[rule - 1].survival,
+                                      cellularAutomata::CARules[rule - 1].spawn);
                     volume0->updateVoxels([this](int x, int y, int z, GLubyte prev) {
                         return ca3d->findColorIndex(glm::vec3(x, y, z));
                     });
@@ -247,10 +271,11 @@ public:
                 break;
             case SCENES::NOISE:
                 if (scene->ruled_changed) {
-                    checkpoint = {.time=*elapsed, .terrain_offset=glm::vec2(0,0)};
+                    checkpoint = {.time=*elapsed, .terrain_offset=glm::vec2(0, 0)};
                     volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
                     delete t;
-                    t = new terrain(size.x * 4, size.z * 4,  size.y*0.7, 1.0f, 4, 0.5f, 2.0f, rule, glm::ivec2(32, 32));
+                    t = new terrain(size.x * 4, size.z * 4, size.y * 0.7, 1.0f, 4, 0.5f, 2.0f, rule,
+                                    glm::ivec2(32, 32));
 
                     volume0->updateVoxels([this](int x, int y, int z, GLubyte prev) {
                         // rule = 1 still, rule = 2 animated
@@ -287,17 +312,18 @@ public:
                     while (rule > renderer->numberVolumes()) {
                         //add volume
                         int n = renderer->numberVolumes();
-                        if(!terrainGenerator->terrainExists(n)){
-                           rule--;
-                           continue;
+                        if (!terrainGenerator->terrainExists(n)) {
+                            rule--;
+                            continue;
                         }
                         auto terrain = terrainGenerator->getTerrain(n);
                         auto pos = voxel_util::get_chunk_offset(n);
-                        auto vol = new VoxelVolume(size, size, size, center.translatedX(pos.x*3-6).translateZ(pos.y*3));
-                        vol->updateVoxels([terrain, pos,size](int x, int y, int z, GLubyte prev) {
+                        auto vol = new VoxelVolume(size, size, size,
+                                                   center.translatedX(pos.x * 3 - 6).translateZ(pos.y * 3));
+                        vol->updateVoxels([terrain, pos, size](int x, int y, int z, GLubyte prev) {
                             //return terrain->getHeight(x, z);
                             //printf("x: %d, y: %d, z: %d\n", x, y, z);
-                            return terrain->height2ColorIndex(x+pos.x*size, y, z+pos.y*size, glm::vec2(0, 255));
+                            return terrain->height2ColorIndex(x + pos.x * size, y, z + pos.y * size, glm::vec2(0, 255));
                             //return voxel_util::hash(glm::ivec3(x, y, z));
                         });
                         renderer->add_volume(vol);

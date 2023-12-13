@@ -7,6 +7,7 @@
 #include "../util/settings.cpp"
 #include "../util/cellularAutomata.hpp"
 #include "../util/colorPalette.hpp"
+#include "../util/sdf.cpp"
 #include "../util/GameObject.cpp"
 #include "../util/parametric_shapes.cpp"
 #include "../util/parametric_shapes.hpp"
@@ -61,7 +62,7 @@ scene_settings_t scenes[] = {
         {2, "Cube FVTA step", camera_positions[CUBE_CAM],    3,                              fixed_step_material},
         {3, "Shaders",        camera_positions[SHADERS_CAM], NBR_SHADER_SETTINGS - 1,        fvta_step_material},
         {4, "Larger",         camera_positions[CUBE_CAM],    1,                              fvta_step_shaded_with_simple_AO, 128, 1, true},
-        {5, "SDF",            camera_positions[CUBE_CAM],    4,                              fvta_step_shaded_with_simple_AO, 100,  1, true},
+        {5, "SDF",            camera_positions[CUBE_CAM],    6,                              fvta_step_pixel_pos, 128,  1, true},
         {6, "CA",             camera_positions[CA_CAM],    cellularAutomata::NBR_CA_RULES, fvta_step_shaded_colorpalette,   100,  1, true},
         {7, "Noise",          camera_positions[CUBE_CAM],    3,                              fvta_step_shaded_colorpalette,   100, 1, true},
         {8, "Minecraft",      camera_positions[MC_CAM],      100,                            fvta_step_shaded_colorpalette,   128, 1, false, 4},
