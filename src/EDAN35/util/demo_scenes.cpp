@@ -5,6 +5,7 @@
 
 #include "../util/Direction.cpp"
 #include "../util/settings.cpp"
+#include "../util/cellularAutomata.cpp"
 #include "../util/GameObject.cpp"
 #include "../util/parametric_shapes.cpp"
 #include "../util/parametric_shapes.hpp"
@@ -58,8 +59,27 @@ scene_settings_t scenes[] = {
         {6, "CA",             camera_positions[CUBE_CAM],         4,  fvta_step_shaded_colorpalette, 30, 1,  true},
         {7, "Noise",          camera_positions[CUBE_CAM],         2,  fvta_step_shaded_colorpalette, 128, 1,  true},
         {8, "Minecraft",      camera_positions[MC_CAM], 100, fvta_step_shaded_colorpalette, 128, 1,  false, 4},
-
 };
+
+typedef struct ca_setting_t {
+    CA_rule rule;
+    std::vector<glm::vec3> colorPalette;
+    int drawMode;
+
+
+} ca_setting_t;
+
+ca_setting_t ca_settings[] = {
+        {R_445, CAColorsRed2Green, density2colorIndex},
+};
+
+defaultColorPalette::CAColorsBlue2Pink, cellularAutomata::drawModes(1));
+// set up color palette
+break;
+
+// rule2: pyroclastic, CAColorsBlue2Pink hp2colorIndex
+// rule3: 678, CAColorsRed2Green, density2colorIndex
+// rule4: 445, CAColorsRed2Green, pos2colorIndex
 
 enum SCENES {
     QUAD,
