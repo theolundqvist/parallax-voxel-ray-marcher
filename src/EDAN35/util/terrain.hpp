@@ -39,10 +39,10 @@ private:
 	};
 
 public:
-	terrain(int width, int depth, float elevation, int octave, float persistance, float lacunarity, int seed) : m_Width(width), m_Depth(depth),
+	terrain(int width, int depth, float elevation, float scale, int octave, float persistance, float lacunarity, int seed) : m_Width(width), m_Depth(depth),
 		m_Elevation(elevation) {
 		//generateTerrainTexture(width/2);
-		generateTerrainTextureWithWater(width/octave, octave, persistance, lacunarity, seed);
+		generateTerrainTextureWithWater(width/octave * scale, octave, persistance, lacunarity, seed);
 		// set max height
 		findMaxHeight();
 		findMinHeight();
@@ -154,8 +154,9 @@ public:
 	}
 
 	bool isInsideTerrain(int x, float height) {
-		if (x < height) return true;
-		return false;
+        return x < height;
+		//if (x < height) return true;
+		//return false;
 	}
 
 	// inside is not enough
@@ -163,14 +164,13 @@ public:
 	int height2ColorIndex(int x, int y, int z, glm::vec2 colorRange) {
 		float height = getHeight(x % m_Width, z % m_Depth);
 		// first two range should be water
-		float colorRangeStart = m_HeightRange[2].x * 255;
+		//float colorRangeStart = m_HeightRange[2].x * 255;
+        float colorRangeStart = 60;
+
 		float colorEnd = m_HeightRange[1].x * 255;
 		float waterHeight = m_MinHeight + ((m_MaxHeight - m_MinHeight) * m_MinHeight / m_MaxHeight);
 		//std::cout << waterHeight << std::endl;
-		if (y < (waterHeight - 2.0f)) {
-			return 0;
-		}
-		else if (isInsideTerrain(y, height)) {
+		if (isInsideTerrain(y, height)) {
 			//wrong: glm::vec2 oldRange = glm::vec2(0, 1);
 			//wrong: return std::round(voxel_util::remap(height, oldRange, colorRange));
 			glm::vec2 oldRange = glm::vec2(0, m_MaxHeight);
@@ -178,11 +178,14 @@ public:
 			return index;
 		}
 		// for water
-		else if (y < waterHeight && y >(waterHeight - 2.0f)) {
+		else if (y < waterHeight) {
 			//glm::vec2 oldRange = glm::vec2(0, waterHeight - m_MinHeight);
-			float waterColorRangeStart = m_HeightRange[3].x * 255;
+            // not sure what I did here but I think it is nice now.
+            //int blocksAboveGround = y - height; // tried to blur edge between water bottom and sediment
+            float waterColorLower = m_HeightRange[1].y * 255;
+            float waterColorHigher = m_HeightRange[0].y * 255;
 			glm::vec2 oldRange = glm::vec2(height, waterHeight);
-			int index = std::round(voxel_util::remap(y, oldRange, glm::vec2(waterColorRangeStart, colorEnd)));
+			int index = std::round(voxel_util::remap(y, oldRange, glm::vec2(waterColorLower, waterColorHigher)));
 			return index;
 		}
 		else

@@ -243,7 +243,8 @@ public:
                 if (scene->ruled_changed) {
                     checkpoint = {.time=*elapsed, .terrain_offset=glm::vec2(0,0)};
                     volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
-                    t = new terrain(size.x * 4, size.z * 4, 30.0f, 4, 0.5f, 2.0f, rule);
+                    delete t;
+                    t = new terrain(size.x * 4, size.z * 4,  size.y, 2.0f, 4, 0.5f, 2.0f, rule);
 
                     volume0->updateVoxels([this](int x, int y, int z, GLubyte prev) {
                         // rule = 1 still, rule = 2 animated
@@ -253,12 +254,12 @@ public:
                 }
                 // offset the terrain with time
                 if (rule != 1 && *elapsed > checkpoint.time + 40) {
+                    volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
                     checkpoint.time = *elapsed;
                     glm::vec2 offset = checkpoint.terrain_offset;
                     volume0->updateVoxels([offset, this](int x, int y, int z, GLubyte prev) {
                         // rule = 1 still, rule = 2 animated
                         // use time as offset to animate the terrain
-                        //t.updateTerrainTexture(glm::vec2(time));
                         return t->height2ColorIndex(x + offset.x, y, z + offset.y, glm::vec2(0, 255));
                     });
                     checkpoint.terrain_offset += glm::vec2(1, 1);
