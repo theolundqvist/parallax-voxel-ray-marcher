@@ -32,7 +32,7 @@ public:
                 int w = 4;
                 //glm::vec2 chunk_offset = glm::vec2(i%w-w/2, i/w);
                 //auto t = new terrain(width, depth,  elevation, 3.0f, 4, 0.5f, 2.0f, 1, chunk_offset);
-                auto t = new terrain(width*10, depth*10,  elevation, 2.0f, 4, 0.5f, 2.0f, 1, glm::vec3(0));
+                auto t = new terrain(width*10, depth*10,  elevation, 1.5f, 4, 0.5f, 2.0f, 1, glm::vec3(0));
                 printf("Thread %d, generated terrain nbr %d in %lld ms\n", i, i, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - start).count());
                 return t;
             });
