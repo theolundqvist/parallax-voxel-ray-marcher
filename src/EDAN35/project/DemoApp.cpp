@@ -94,7 +94,6 @@ public:
         if (scene->nbr != MINECRAFT) {
             renderer->add_volume(new VoxelVolume(scene->volume_size, scene->volume_size, scene->volume_size, tf));
             scene->rule = 1;
-            scene->lod = true;
         }
         //}
 
@@ -375,6 +374,14 @@ public:
         if (getKey(GLFW_KEY_O)) {
             printf("cam pos: %f, %f, %f\n", camera->mWorld.GetTranslation().x, camera->mWorld.GetTranslation().y,
                    camera->mWorld.GetTranslation().z);
+        }
+        if(getKey(GLFW_KEY_L)){
+            if(scene->lod){
+               for(int i = 0; i < renderer->numberVolumes(); i++){
+                   renderer->getVolume(i)->setLOD(1);
+               }
+            }
+            scene->lod = !scene->lod;
         }
 
     }

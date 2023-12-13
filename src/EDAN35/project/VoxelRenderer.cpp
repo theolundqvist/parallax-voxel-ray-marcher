@@ -89,11 +89,10 @@ public:
         std::sort(sorted_volumes.begin(), sorted_volumes.end(), [cam_pos](VoxelVolume* a, VoxelVolume* b){
             return glm::length2(a->transform.getPos() - cam_pos) < glm::length2(b->transform.getPos() - cam_pos);
         });
-        int i = 1;
         for (auto volume: sorted_volumes) {
             if(lod){
                 float distance = glm::length(volume->transform.getPos() - cam_pos);
-                volume->setLOD((int)std::max(distance/2.f, 1.f));
+                volume->setLOD((int)std::max(distance/4.f, 1.f));
             }
             volume->render(
                     glm::mat4(1.0f),

@@ -66,7 +66,7 @@ scene_settings_t scenes[] = {
         {5, "SDF",            camera_positions[CUBE_CAM],    6,                              fvta_step_pixel_pos, 128,  1, true},
         {6, "CA",             camera_positions[CA_CAM],    cellularAutomata::NBR_CA_RULES, fvta_step_shaded_colorpalette,   100,  1, true},
         {7, "Noise",          camera_positions[CUBE_CAM],    5,                              fvta_step_shaded_colorpalette,   100, 1, true},
-        {8, "Minecraft",      camera_positions[MC_CAM],      100,                            fvta_step_shaded_colorpalette,   128, 1, false, 4, },
+        {8, "Minecraft",      camera_positions[MC_CAM],      100,                            fvta_step_shaded_colorpalette,   128, 1, false, 12, },
 };
 
 typedef struct ca_setting_t {
