@@ -28,7 +28,7 @@ public:
 
 		std::vector<glm::vec3> colorPalette;
 		float length = (colorRange.y - colorRange.x) + 1;
-		colorPalette.reserve(length);
+		//colorPalette.reserve(length);
 		for (int i = 1; i < colors.size() - 1; i++) {
 			glm::ivec2 curRange;
 			curRange.x = (i - 1) * length / (colors.size() - 2);

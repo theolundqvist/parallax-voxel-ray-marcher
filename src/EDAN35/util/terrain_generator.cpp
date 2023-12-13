@@ -23,10 +23,10 @@ public:
 
     void start(){
         int width = this->width; int depth = this->depth; int elevation = this->elevation;
-        results.reserve(nbr_terrains);
+        results.resize(nbr_terrains);
         // just generate one large texture
         for (int i = 0; i < 1; ++i) {
-            results[i] = result_t();
+            //results.emplace_back();
             auto hm = queue.push([i, width, depth, elevation](int) {
                 auto start = std::chrono::system_clock::now();
                 int w = 4;
@@ -47,6 +47,7 @@ public:
         return status == std::future_status::ready;
     }
 
+    // make sure index is < size
     terrain *getTerrain(int index) {
         index = 0;
         if(results[index].retrieved) return results[index].terrain;

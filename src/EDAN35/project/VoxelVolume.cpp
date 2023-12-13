@@ -203,7 +203,7 @@ public:
             float step_size = 1.0 / 10;
             auto step = normalize(w_direction * transform.getScale()) * voxel_size * step_size;
             int i = 0;
-            int max_step = (int) (1.0 / step_size * 1.0 / step_size * 1.0 / voxel_size);
+            int max_step = (int) (1.0 / step_size * 1.0 / step_size * 1.0 / voxel_size) * 30;
             for (i = 0; i < max_step; ++i) {
                 auto INDEX = localToIndex(inverse.apply(P));
                 auto mat = getVoxel(INDEX);

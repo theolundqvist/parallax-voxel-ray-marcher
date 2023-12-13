@@ -198,7 +198,7 @@ void edan35::Assignment2::run() {
     LogError("Failed to load the Sponza model");
     return;
   }
-  sponza_geometry.reserve(sponza_geometry.size() + curtains.size());
+  //sponza_geometry.reserve(sponza_geometry.size() + curtains.size());
   for (auto const &geometry : curtains) {
     sponza_geometry.push_back(geometry);
   }

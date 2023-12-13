@@ -23,7 +23,7 @@ cellularAutomata::updateCAState(int state, glm::vec3 size, glm::vec3 randomState
 }
 
 void cellularAutomata::CreateCells(int state, glm::vec3 size) {
-    m_Cells.reserve(m_Size.x * m_Size.y * m_Size.z);
+    //m_Cells.reserve(m_Size.x * m_Size.y * m_Size.z);
 
     for (int x = 0; x < m_Size.x; x++) {
         for (int y = 0; y < m_Size.y; y++) {

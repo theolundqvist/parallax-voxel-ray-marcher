@@ -61,7 +61,7 @@ public:
 
 	void generateTerrainTexture(float scale, int octave, float persistance = .5f, float lacunarity = 2.f, int seed = 0) {
 		// allocate memory to terrain texture
-		m_TerrainTexture.reserve(m_Width * m_Depth);
+		//m_TerrainTexture.reserve(m_Width * m_Depth);
 
 		float maxNoiseHeight = FLT_MIN;
 		float minNoiseHeight = FLT_MAX;
