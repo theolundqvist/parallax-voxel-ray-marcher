@@ -5,7 +5,7 @@ target_sources (
 	PRIVATE
 		[[assignment2.hpp]]
 		[[assignment2.cpp]]
- "util/Cell.hpp" "util/Cell.cpp" "util/cellularAutomata.hpp" "util/cellularAutomata.cpp" "util/defaultColorPalette.cpp")
+ "util/Cell.hpp" "util/Cell.cpp" "util/cellularAutomata.hpp" "util/cellularAutomata.cpp" "util/colorPalette.hpp" "util/noise.cpp" "util/terrain.cpp" "util/colorPalette.cpp")
 
 target_link_libraries (EDAN35_Assignment2 PRIVATE assignment_setup)
 
@@ -18,7 +18,7 @@ copy_dlls (EDAN35_Assignment2 "${CMAKE_CURRENT_BINARY_DIR}")
 add_executable (EDAN35_Project
         util/IntersectionTests.cpp
         util/voxel_util.cpp
-		util/settings.cpp "util/Cell.cpp" "util/cellularAutomata.cpp" "util/defaultColorPalette.cpp")
+		util/settings.cpp "util/Cell.cpp" "util/cellularAutomata.cpp"  "util/noise.cpp"  "util/terrain.cpp" "util/colorPalette.cpp")
 
 target_sources (
 	EDAN35_Project

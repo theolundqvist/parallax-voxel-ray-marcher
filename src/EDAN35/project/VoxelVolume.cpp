@@ -4,7 +4,7 @@
 #include "core/helpers.hpp"
 #include "core/opengl.hpp"
 #include <glm/gtx/component_wise.hpp>
-#include "../util/defaultColorPalette.cpp"
+#include "../util/colorPalette.hpp"
 
 
 class VoxelVolume {
@@ -13,7 +13,7 @@ private:
     GLuint texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
-    std::vector<glm::vec3> colorPalette = defaultColorPalette::generateCAColorPalette(defaultColorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
+    std::vector<glm::vec3> colorPalette = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
 
     GLuint program{};
     shader_setting_t shader_setting = fixed_step_material;
@@ -85,7 +85,7 @@ public:
     }
 
     void generateColorPalette(std::vector<glm::vec3> colors, glm::vec2 colorRange) {
-        this->colorPalette = defaultColorPalette::generateCAColorPalette(colors,colorRange);
+        this->colorPalette = colorPalette::generateCAColorPalette(colors,colorRange);
     }
 
     void updateVoxels(std::function<GLubyte(int x,int y,int z, GLubyte previous)> const get_material){
@@ -273,7 +273,7 @@ public:
         }
         utils::opengl::debug::endDebugGroup();
     }
-
+    
 private:
     void setUniforms(glm::mat4 const &tf,
                      glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
@@ -302,7 +302,6 @@ private:
 */
         // color palette
         // set color palette here
-        // error!!!
         glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(), 
                      glm::value_ptr(colorPalette[0]));
 

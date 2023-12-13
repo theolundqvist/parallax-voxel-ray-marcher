@@ -17,6 +17,8 @@
 
 #include "../util/cellularAutomata.hpp"
 
+#include "../util/terrain.hpp"
+
 class DemoApp {
 private:
     VoxelRenderer *renderer;
@@ -28,6 +30,7 @@ private:
 
     // for ca test
     cellularAutomata *ca3d;
+	terrain* t;
 
 
     typedef struct key_cooldown_t {
@@ -88,12 +91,19 @@ public:
 
         // for ca test
         if (scene->nbr == CA) {
-            this->ca3d = new cellularAutomata(cellularAutomata::CARules[5].state, glm::vec3(scene->volume_size),
-                                              glm::vec3(scene->volume_size), defaultColorPalette::CAColorsBlue2Pink,
-                                              cellularAutomata::drawModes(scene->rule));
+            this->ca3d = new cellularAutomata(cellularAutomata::CARules[0].state, glm::vec3(scene->volume_size),
+                                              glm::vec3(scene->volume_size), colorPalette::CAColorsBlue2Pink,
+                                              cellularAutomata::drawModes(2));
             // set the color palette
             this->renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::vec2(0, 255));
         }
+
+		// for noise test
+		/*if (scene->nbr == NOISE) {
+			glm::vec3 volumeSize = glm::vec3(scene->volume_size);
+			this->t = new terrain(volumeSize.x * 2, volumeSize.z * 2, 50.0f, 4, 0.5f, 2.0f, 0);
+		}*/
+
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
         scene->ruled_changed = true;
     }
@@ -231,15 +241,28 @@ public:
                     return ca3d->findColorIndex(glm::vec3(x, y, z));
                 });
                 break;
-            case SCENES::NOISE:
-                if (scene->ruled_changed) {
-                    renderer->getVolume(0)->updateVoxels([rule, time](int x, int y, int z, GLubyte prev) {
-                        // rule = 1 still, rule = 2 animated
-                        // use time as offset to animate the terrain
-                        return 1;
-                    });
-                }
-                break;
+		case SCENES::NOISE:
+			if (scene->ruled_changed) {
+				glm::vec3 volumeSize = renderer->getVolume(0)->size();
+				t = new terrain(volumeSize.x * 2, volumeSize.z * 2, 30.0f, 4, 0.5f, 2.0f, rule);
+
+				renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
+					// rule = 1 still, rule = 2 animated
+					// use time as offset to animate the terrain
+					return t->height2ColorIndex(x, y, z, glm::vec2(0, 255));
+					});
+			}
+			// offset the terrain with time
+			if (rule != 1) {
+				renderer->getVolume(0)->updateVoxels([this, time](int x, int y, int z, GLubyte prev) {
+					// rule = 1 still, rule = 2 animated
+					// use time as offset to animate the terrain
+					//t.updateTerrainTexture(glm::vec2(time));
+					float offset = time * 0.01f;
+					return t->height2ColorIndex(x + offset, y, z + offset, glm::vec2(0, 255));
+					});
+			}
+			break;
             case SCENES::MINECRAFT:
                 if (scene->ruled_changed) {
                     // create volumes
@@ -269,25 +292,21 @@ public:
                 break;
         }
 
-        if (scene->ruled_changed)
-            scene->
-                    ruled_changed = false;
-        if (getKey(GLFW_KEY_DOWN)) rule -= 1;
-        if (getKey(GLFW_KEY_UP)) rule += 1;
-        rule = glm::clamp(rule, 1, scene->highest_rule);
-        if (rule != scene->rule) {
-            scene->rule = rule;
-            scene->ruled_changed = true;
-        }
+		if (scene->ruled_changed) scene->ruled_changed = false;
+		if (getKey(GLFW_KEY_DOWN)) rule -= 1;
+		if (getKey(GLFW_KEY_UP)) rule += 1;
+		rule = glm::clamp(rule, 1, scene->highest_rule);
+		if (rule != scene->rule) {
+			scene->rule = rule;
+			scene->ruled_changed = true;
+		}
 
-        int shader = static_cast<int>(scene->shader_setting);
-        if (getKey(GLFW_KEY_COMMA)) shader--;
-        if (getKey(GLFW_KEY_PERIOD)) shader++;
-        shader = glm::clamp(shader, 0, (int) NBR_SHADER_SETTINGS - 1);
-        scene->
-                shader_setting = static_cast<shader_setting_t>(shader);
-        settings.
-                shader_setting = scene->shader_setting;
+		int shader = static_cast<int>(scene->shader_setting);
+		if (getKey(GLFW_KEY_COMMA)) shader--;
+		if (getKey(GLFW_KEY_PERIOD)) shader++;
+		shader = glm::clamp(shader, 0, (int)NBR_SHADER_SETTINGS - 1);
+		scene->shader_setting = static_cast<shader_setting_t>(shader);
+		settings.shader_setting = scene->shader_setting;
 
         if (getKey(GLFW_KEY_LEFT)) current_scene -= 1;
         if (getKey(GLFW_KEY_RIGHT)) current_scene += 1;
