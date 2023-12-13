@@ -18,7 +18,8 @@ copy_dlls (EDAN35_Assignment2 "${CMAKE_CURRENT_BINARY_DIR}")
 add_executable (EDAN35_Project
         util/IntersectionTests.cpp
         util/voxel_util.cpp
-		util/settings.cpp "util/Cell.cpp" "util/cellularAutomata.cpp"  "util/noise.cpp"  "util/terrain.cpp" "util/colorPalette.cpp")
+		util/settings.cpp
+        util/terrain.cpp "util/Cell.cpp" "util/cellularAutomata.cpp"  "util/noise.cpp"  "util/terrain.cpp" "util/colorPalette.cpp")
 
 target_sources (
 	EDAN35_Project

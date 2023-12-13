@@ -162,6 +162,7 @@ public:
 	// inside is not enough
 	// must turn height into sample index
 	int height2ColorIndex(int x, int y, int z, glm::vec2 colorRange) {
+        //printf("m_Width: %d, m_Depth: %d\n", m_Width, m_Depth);
 		float height = getHeight(x % m_Width, z % m_Depth);
 		// first two range should be water
 		//float colorRangeStart = m_HeightRange[2].x * 255;
