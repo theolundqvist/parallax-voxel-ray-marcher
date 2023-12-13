@@ -39,10 +39,10 @@ private:
 	};
 
 public:
-	terrain(int width, int depth, float elevation, float scale, int octave, float persistance, float lacunarity, int seed) : m_Width(width), m_Depth(depth),
+	terrain(int width, int depth, float elevation, float scale, int octave, float persistance, float lacunarity, int seed, glm::ivec2 offset = glm::vec2(0)) : m_Width(width), m_Depth(depth),
 		m_Elevation(elevation) {
 		//generateTerrainTexture(width/2);
-		generateTerrainTextureWithWater(width/octave * scale, octave, persistance, lacunarity, seed);
+		generateTerrainTextureWithWater(width/octave * scale, octave, persistance, lacunarity, seed, offset);
 		// set max height
 		findMaxHeight();
 		findMinHeight();
@@ -89,7 +89,7 @@ public:
 
 	}
 
-	void generateTerrainTextureWithWater(float scale, int octave, float persistance = .5f, float lacunarity = 2.f, int seed = 0) {
+	void generateTerrainTextureWithWater(float scale, int octave, float persistance = .5f, float lacunarity = 2.f, int seed = 0, glm::ivec2 offset = glm::vec2(0)) {
 		// allocate memory to terrain texture
 		m_TerrainTexture.reserve(m_Width * m_Depth);
 
@@ -103,7 +103,7 @@ public:
 				//m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, scale, persistance, lacunarity));
 				// range fomr 0 - 1
 				//m_TerrainTexture.push_back(Noise::perlinNoise::fbm(i, j, 4, scale, persistance, lacunarity) * .5f + .5f);
-				float noiseHeight = Noise::perlinNoise::fbm(i, j, octave, scale, persistance, lacunarity, seed);
+				float noiseHeight = Noise::perlinNoise::fbm(i, j, octave, scale, persistance, lacunarity, seed, offset);
 				if (noiseHeight > maxNoiseHeight) maxNoiseHeight = noiseHeight;
 				else if (noiseHeight < minNoiseHeight) minNoiseHeight = noiseHeight;
 				m_TerrainTexture.push_back(noiseHeight);

@@ -58,7 +58,7 @@ namespace Noise {
 		}
 
 		static float fbm(int x, int y, int octave, float scale, float persistance = .5f, 
-						 float lacunarity = 2.f, int seed = 0) {
+						 float lacunarity = 2.f, int seed = 0, glm::ivec2 offset = glm::vec2(0)) {
 			if (scale <= 0) scale = 0.00001f;
 
 			std::vector<glm::vec2> octaveOffset;
@@ -77,8 +77,8 @@ namespace Noise {
 			float f = 1.0f;
 
 			for (int i = 0; i < octave; i++) {
-				float sampleX = x / scale * f + octaveOffset[i].x;
-				float sampleY = y / scale * f + octaveOffset[i].y;
+				float sampleX = x / scale * f + octaveOffset[i].x + offset.x;
+				float sampleY = y / scale * f + octaveOffset[i].y + offset.y;
 				accNoise += a * perlinValue(sampleX, sampleY);
 
 				a *= persistance;
