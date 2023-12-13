@@ -156,7 +156,7 @@ public:
 			curRange.y = heightRange[i].y * 255;
 
 			// print range
-			std::cout << curRange << std::endl;
+			//std::cout << curRange << std::endl;
             if(curRange.x > 255 || curRange.x < 0){
                 //std::cout << "Color value out of range 2" << std::endl;
                 continue;
@@ -225,7 +225,7 @@ public:
 					m_MaxHeight = height;
 			}
 		}
-		std::cout << m_MaxHeight << std::endl;
+		//std::cout << m_MaxHeight << std::endl;
 	}
 
 	void findMinHeight() {
@@ -236,7 +236,7 @@ public:
 					m_MinHeight = height;
 			}
 		}
-		std::cout << m_MinHeight << std::endl;
+		//std::cout << m_MinHeight << std::endl;
 	}
 
 	std::vector<float> getTerrainTexture() {

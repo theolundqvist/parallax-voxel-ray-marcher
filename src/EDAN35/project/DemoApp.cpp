@@ -274,8 +274,8 @@ public:
                     checkpoint = {.time=*elapsed, .terrain_offset=glm::vec2(0, 0)};
                     volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
                     //delete t;
-                    t = new terrain(size.x * 4, size.z * 4, size.y * 0.7, 1.0f, 4, 0.5f, 2.0f, rule,
-                                    glm::ivec2(32, 32));
+                    t = new terrain(size.x * 4, size.z * 4, size.y * 0.7, 1.0f, 4, 0.5f, 2.0f, 1,
+                                    glm::ivec2(0, 0));
 
                     volume0->updateVoxels([this](int x, int y, int z, GLubyte prev) {
                         // rule = 1 still, rule = 2 animated
@@ -296,7 +296,7 @@ public:
                     });
                     checkpoint.terrain_offset += glm::vec2(1, 1);
                 }
-                else {
+                else if(rule <= 3) {
                     int lods[] = {1,2,4};
                     volume0->setLOD(lods[rule-1]);
                 }

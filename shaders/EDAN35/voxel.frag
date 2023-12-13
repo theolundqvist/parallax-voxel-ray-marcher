@@ -191,7 +191,7 @@ hit_t fvta_step(){
     vec3 ro = start.pos;
     vec3 normal = start.normal;
     vec3 rd = normalize(fV);
-    float voxel_size_local = voxel_size*lod;
+    float voxel_size_local = voxel_size*lod; //1 - normal, 2 - twice the size of the steps
     vec3 voxel_index = floor(ro * (1./voxel_size_local));
     vec3 voxel_pos = voxel_size_local * voxel_index;
     vec3 rs = sign(rd);
