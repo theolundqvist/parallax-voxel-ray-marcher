@@ -178,11 +178,22 @@ public:
                 }
                 break;
             case SCENES::SHADERS:
-                if (scene->ruled_changed) {
+                if(scene->ruled_changed) {
+                    scene->shader_setting = (shader_setting_t) rule;
                     renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
                         if (!voxel_util::wave(1.0f, x, y, z, 8)) return 0;
                         return voxel_util::hash(glm::ivec3(x, y, z));
                     });
+                    auto hit = renderer->raycast(
+                            camera->mWorld.GetTranslation(),
+                            camera->mWorld.GetFront()
+                    );
+                    if (!hit.miss) {
+                        auto volumes = renderer->sphereIntersect(hit.world_pos, settings.edit_size);
+                        for (auto volume: volumes) {
+                            volume->setSphere(hit.world_pos, settings.edit_size, 0);
+                        }
+                    }
                 }
                 break;
             case SCENES::LARGER:
