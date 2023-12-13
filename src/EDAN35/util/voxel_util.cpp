@@ -53,10 +53,10 @@ public:
         return (scale * (y - x) + x);
     }
 private:
-    static const int chunkWorldWidth = 4;
+    static const int chunkWorldWidth = 10;
 public:
     static glm::vec2 get_chunk_offset(int index){
         int width = chunkWorldWidth; // don't change, same is in terrain generator, should move to voxel_util
-        return glm::vec2(index%width-width/2, index/width);
+        return glm::vec2(index%width, index/width);
     }
 };

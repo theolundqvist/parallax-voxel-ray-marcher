@@ -293,11 +293,11 @@ public:
                         }
                         auto terrain = terrainGenerator->getTerrain(n);
                         auto pos = voxel_util::get_chunk_offset(n);
-                        auto vol = new VoxelVolume(size, size, size, center.translatedX(pos.x*3).translateZ(pos.y*3));
-                        vol->updateVoxels([terrain](int x, int y, int z, GLubyte prev) {
+                        auto vol = new VoxelVolume(size, size, size, center.translatedX(pos.x*3-6).translateZ(pos.y*3));
+                        vol->updateVoxels([terrain, pos,size](int x, int y, int z, GLubyte prev) {
                             //return terrain->getHeight(x, z);
                             //printf("x: %d, y: %d, z: %d\n", x, y, z);
-                            return terrain->height2ColorIndex(x, y, z, glm::vec2(0, 255));
+                            return terrain->height2ColorIndex(x+pos.x*size, y, z+pos.y*size, glm::vec2(0, 255));
                             //return voxel_util::hash(glm::ivec3(x, y, z));
                         });
                         renderer->add_volume(vol);
