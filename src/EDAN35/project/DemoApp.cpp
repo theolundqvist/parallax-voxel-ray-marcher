@@ -68,7 +68,7 @@ public:
         playerBody->setMesh(parametric_shapes::createSphere(.25f, 10, 10));
         GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         playerBody->setShader("fallback");
-        setScene(0);
+        setScene(7);
     }
 
 
@@ -242,9 +242,8 @@ public:
             case SCENES::NOISE:
                 if (scene->ruled_changed) {
                     checkpoint = {.time=*elapsed, .terrain_offset=glm::vec2(0,0)};
-                    glm::vec3 volumeSize = volume0->size();
                     volume0->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
-                    t = new terrain(volumeSize.x * 2, volumeSize.z * 2, 30.0f, 4, 0.5f, 2.0f, rule);
+                    t = new terrain(size.x * 4, size.z * 4, 30.0f, 4, 0.5f, 2.0f, rule);
 
                     volume0->updateVoxels([this](int x, int y, int z, GLubyte prev) {
                         // rule = 1 still, rule = 2 animated

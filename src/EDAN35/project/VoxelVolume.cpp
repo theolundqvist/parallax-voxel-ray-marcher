@@ -13,7 +13,7 @@ private:
     GLuint texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
-    std::vector<glm::vec3> colorPalette = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
+    std::vector<glm::vec3> colorPalette;// = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
 
     GLuint program{};
     shader_setting_t shader_setting = fixed_step_material;
