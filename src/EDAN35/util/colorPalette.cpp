@@ -52,16 +52,21 @@ std::vector<glm::vec3> colorPalette::terrainDefaultColors = {
 	glm::vec3(51, 153, 255),
 	// dirt1
 	glm::vec3(240,230,140),
+    glm::vec3(240,230,140),
 	// dirt2
 	glm::vec3(238, 232,170),
+    glm::vec3(238, 232,170),
 	// grass1
 	glm::vec3(0,100,0),
 	// grass2
 	glm::vec3(0,128,0),
 	// stone1
 	glm::vec3(60,40,40),
+    glm::vec3(60,40,40),
 	// stone2
 	glm::vec3(70,50,50),
+    glm::vec3(70,50,50),
 	// snow
 	glm::vec3(255,255,255),
+    glm::vec3(255,255,255),
 };

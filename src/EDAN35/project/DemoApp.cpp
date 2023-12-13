@@ -72,7 +72,7 @@ public:
         playerBody->setMesh(parametric_shapes::createSphere(.25f, 10, 10));
         GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         playerBody->setShader("fallback");
-        setScene(5);
+        setScene(7);
 
         terrainGenerator = new TerrainGenerator(128, 128, 128, 100);
         terrainGenerator->start();

@@ -82,16 +82,14 @@ typedef struct ca_setting_t {
 // rule4: 445, CAColorsRed2Green, pos2colorIndex
 ca_setting_t ca_settings[] = {
         {cellularAutomata::R_BUILDER,      0.35f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
-        {cellularAutomata::R_SPIKE_GROWTH, 0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
-        {cellularAutomata::R_445,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
+        {cellularAutomata::R_SPIKE_GROWTH, 0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color}, {cellularAutomata::R_445,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
+        {cellularAutomata::R_678,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
         // maybe remove pyroclastic
         {cellularAutomata::R_PYROCLASTIC,  0.4f,  fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
         // remove
         {cellularAutomata::R_CLOUD1,       0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
         // maybe remove
         {cellularAutomata::R_AMOEBA,       0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
-        // maybe remove
-        {cellularAutomata::R_678,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
 };
 
 enum SCENES {

@@ -162,11 +162,10 @@ public:
 	// inside is not enough
 	// must turn height into sample index
 	int height2ColorIndex(int x, int y, int z, glm::vec2 colorRange) {
-        //printf("m_Width: %d, m_Depth: %d\n", m_Width, m_Depth);
 		float height = getHeight(x % m_Width, z % m_Depth);
 		// first two range should be water
 		//float colorRangeStart = m_HeightRange[2].x * 255;
-        float colorRangeStart = 60;
+        float colorRangeStart = 35;
 
 		float colorEnd = m_HeightRange[1].x * 255;
 		float waterHeight = m_MinHeight + ((m_MaxHeight - m_MinHeight) * m_MinHeight / m_MaxHeight);
@@ -183,8 +182,8 @@ public:
 			//glm::vec2 oldRange = glm::vec2(0, waterHeight - m_MinHeight);
             // not sure what I did here but I think it is nice now.
             //int blocksAboveGround = y - height; // tried to blur edge between water bottom and sediment
-            float waterColorLower = m_HeightRange[1].y * 255;
-            float waterColorHigher = m_HeightRange[0].y * 255;
+            float waterColorLower = 30; //m_HeightRange[1].y * 255 * 0.8;
+            float waterColorHigher = 0; //m_HeightRange[0].y * 255;
 			glm::vec2 oldRange = glm::vec2(height, waterHeight);
 			int index = std::round(voxel_util::remap(y, oldRange, glm::vec2(waterColorLower, waterColorHigher)));
 			return index;
