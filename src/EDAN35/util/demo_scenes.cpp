@@ -37,7 +37,7 @@ cam_pos_t camera_positions[] = {
         {glm::vec3(-0.15, -0.65, 6.5), glm::vec3(0, 0, 0)},
         {glm::vec3(4., 3.35, -5.5),    glm::vec3(0)},
         {glm::vec3(2.0, 1.3, -3),      glm::vec3(0, -0.5, 0)},
-        {glm::vec3(2.5, 2.4, -3.3),    glm::vec3(0)},
+        {glm::vec3( 3.5, 3.2, -5.),    glm::vec3(0)},
         {glm::vec3(-1.5, 4.8, -7.5),   glm::vec3(-1.5, 2, 0)},
 };
 
@@ -82,15 +82,11 @@ typedef struct ca_setting_t {
 // rule3: 678, CAColorsRed2Green, density2colorIndex
 // rule4: 445, CAColorsRed2Green, pos2colorIndex
 ca_setting_t ca_settings[] = {
-        {cellularAutomata::R_BUILDER,      0.35f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
-        {cellularAutomata::R_SPIKE_GROWTH, 0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color}, {cellularAutomata::R_445,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
-        {cellularAutomata::R_678,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
-        // maybe remove pyroclastic
-        {cellularAutomata::R_PYROCLASTIC,  0.4f,  fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
-        // remove
-        {cellularAutomata::R_CLOUD1,       0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
-        // maybe remove
-        {cellularAutomata::R_AMOEBA,       0.15f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
+        {cellularAutomata::R_PYROCLASTIC,  1.0f,  fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
+        {cellularAutomata::R_445,          0.45f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
+        {cellularAutomata::R_678,          0.35f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::density2color},
+        {cellularAutomata::R_CLOUD1,       1.f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
+        {cellularAutomata::R_SPIKE_GROWTH, 0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color}, {cellularAutomata::R_445,          0.25f, fvta_step_colorpalette, colorPalette::CAColorsBlue2Orange, cellularAutomata::drawModes::hp2color},
 };
 
 enum SCENES {

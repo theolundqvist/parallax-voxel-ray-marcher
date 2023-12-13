@@ -136,11 +136,11 @@ public:
         }
 		for (int i = 0; i < colors.size(); i++) {
             if(colors[i].x > 255 || colors[i].x < 0){
-                std::cout << "Color value out of range 0" << std::endl;
+                //std::cout << "Color value out of range 0" << std::endl;
                 //continue;
             }
             if(colors[i].y > 255 || colors[i].y < 0){
-                std::cout << "Color value out of range 1" << std::endl;
+                //std::cout << "Color value out of range 1" << std::endl;
                 //continue;
             }
 			colors[i] /= 255;
@@ -158,11 +158,11 @@ public:
 			// print range
 			std::cout << curRange << std::endl;
             if(curRange.x > 255 || curRange.x < 0){
-                std::cout << "Color value out of range 2" << std::endl;
+                //std::cout << "Color value out of range 2" << std::endl;
                 continue;
             }
             if(curRange.y > 255 || curRange.y < 0){
-                std::cout << "Color value out of range 3" << std::endl;
+                //std::cout << "Color value out of range 3" << std::endl;
                 continue;
             }
 			// interpolate the color

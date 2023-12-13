@@ -93,7 +93,7 @@ public:
         for (auto volume: sorted_volumes) {
             if(lod){
                 float distance = glm::length(volume->transform.getPos() - cam_pos);
-                volume->setLOD((int)std::max(distance/10.f, 1.f));
+                volume->setLOD((int)std::max(distance/2.f, 1.f));
             }
             volume->render(
                     glm::mat4(1.0f),
