@@ -95,7 +95,7 @@ public:
                                               glm::vec3(scene->volume_size), colorPalette::CAColorsBlue2Pink,
                                               cellularAutomata::drawModes(2));
             // set the color palette
-            this->renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::vec2(0, 255));
+            //this->renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::vec2(0, 255));
         }
 
         // for noise test
@@ -178,7 +178,7 @@ public:
                 }
                 break;
             case SCENES::SHADERS:
-                if(scene->ruled_changed) {
+                if (scene->ruled_changed) {
                     scene->shader_setting = (shader_setting_t) rule;
                     renderer->getVolume(0)->updateVoxels([](int x, int y, int z, GLubyte prev) {
                         if (!voxel_util::wave(1.0f, x, y, z, 8)) return 0;
@@ -219,18 +219,23 @@ public:
                 break;
             case SCENES::CA:
                 if (scene->ruled_changed) {
-                    auto ca_setting = ca_settings[rule];
+                    checkpoint = {*elapsed, camera->mWorld};
+                    auto ca_setting = ca_settings[rule-1];
                     auto ca_rule = cellularAutomata::CARules[ca_setting.rule];
-                    //ca3d->resetCells();
-                    ca3d->updateCAState(ca_rule.state, size, size,
-                            ca_setting.colorPalette, ca_setting.drawMode);
+                    delete this->ca3d;
+                    this->ca3d = new cellularAutomata(ca_rule.state, size,
+                                                      size * ca_setting.randomStateSizePercentage, ca_setting.colorPalette,
+                                                      ca_setting.drawMode);
                     renderer->getVolume(0)->generateColorPalette(ca3d->colorPalette, glm::ivec2(0, 255));
                 }
-                //renderer->getVolume(0)->cleanVoxel(); // not needed, we are updating the whole volume
-                ca3d->updateCells(cellularAutomata::CARules[rule].survival, cellularAutomata::CARules[rule].spawn);
-                renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
-                    return ca3d->findColorIndex(glm::vec3(x, y, z));
-                });
+                if ( *elapsed > checkpoint.time + 40) {
+                    checkpoint.time = *elapsed;
+                    //renderer->getVolume(0)->cleanVoxel(); // not needed, we are updating the whole volume
+                    ca3d->updateCells(cellularAutomata::CARules[rule-1].survival, cellularAutomata::CARules[rule-1].spawn);
+                    renderer->getVolume(0)->updateVoxels([this](int x, int y, int z, GLubyte prev) {
+                        return ca3d->findColorIndex(glm::vec3(x, y, z));
+                    });
+                }
                 break;
             case SCENES::NOISE:
                 if (scene->ruled_changed) {

@@ -8,6 +8,8 @@ class colorPalette {
 public:
 	static std::vector<glm::vec3> CAColorsRed2Green;
 	static std::vector<glm::vec3> CAColorsBlue2Pink;
+    static std::vector<glm::vec3> CAColorsGreen2Orange;
+    static std::vector<glm::vec3> CAColorsBlue2Orange;
 	static std::vector<glm::vec3> terrainDefaultColors;
 
 	static std::vector<glm::vec3> generateCAColorPalette(std::vector<glm::vec3>& colors, glm::vec2 colorRange) {

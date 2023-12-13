@@ -15,6 +15,7 @@ enum shader_setting_t
     fvta_step_depth,
     fvta_step_shaded,
     fvta_step_shaded_with_simple_AO,
+    fvta_step_colorpalette,
     fvta_step_shaded_colorpalette,
     fvta_step_shaded_colorpalette_AO,
     NBR_SHADER_SETTINGS

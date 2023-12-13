@@ -361,9 +361,12 @@ void main()
         color *= ao(hit);
         break;
         case 10:
-        color = shade(hit, colorPalette[hit.material]);
+        color = colorPalette[hit.material];
         break;
         case 11:
+        color = shade(hit, colorPalette[hit.material]);
+        break;
+        case 12:
         color = shade(hit, colorPalette[hit.material]);
         color *= ao(hit);
         break;

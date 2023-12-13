@@ -27,6 +27,22 @@ std::vector<glm::vec3> colorPalette::CAColorsBlue2Pink = {
 	// light blue
 	glm::vec3(255,204,229),
 };
+// https://coolors.co/palette/8ecae6-219ebc-023047-ffb703-fb8500
+std::vector<glm::vec3> colorPalette::CAColorsBlue2Orange = {
+        glm::vec3(214, 40, 40),
+        glm::vec3(142, 202, 230),
+        glm::vec3(33, 158, 188),
+        glm::vec3(255, 183, 3),
+        glm::vec3(251, 133, 0),
+};
+// https://coolors.co/palette/264653-2a9d8f-e9c46a-f4a261-e76f51
+std::vector<glm::vec3> colorPalette::CAColorsGreen2Orange = {
+        glm::vec3(38,70,83),
+        glm::vec3(42,157,143),
+        glm::vec3(233, 196, 106),
+        glm::vec3(244, 162, 97),
+        glm::vec3(231, 111, 81),
+};
 
 std::vector<glm::vec3> colorPalette::terrainDefaultColors = {
 	glm::vec3(0.0f, 0.0f, 0.0f),
