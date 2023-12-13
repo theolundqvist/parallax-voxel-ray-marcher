@@ -326,6 +326,7 @@ public:
                         auto pos = voxel_util::get_chunk_offset(n);
                         auto vol = new VoxelVolume(size, size, size,
                                                    center.translatedX(pos.x * 3 - 6).translateZ(pos.y * 3));
+                        vol->generateColorPalette(colorPalette::terrainDefaultColors, glm::ivec2(0, 255));
                         vol->updateVoxels([terrain, pos, size](int x, int y, int z, GLubyte prev) {
                             //return terrain->getHeight(x, z);
                             //printf("x: %d, y: %d, z: %d\n", x, y, z);
