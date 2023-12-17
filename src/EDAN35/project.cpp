@@ -119,7 +119,8 @@ void edan35::Project::run() {
 
 
     glClearDepthf(1.0f);
-    glClearColor(0.85f, 0.85f, 0.74f, 1.0f);
+    //glClearColor(0.85f, 0.85f, 0.74f, 1.0f);
+    glClearColor(1.f, 1.f, 1.f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
     auto lastTime = std::chrono::high_resolution_clock::now();
