@@ -206,10 +206,12 @@ public:
                 }
                 break;
             case SCENES::LARGER:
+                scene->orbit = false;
                 if (scene->ruled_changed) {
                     volume0->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                        if (!voxel_util::wave(1.0f, x, y, z, 64)) return 0;
-                        return voxel_util::hash(glm::ivec3(x, y, z));
+                        return 0;
+                        //if (!voxel_util::wave(1.0f, x, y, z, 64)) return 0;
+                        //return voxel_util::hash(glm::ivec3(x, y, z));
                     });
                 }
                 break;
@@ -347,6 +349,15 @@ public:
             scene->ruled_changed = true;
         }
 
+        if(getKey(GLFW_KEY_P)){
+            scene->sdf_dist = (scene->sdf_dist + 1)%4;
+            printf("sdf dist: %d\n", scene->sdf_dist);
+            renderer->setSDFOptDist(scene->sdf_dist);
+            volume0->updateVoxels([](int x, int y, int z, GLubyte prev){
+                return prev;
+            });
+        }
+
         int shader = static_cast<int>(scene->shader_setting);
         if (getKey(GLFW_KEY_COMMA)) shader--;
         if (getKey(GLFW_KEY_PERIOD)) shader++;
@@ -394,6 +405,7 @@ public:
         float gpu_time, cpu_time;
         switch (state) {
             case RUNNING:
+                renderer->setSDFOptDist(scene->sdf_dist);
                 renderer->setShaderSetting(settings.shader_setting);
                 gpu_time = renderer->render(
                         camera->GetWorldToClipMatrix(),

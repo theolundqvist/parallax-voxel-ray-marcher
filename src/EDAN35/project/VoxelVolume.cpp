@@ -10,10 +10,13 @@
 class VoxelVolume {
 private:
     GLubyte *texels;
+    GLubyte *sdf;
     GLuint texture{};
+    GLuint sdf_texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
-    std::vector<glm::vec3> colorPalette = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
+    std::vector<glm::vec3> colorPalette = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink,
+                                                                               glm::ivec2(0, 256));
 
     GLuint program{};
     shader_setting_t shader_setting = fixed_step_material;
@@ -22,6 +25,7 @@ public:
     Transform transform;
     float voxel_size = 0.1f;
     int LOD = 1;
+    int sdf_dist = 3;
     int W;
     int H;
     int D;
@@ -35,6 +39,7 @@ public:
         voxel_size = 1.0f / (float) W;
 
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
+        sdf = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
     }
@@ -68,51 +73,52 @@ public:
         return getVoxel(index.x, index.y, index.z);
     }
 
-    bool setVoxel(int x, int y, int z, GLubyte value) {
+    bool setVoxel(int x, int y, int z, GLubyte value, bool update_sdf = true) {
         auto i = x + y * W + z * W * H;
         if (i < 0 || i >= W * H * D) return false;
         texels[i] = value;
+        if (update_sdf) {
+            calculateSDF(x, y, z, value == 0);
+        }
         return true;
     }
 
     bool setVoxel(glm::ivec3 index, GLubyte value) {
-        return setVoxel(index.x, index.y, index.z, value);
+        return setVoxel(index.x, index.y, index.z, value, true);
+    }
+
+    bool setSDF(int x, int y, int z, GLubyte value) {
+        auto i = x + y * W + z * W * H;
+        if (i < 0 || i >= W * H * D) return false;
+        sdf[i] = value;
+        return true;
     }
 
     void cleanVoxel() {
         for (int x = 0; x < W; x++) {
             for (int y = 0; y < H; y++) {
                 for (int z = 0; z < D; z++) {
-                    setVoxel(x, y, z, 0);
+                    setVoxel(x, y, z, 0, false);
+                    setSDF(x, y, z, 1);
                 }
             }
         }
     }
 
     void generateColorPalette(std::vector<glm::vec3> colors, glm::vec2 colorRange) {
-        this->colorPalette = colorPalette::generateCAColorPalette(colors,colorRange);
+        this->colorPalette = colorPalette::generateCAColorPalette(colors, colorRange);
     }
 
-    void updateVoxels(std::function<GLubyte(int x,int y,int z, GLubyte previous)> const get_material){
+    void updateVoxels(std::function<GLubyte(int x, int y, int z, GLubyte previous)> const get_material) {
         for (int x = 0; x < W; x++) {
             for (int y = 0; y < H; y++) {
                 for (int z = 0; z < D; z++) {
                     int prev = texels[x + y * W + z * W * H];
-                    texels[x + y * W + z * W * H] = get_material(x,y,z, prev);
+                    setVoxel(x, y, z, get_material(x, y, z, prev), false);
                 }
             }
         }
-    }
-
-    void setVolumeData3D(GLubyte ***data) {
-        texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
-        for (int x = 0; x < W; x++) {
-            for (int y = 0; y < H; y++) {
-                for (int z = 0; z < D; z++) {
-                    texels[x + y * W + z * W * H] = data[x][y][z];
-                }
-            }
-        }
+        updateAllSDF(sdf_dist);
     }
 
     typedef struct voxel_hit_t {
@@ -132,7 +138,7 @@ public:
         return {
                 .miss=false,
                 .index=index,
-                .material=(GLubyte)getVoxel(index),
+                .material=(GLubyte) getVoxel(index),
                 .volume=this,
                 .world_pos=world_pos
         };
@@ -174,11 +180,12 @@ public:
                     auto index = glm::ivec3(x, y, z);
                     if (glm::length2(glm::vec3(index - index_center)) <= r2) {
                         auto mat = material == -1 ? voxel_util::hash(index) : material;
-                        setVoxel(index, mat);
+                        setVoxel(x, y, z, mat, false);
                     }
                 }
             }
         }
+        updateAllSDF(sdf_dist);
     }
 
 
@@ -208,10 +215,9 @@ public:
                 auto INDEX = localToIndex(inverse.apply(P));
                 auto mat = getVoxel(INDEX);
                 if (mat > 0) {
-                    return {false, INDEX, (GLubyte)mat, this, P};
-                }
-                else if (mat == -1) {
-                    return {true };
+                    return {false, INDEX, (GLubyte) mat, this, P};
+                } else if (mat == -1) {
+                    return {true};
                 }
                 P += step;
             }
@@ -256,6 +262,23 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
+        glGenTextures(1, &sdf_texture);
+        glUniform1i(glGetUniformLocation(program, "volume_sdf"), 1);
+        glActiveTexture(GL_TEXTURE0 + 1);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, sdf_texture);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, sdf_texture);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W, H, D, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     sdf);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
 
         // uniforms
         auto tf = parent_transform * transform.getMatrix();
@@ -269,6 +292,7 @@ public:
 
         // Unbind texture and shader program
         glDeleteTextures(1, &texture);
+        glDeleteTextures(1, &sdf_texture);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
 
@@ -278,7 +302,7 @@ public:
         }
         utils::opengl::debug::endDebugGroup();
     }
-    
+
 private:
     void setUniforms(glm::mat4 const &tf,
                      glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
@@ -287,6 +311,7 @@ private:
         // voxel size
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
         glUniform1f(glGetUniformLocation(program, "lod"), LOD);
+        glUniform1i(glGetUniformLocation(program, "use_sdf"), sdf_dist > 0 ? 1 : 0);
         // grid size
         glUniform3iv(glGetUniformLocation(program, "grid_size"), 1,
                      glm::value_ptr(glm::ivec3(W, H, D)));
@@ -308,7 +333,7 @@ private:
 */
         // color palette
         // set color palette here
-        glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(), 
+        glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(),
                      glm::value_ptr(colorPalette[0]));
 
         // vertex to clip
@@ -346,5 +371,73 @@ private:
 
     glm::ivec3 localToIndex(glm::vec3 local) const {
         return local * sizef();
+    }
+
+    void updateAllSDF(int dist = 1) {
+        for (int x = 0; x < W; x++) {
+            for (int y = 0; y < H; y++) {
+                for (int z = 0; z < D; z++) {
+                    updateSDF(x, y, z, dist);
+                }
+            }
+        }
+    }
+
+    void updateSDF(int x, int y, int z, int dist = 1){
+        int index = x + y * W + z * W * H;
+        sdf[index] = dist;
+        if(dist == 0) return;
+        for (int j = x-dist; j <= x+dist; j++) {
+            for(int k = y-dist; k <= y+dist; k++) {
+                for(int l = z-dist; l <= z+dist; l++) {
+                    if(j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
+                    int other = j + k * W + l * W * H;
+                    if(texels[other] > 0) {
+                        updateSDF(x, y, z, dist-1);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    void calculateSDF(int x, int y, int z, bool removed = false, int dist = 1) {
+        int i = x + y * W + z * W * H;
+        auto current_mat = texels[i];
+        if(current_mat > 0 && removed) {
+            sdf[i] = 0;
+            for (int j = x-dist; j <= x+dist; ++j) {
+                for(int k = y-dist; k <= y+dist; ++k) {
+                    for(int l = z-dist; l <= z+dist; ++l) {
+                        if(j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
+                        int other = j + k * W + l * W * H;
+                        //if(texels[other] == 0) {
+                            sdf[other] = 0;
+                         //   return;
+                        //}
+                    }
+                }
+            }
+            return;
+        }
+        else if (current_mat == 0){
+            bool hasNeighbor = false;
+            for (int j = x-dist; j <= x+dist; ++j) {
+                for(int k = y-dist; k <= y+dist; ++k) {
+                    for(int l = z-dist; l <= z+dist; ++l) {
+                        if(j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
+                        int other = j + k * W + l * W * H;
+                        if(texels[other] > 0) {
+                            hasNeighbor = true;
+                            calculateSDF(j, k, l, false, dist-1);
+                        }
+                    }
+                }
+            }
+            sdf[i] = hasNeighbor ? 0 : 1;
+        }
+        else {
+            sdf[i] = 0;
+        }
     }
 };

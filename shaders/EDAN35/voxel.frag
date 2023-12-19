@@ -4,6 +4,7 @@
 // uniform vec3 light_position;
 uniform vec3 camera_position;
 uniform sampler3D volume;
+uniform sampler3D volume_sdf;
 uniform float voxel_size;
 uniform float lod;
 uniform ivec3 grid_size;
@@ -13,6 +14,7 @@ uniform vec3 light_direction;
 uniform vec3 colorPalette[256];
 
 uniform int Shader_manager;
+uniform int use_sdf;
 // world space
 flat in float face_dot_v;
 
@@ -205,15 +207,34 @@ hit_t fvta_step(){
     vec3 pos = ro;//voxel_size_local * (voxel_index + 0.1);
     vec3 uvw = (pos - voxel_pos)/voxel_size_local;
     vec2 uv = uvw_to_uv(uvw);
-
+    int num_reads = 0;
     for (int i = 0; i < max_steps; i++){
         if (isInside(pos) < 0.5) {
             //return hit_t(t, voxel_pos, pos, uvw, uv, vec3(1,0,0), 0);
             discard;
         }
-        int mat = int(round(texture(volume, voxel_pos + 0.1 * voxel_size).r*255));
-        if (mat > 0){
-            return hit_t(t, voxel_pos, pos, uvw, uv, normal, mat);
+        if(use_sdf == 1){
+            num_reads++;
+            int sdf = int(round(texture(volume_sdf, voxel_pos + 0.1 * voxel_size).r*255));
+            if (sdf == 0){
+                num_reads++;
+                int mat = int(round(texture(volume, voxel_pos + 0.1 * voxel_size).r*255));
+                if(mat > 0) return hit_t(float(num_reads)/float(max_steps), voxel_pos, pos, uvw, uv, normal, mat);
+            }
+            else {
+                //return hit_t(t, voxel_pos, pos, uvw, uv, normal, 1);
+                for(int j = 0; j < sdf; j++){
+                    vec3 mm = step(sideDist.xyz, sideDist.yxy) * step(sideDist.xyz, sideDist.zzx);
+                    normal = -mm * rs;
+                    voxel_pos += voxel_size_local * -normal;
+                    sideDist += -normal * deltaDist;
+                }
+            }
+        }
+        else {
+            num_reads++;
+            int mat = int(round(texture(volume, voxel_pos + 0.1 * voxel_size).r*255));
+            if(mat > 0) return hit_t(float(num_reads)/float(max_steps), voxel_pos, pos, uvw, uv, normal, mat);
         }
         /*
                 if (sideDist.x < sideDist.y && sideDist.x < sideDist.z) {
@@ -233,8 +254,8 @@ hit_t fvta_step(){
         // black magic compare between sideDist.x < sideDist.y && sideDist.x < sideDist.z etc
         vec3 mm = step(sideDist.xyz, sideDist.yxy) * step(sideDist.xyz, sideDist.zzx);
         normal = -mm * rs;
-
         voxel_pos += voxel_size_local * -normal;
+        sideDist += -normal * deltaDist;
 
         // other stuff that is nice to know
         vec3 mini = ((voxel_pos-ro)/voxel_size_local + 0.5 - 0.5*vec3(rs))*deltaDist;
@@ -243,7 +264,6 @@ hit_t fvta_step(){
         uvw = (pos - voxel_pos)/voxel_size_local;
         uv = vec2(dot(mm.yzx, uvw), dot(mm.zxy, uvw));
 
-        sideDist += -normal * deltaDist;
     }
     discard;
 }

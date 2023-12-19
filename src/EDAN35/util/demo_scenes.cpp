@@ -54,6 +54,7 @@ typedef struct scene_settings_t {
     int voxel_count = 0;
     bool ruled_changed = true;
     bool lod = false;
+    int sdf_dist = 0;
 } scene_settings_t;
 
 
@@ -62,10 +63,10 @@ scene_settings_t scenes[] = {
         {1, "Cube fixed",     camera_positions[CUBE_CAM],    5,                              fixed_step_material},
         {2, "Cube FVTA step", camera_positions[CUBE_CAM],    3,                              fixed_step_material},
         {3, "Shaders",        camera_positions[SHADERS_CAM], NBR_SHADER_SETTINGS - 1,        fvta_step_material},
-        {4, "Larger",         camera_positions[CUBE_CAM],    1,                              fvta_step_shaded_with_simple_AO, 128, 1, true},
+        {4, "Larger",         camera_positions[CUBE_CAM],    1,                              fvta_step_shaded_with_simple_AO, 256, 1, true},
         {5, "SDF",            camera_positions[CUBE_CAM],    6,                              fvta_step_pixel_pos, 128,  1, true},
         {6, "CA",             camera_positions[CA_CAM],    cellularAutomata::NBR_CA_RULES, fvta_step_shaded_colorpalette,   100,  1, true},
-        {7, "Noise",          camera_positions[CUBE_CAM],    5,                              fvta_step_shaded_colorpalette,   100, 1, true},
+        {7, "Noise",          camera_positions[CUBE_CAM],    5,                              fvta_step_shaded_colorpalette,   128, 1, true},
         {8, "Minecraft",      camera_positions[MC_CAM],      100,                            fvta_step_shaded_colorpalette,   128, 1, false, 30, },
 };
 
