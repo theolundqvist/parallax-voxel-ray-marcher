@@ -332,6 +332,7 @@ public:
                             //return terrain->getHeight(x, z);
                             //printf("x: %d, y: %d, z: %d\n", x, y, z);
                             return terrain->height2ColorIndex(x + pos.x * size, y, z + pos.y * size, glm::vec2(0, 255));
+                            //return 1;
                             //return voxel_util::hash(glm::ivec3(x, y, z));
                         });
                         renderer->add_volume(vol);
@@ -353,9 +354,20 @@ public:
             scene->sdf_dist = (scene->sdf_dist + 1)%4;
             printf("sdf dist: %d\n", scene->sdf_dist);
             renderer->setSDFOptDist(scene->sdf_dist);
-            volume0->updateVoxels([](int x, int y, int z, GLubyte prev){
+            for (int i = 0; i < renderer->numberVolumes(); ++i) {
+               renderer->getVolume(i)->updateVoxels([](int x, int y, int z, GLubyte prev){
                 return prev;
             });
+            }
+        }
+        if(getKey(GLFW_KEY_N)){
+            scene->mipmap_levels = (scene->mipmap_levels + 1)%3;
+            printf("mipmap_levels: %d\n", scene->mipmap_levels);
+            for (int i = 0; i < renderer->numberVolumes(); ++i) {
+                renderer->getVolume(i)->updateVoxels([](int x, int y, int z, GLubyte prev){
+                    return prev;
+                });
+            }
         }
 
         int shader = static_cast<int>(scene->shader_setting);
@@ -407,6 +419,7 @@ public:
             case RUNNING:
                 renderer->setSDFOptDist(scene->sdf_dist);
                 renderer->setShaderSetting(settings.shader_setting);
+                renderer->setMipmapLevels(scene->mipmap_levels);
                 gpu_time = renderer->render(
                         camera->GetWorldToClipMatrix(),
                         settings.free_view ? playerBody->transform.getPos() : camera->mWorld.GetTranslation(),

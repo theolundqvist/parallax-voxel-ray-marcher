@@ -81,6 +81,11 @@ public:
             volume->sdf_dist = dist;
         }
     }
+    void setMipmapLevels(int levels){
+        for (auto volume: volumes) {
+            volume->mipmap_levels = levels;
+        }
+    }
     void setShaderSetting(shader_setting_t setting){
         for (auto volume: volumes) {
             volume->setShaderSetting(setting);

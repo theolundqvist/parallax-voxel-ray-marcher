@@ -4,6 +4,8 @@
 // uniform vec3 light_position;
 uniform vec3 camera_position;
 uniform sampler3D volume;
+uniform sampler3D volume_8;
+uniform sampler3D volume_64;
 uniform sampler3D volume_sdf;
 uniform float voxel_size;
 uniform float lod;
@@ -15,6 +17,7 @@ uniform vec3 colorPalette[256];
 
 uniform int Shader_manager;
 uniform int use_sdf;
+uniform int mipmap_levels;
 // world space
 flat in float face_dot_v;
 
@@ -188,28 +191,36 @@ vec3 shade(hit_t hit, vec3 albedo){
 // finally works omg
 // got some help from here
 // https://www.shadertoy.com/view/4dS3RG
-hit_t fvta_step(){
-    start_t start = findStartPos();
-    vec3 ro = start.pos;
-    vec3 normal = start.normal;
-    vec3 rd = normalize(fV);
+
+hit_t fvta_step_help(vec3 ro, vec3 rd, vec3 normal, int mipmap, bool exit_when_exit_larger_mipmap){
     float voxel_size_local = voxel_size*lod; //1 - normal, 2 - twice the size of the steps
+    if(mipmap == 2) voxel_size_local *= 4;
+    else if(mipmap == 1) voxel_size_local *= 2;
+
+    float voxel_size_local_larger_mipmap = voxel_size*lod; //1 - normal, 2 - twice the size of the steps
+    if(mipmap == 1) voxel_size_local_larger_mipmap *= 4;
+    else if(mipmap == 0) voxel_size_local_larger_mipmap *= 2;
+    vec3 larger_mipmap_voxel_index = floor(ro * (1./voxel_size_local_larger_mipmap));
+
+
     vec3 voxel_index = floor(ro * (1./voxel_size_local));
     vec3 voxel_pos = voxel_size_local * voxel_index;
+
     vec3 rs = sign(rd);
     vec3 deltaDist = voxel_size_local/rd;
     vec3 sideDist = ((voxel_pos-ro)/voxel_size_local + 0.5 + rs * 0.5) * deltaDist;
-    //voxel_pos = voxel_size_local * (voxel_index + 0.1);
+
     int max_steps = int(3.0/voxel_size_local);
 
-    vec3 final_pos = ro * 1./voxel_size_local;
     float t = 0.0;
-    vec3 pos = ro;//voxel_size_local * (voxel_index + 0.1);
+    vec3 pos = ro;
     vec3 uvw = (pos - voxel_pos)/voxel_size_local;
     vec2 uv = uvw_to_uv(uvw);
     int num_reads = 0;
     for (int i = 0; i < max_steps; i++){
-        if (isInside(pos) < 0.5) {
+        vec3 larger_mipmap_voxel_index_new = floor(pos * (1./voxel_size_local_larger_mipmap));
+        if(exit_when_exit_larger_mipmap && larger_mipmap_voxel_index_new != larger_mipmap_voxel_index) return hit_t(float(num_reads)/float(max_steps), voxel_pos, pos, uvw, uv, normal, 0);
+        if (isInside(pos) < 0.5){
             //return hit_t(t, voxel_pos, pos, uvw, uv, vec3(1,0,0), 0);
             discard;
         }
@@ -233,7 +244,11 @@ hit_t fvta_step(){
         }
         else {
             num_reads++;
-            int mat = int(round(texture(volume, voxel_pos + 0.1 * voxel_size).r*255));
+            float sampl;
+            if(mipmap == 2) sampl = texture(volume_64, voxel_pos + 0.1 * voxel_size).r;
+            else if(mipmap == 1) sampl = texture(volume_8, voxel_pos + 0.1 * voxel_size).r;
+            else if(mipmap == 0) sampl = texture(volume, voxel_pos + 0.1 * voxel_size).r;
+            int mat = int(round(sampl * 255));
             if(mat > 0) return hit_t(float(num_reads)/float(max_steps), voxel_pos, pos, uvw, uv, normal, mat);
         }
         /*
@@ -256,16 +271,41 @@ hit_t fvta_step(){
         normal = -mm * rs;
         voxel_pos += voxel_size_local * -normal;
         sideDist += -normal * deltaDist;
-
         // other stuff that is nice to know
         vec3 mini = ((voxel_pos-ro)/voxel_size_local + 0.5 - 0.5*vec3(rs))*deltaDist;
         t = max (mini.x, max (mini.y, mini.z));
         pos = ro + rd * (t + Epsilon * 2.0);
         uvw = (pos - voxel_pos)/voxel_size_local;
         uv = vec2(dot(mm.yzx, uvw), dot(mm.zxy, uvw));
-
     }
     discard;
+}
+
+hit_t fvta_step(){
+    start_t start = findStartPos();
+    if(mipmap_levels == 0) return fvta_step_help(start.pos, normalize(fV), start.normal, 0, false);
+    bool done = false;
+    while(!done){
+        hit_t hit1 = fvta_step_help(start.pos, normalize(fV), start.normal, 2, false);
+        hit_t hit2 = fvta_step_help(hit1.pixel_pos, normalize(fV), hit1.normal, 1, false);
+/*
+        if(hit2.material == 0) {
+            start.pos = hit2.pixel_pos;
+            start.normal = hit2.normal;
+            continue;
+        }
+*/
+        hit_t hit3 =  fvta_step_help(hit2.pixel_pos, normalize(fV), hit2.normal, 0, false);
+/*
+        if(hit2.material == 0) {
+            start.pos = hit3.pixel_pos;
+            start.normal = hit3.normal;
+            continue;
+        }
+*/
+        hit3.depth += hit2.depth + hit1.depth;
+        return hit3;
+    }
 }
 mat4 rotationX(in float angle) {
     return mat4(1.0, 0, 0, 0,
@@ -320,7 +360,7 @@ float ao(hit_t hit){
         if (isInside(sample_point) < 0.5) continue;
         float material = texture(volume, sample_point).r * 255.0;
         if (material > 0.0){
-            ao += 1.0/(nbr_samples*1.0);
+            ao += 1.0/(nbr_samples*1.8);
         }
     }
     return mix(smoothstep(0, 1, 1-2*ao), 1, 1-2*ao);

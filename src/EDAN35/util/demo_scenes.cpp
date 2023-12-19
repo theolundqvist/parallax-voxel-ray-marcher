@@ -55,6 +55,7 @@ typedef struct scene_settings_t {
     bool ruled_changed = true;
     bool lod = false;
     int sdf_dist = 0;
+    int mipmap_levels = 0;
 } scene_settings_t;
 
 
@@ -67,7 +68,7 @@ scene_settings_t scenes[] = {
         {5, "SDF",            camera_positions[CUBE_CAM],    6,                              fvta_step_pixel_pos, 128,  1, true},
         {6, "CA",             camera_positions[CA_CAM],    cellularAutomata::NBR_CA_RULES, fvta_step_shaded_colorpalette,   100,  1, true},
         {7, "Noise",          camera_positions[CUBE_CAM],    5,                              fvta_step_shaded_colorpalette,   128, 1, true},
-        {8, "Minecraft",      camera_positions[MC_CAM],      100,                            fvta_step_shaded_colorpalette,   128, 1, false, 30, },
+        {8, "Minecraft",      camera_positions[MC_CAM],      100,                            fvta_step_shaded_colorpalette,   128, 1, false, 100, },
 };
 
 typedef struct ca_setting_t {

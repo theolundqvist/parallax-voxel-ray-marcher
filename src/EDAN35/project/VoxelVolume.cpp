@@ -10,8 +10,12 @@
 class VoxelVolume {
 private:
     GLubyte *texels;
+    GLubyte *texels_8;
+    GLubyte *texels_64;
     GLubyte *sdf;
     GLuint texture{};
+    GLuint texture_8{};
+    GLuint texture_64{};
     GLuint sdf_texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
@@ -25,21 +29,28 @@ public:
     Transform transform;
     float voxel_size = 0.1f;
     int LOD = 1;
-    int sdf_dist = 3;
-    int W;
-    int H;
-    int D;
+    int sdf_dist = 0;
+    int mipmap_levels = 2;
+    int W, H, D, W_2, H_2, D_2, W_4, H_4, D_4;
 
     VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf) {
         W = WIDTH;
+        W_2 = W / 2;
+        W_4 = W / 4;
         H = HEIGHT;
+        H_2 = H / 2;
+        H_4 = H / 4;
         D = DEPTH;
+        D_2 = D / 2;
+        D_4 = D / 4;
         this->transform = tf;
 
         voxel_size = 1.0f / (float) W;
 
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
-        sdf = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
+        texels_8 = (GLubyte *) calloc(W_2 * H_2 * D_2, sizeof(GLubyte));
+        texels_64 = (GLubyte *) calloc(W_4 * H_4 * D_4, sizeof(GLubyte));
+        //sdf = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
     }
@@ -50,6 +61,8 @@ public:
 
     ~VoxelVolume() {
         free(texels);
+        free(texels_8);
+        free(texels_64);
     }
 
     glm::ivec3 size() const {
@@ -99,10 +112,11 @@ public:
             for (int y = 0; y < H; y++) {
                 for (int z = 0; z < D; z++) {
                     setVoxel(x, y, z, 0, false);
-                    setSDF(x, y, z, 1);
+                    //setSDF(x, y, z, 1);
                 }
             }
         }
+        generateMipMaps();
     }
 
     void generateColorPalette(std::vector<glm::vec3> colors, glm::vec2 colorRange) {
@@ -118,6 +132,7 @@ public:
                 }
             }
         }
+        generateMipMaps();
         updateAllSDF(sdf_dist);
     }
 
@@ -186,6 +201,7 @@ public:
             }
         }
         updateAllSDF(sdf_dist);
+        generateMipMaps();
     }
 
 
@@ -262,6 +278,7 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
+/*
         glGenTextures(1, &sdf_texture);
         glUniform1i(glGetUniformLocation(program, "volume_sdf"), 1);
         glActiveTexture(GL_TEXTURE0 + 1);
@@ -273,6 +290,39 @@ public:
         glBindTexture(GL_TEXTURE_3D, sdf_texture);
         glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W, H, D, 0, GL_RED, GL_UNSIGNED_BYTE,
                      sdf);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+*/
+        glGenTextures(1, &texture_8);
+        glUniform1i(glGetUniformLocation(program, "volume_8"), 1);
+        glActiveTexture(GL_TEXTURE0 + 1);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture_8);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, texture_8);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_2, H_2, D_2, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     texels_8);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glGenTextures(1, &texture_64);
+        glUniform1i(glGetUniformLocation(program, "volume_64"), 2);
+        glActiveTexture(GL_TEXTURE0 + 2);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture_64);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, texture_64);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_4, H_4, D_4, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     texels_64);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -292,6 +342,8 @@ public:
 
         // Unbind texture and shader program
         glDeleteTextures(1, &texture);
+        glDeleteTextures(1, &texture_8);
+        glDeleteTextures(1, &texture_64);
         glDeleteTextures(1, &sdf_texture);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
@@ -312,6 +364,7 @@ private:
         glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
         glUniform1f(glGetUniformLocation(program, "lod"), LOD);
         glUniform1i(glGetUniformLocation(program, "use_sdf"), sdf_dist > 0 ? 1 : 0);
+        glUniform1i(glGetUniformLocation(program, "mipmap_levels"), mipmap_levels);
         // grid size
         glUniform3iv(glGetUniformLocation(program, "grid_size"), 1,
                      glm::value_ptr(glm::ivec3(W, H, D)));
@@ -373,7 +426,59 @@ private:
         return local * sizef();
     }
 
+
+    void generateMipMaps(){
+        for (int i = 0; i < W_2; ++i) {
+            for (int j = 0; j < H_2; ++j) {
+                for (int k = 0; k < D_2; ++k) {
+                    int index = i + j * W_2 + k * W_2 * H_2;
+                    int x = i * 2;
+                    int y = j * 2;
+                    int z = k * 2;
+                    texels_8[index] = 0;
+                    for (int l = x; l <= x+1; ++l) {
+                        if(texels_8[index] == 1) break;
+                        for (int m = y; m <= y+1; ++m) {
+                            for (int n = z; n <= z+1; ++n) {
+                                int other = l + m * W + n * W * H;
+                                if(texels[other] > 0){
+                                    texels_8[index] = 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+        for (int i = 0; i < W_4; ++i) {
+            for (int j = 0; j < H_4; ++j) {
+                for (int k = 0; k < D_4; ++k) {
+                    int index = i + j * W_4 + k * W_4 * H_4;
+                    int x = i * 2;
+                    int y = j * 2;
+                    int z = k * 2;
+                    texels_64[index] = 0;
+                    for (int l = x; l <= x+1; ++l) {
+                        if(texels_64[index] == 1) break;
+                        for (int m = y; m <= y+1; ++m) {
+                            for (int n = z; n <= z+1; ++n) {
+                                int other = l + m * W_2 + n * W_2 * H_2;
+                                if(texels_8[other] > 0){
+                                    texels_64[index] = 1;
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+    }
+
     void updateAllSDF(int dist = 1) {
+        return;
         for (int x = 0; x < W; x++) {
             for (int y = 0; y < H; y++) {
                 for (int z = 0; z < D; z++) {
@@ -383,17 +488,17 @@ private:
         }
     }
 
-    void updateSDF(int x, int y, int z, int dist = 1){
+    void updateSDF(int x, int y, int z, int dist = 1) {
         int index = x + y * W + z * W * H;
         sdf[index] = dist;
-        if(dist == 0) return;
-        for (int j = x-dist; j <= x+dist; j++) {
-            for(int k = y-dist; k <= y+dist; k++) {
-                for(int l = z-dist; l <= z+dist; l++) {
-                    if(j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
+        if (dist == 0) return;
+        for (int j = x - dist; j <= x + dist; j++) {
+            for (int k = y - dist; k <= y + dist; k++) {
+                for (int l = z - dist; l <= z + dist; l++) {
+                    if (j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
                     int other = j + k * W + l * W * H;
-                    if(texels[other] > 0) {
-                        updateSDF(x, y, z, dist-1);
+                    if (texels[other] > 0) {
+                        updateSDF(x, y, z, dist - 1);
                         return;
                     }
                 }
@@ -402,41 +507,40 @@ private:
     }
 
     void calculateSDF(int x, int y, int z, bool removed = false, int dist = 1) {
+        return;
         int i = x + y * W + z * W * H;
         auto current_mat = texels[i];
-        if(current_mat > 0 && removed) {
+        if (current_mat > 0 && removed) {
             sdf[i] = 0;
-            for (int j = x-dist; j <= x+dist; ++j) {
-                for(int k = y-dist; k <= y+dist; ++k) {
-                    for(int l = z-dist; l <= z+dist; ++l) {
-                        if(j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
+            for (int j = x - dist; j <= x + dist; ++j) {
+                for (int k = y - dist; k <= y + dist; ++k) {
+                    for (int l = z - dist; l <= z + dist; ++l) {
+                        if (j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
                         int other = j + k * W + l * W * H;
                         //if(texels[other] == 0) {
-                            sdf[other] = 0;
-                         //   return;
+                        sdf[other] = 0;
+                        //   return;
                         //}
                     }
                 }
             }
             return;
-        }
-        else if (current_mat == 0){
+        } else if (current_mat == 0) {
             bool hasNeighbor = false;
-            for (int j = x-dist; j <= x+dist; ++j) {
-                for(int k = y-dist; k <= y+dist; ++k) {
-                    for(int l = z-dist; l <= z+dist; ++l) {
-                        if(j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
+            for (int j = x - dist; j <= x + dist; ++j) {
+                for (int k = y - dist; k <= y + dist; ++k) {
+                    for (int l = z - dist; l <= z + dist; ++l) {
+                        if (j < 0 || j >= W || k < 0 || k >= H || l < 0 || l >= D) continue;
                         int other = j + k * W + l * W * H;
-                        if(texels[other] > 0) {
+                        if (texels[other] > 0) {
                             hasNeighbor = true;
-                            calculateSDF(j, k, l, false, dist-1);
+                            calculateSDF(j, k, l, false, dist - 1);
                         }
                     }
                 }
             }
             sdf[i] = hasNeighbor ? 0 : 1;
-        }
-        else {
+        } else {
             sdf[i] = 0;
         }
     }
