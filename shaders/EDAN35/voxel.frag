@@ -325,7 +325,7 @@ hit_t fvta_step(){
     bool done = false;
     int mipmap = mipmap_levels;
     while(!done){
-        if(mipmap > 1)
+        if(mipmap >= 1)
         {
             hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, mipmap, mipmap_levels >= mipmap);
             start.pos = hit.pixel_pos;
