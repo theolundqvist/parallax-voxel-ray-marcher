@@ -342,92 +342,96 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 */
-        glGenTextures(1, &texture_64);
-        glUniform1i(glGetUniformLocation(program, "volume_64"), 1);
-        glActiveTexture(GL_TEXTURE0 + 1);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture_64);
+        if (mipmap_levels > 0) {
+            glGenTextures(1, &texture_64);
+            glUniform1i(glGetUniformLocation(program, "volume_64"), 1);
+            glActiveTexture(GL_TEXTURE0 + 1);
+            // Bind 3D texture
+            glBindTexture(GL_TEXTURE_3D, texture_64);
 
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture_64);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_4, H_4, D_4, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels_64);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            // setup texture
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glBindTexture(GL_TEXTURE_3D, texture_64);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_4, H_4, D_4, 0, GL_RED, GL_UNSIGNED_BYTE,
+                texels_64);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        }
+        if (mipmap_levels > 1) {
+            glGenTextures(1, &texture_512);
+            glUniform1i(glGetUniformLocation(program, "volume_512"), 2);
+            glActiveTexture(GL_TEXTURE0 + 2);
+            // Bind 3D texture
+            glBindTexture(GL_TEXTURE_3D, texture_512);
 
-        glGenTextures(1, &texture_512);
-        glUniform1i(glGetUniformLocation(program, "volume_512"), 2);
-        glActiveTexture(GL_TEXTURE0 + 2);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture_512);
+            // setup texture
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glBindTexture(GL_TEXTURE_3D, texture_512);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_8, H_8, D_8, 0, GL_RED, GL_UNSIGNED_BYTE,
+                texels_512);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        }
+        if (mipmap_levels > 2) {
+            glGenTextures(1, &texture_4096);
+            glUniform1i(glGetUniformLocation(program, "volume_4096"), 3);
+            glActiveTexture(GL_TEXTURE0 + 3);
+            // Bind 3D texture
+            glBindTexture(GL_TEXTURE_3D, texture_4096);
 
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture_512);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_8, H_8, D_8, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels_512);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            // setup texture
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glBindTexture(GL_TEXTURE_3D, texture_4096);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_16, H_16, D_16, 0, GL_RED, GL_UNSIGNED_BYTE,
+                texels_4096);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        }
+        if (mipmap_levels > 3) {
+            glGenTextures(1, &texture_32k);
+            glUniform1i(glGetUniformLocation(program, "volume_32k"), 4);
+            glActiveTexture(GL_TEXTURE0 + 4);
+            // Bind 3D texture
+            glBindTexture(GL_TEXTURE_3D, texture_32k);
 
-        glGenTextures(1, &texture_4096);
-        glUniform1i(glGetUniformLocation(program, "volume_4096"), 3);
-        glActiveTexture(GL_TEXTURE0 + 3);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture_4096);
+            // setup texture
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glBindTexture(GL_TEXTURE_3D, texture_32k);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_32, H_32, D_32, 0, GL_RED, GL_UNSIGNED_BYTE,
+                texels_32k);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        }
+        if (mipmap_levels > 4) {
+            glGenTextures(1, &texture_256k);
+            glUniform1i(glGetUniformLocation(program, "volume_256k"), 5);
+            glActiveTexture(GL_TEXTURE0 + 5);
+            // Bind 3D texture
+            glBindTexture(GL_TEXTURE_3D, texture_256k);
 
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture_4096);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_16, H_16, D_16, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels_4096);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-
-        glGenTextures(1, &texture_32k);
-        glUniform1i(glGetUniformLocation(program, "volume_32k"), 4);
-        glActiveTexture(GL_TEXTURE0 + 4);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture_32k);
-
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture_32k);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_32, H_32, D_32, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels_32k);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-
-
-        glGenTextures(1, &texture_256k);
-        glUniform1i(glGetUniformLocation(program, "volume_256k"), 5);
-        glActiveTexture(GL_TEXTURE0 + 5);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture_256k);
-
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture_256k);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_64, H_64, D_64, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels_256k);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-
+            // setup texture
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glBindTexture(GL_TEXTURE_3D, texture_256k);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_64, H_64, D_64, 0, GL_RED, GL_UNSIGNED_BYTE,
+                texels_256k);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        }
 
         // uniforms
         auto tf = parent_transform * transform.getMatrix();
@@ -531,6 +535,7 @@ private:
 
 
     void generateMipMaps(){
+        if (mipmap_levels < 1) return;
         for (int i = 0; i < W_2; ++i) {
             for (int j = 0; j < H_2; ++j) {
                 for (int k = 0; k < D_2; ++k) {
@@ -555,6 +560,7 @@ private:
                 }
             }
         }
+        if (mipmap_levels < 1) return;
         for (int i = 0; i < W_4; ++i) {
             for (int j = 0; j < H_4; ++j) {
                 for (int k = 0; k < D_4; ++k) {
@@ -578,6 +584,7 @@ private:
                 }
             }
         }
+        if (mipmap_levels < 2) return;
         for (int i = 0; i < W_8; ++i) {
             for (int j = 0; j < H_8; ++j) {
                 for (int k = 0; k < D_8; ++k) {
@@ -601,6 +608,7 @@ private:
                 }
             }
         }
+        if (mipmap_levels < 3) return;
         for (int i = 0; i < W_16; ++i) {
             for (int j = 0; j < H_16; ++j) {
                 for (int k = 0; k < D_16; ++k) {
@@ -624,6 +632,7 @@ private:
                 }
             }
         }
+        if (mipmap_levels < 4) return;
         for (int i = 0; i < W_32; ++i) {
             for (int j = 0; j < H_32; ++j) {
                 for (int k = 0; k < D_32; ++k) {
@@ -647,6 +656,7 @@ private:
                 }
             }
         }
+        if (mipmap_levels < 5) return;
         for (int i = 0; i < W_64; ++i) {
             for (int j = 0; j < H_64; ++j) {
                 for (int k = 0; k < D_64; ++k) {
