@@ -361,7 +361,7 @@ public:
             }
         }
         if(getKey(GLFW_KEY_N)){
-            scene->mipmap_levels = (scene->mipmap_levels + 1)%4;
+            scene->mipmap_levels = (scene->mipmap_levels + 1)%7;
             printf("mipmap_levels: %d\n", scene->mipmap_levels);
             for (int i = 0; i < renderer->numberVolumes(); ++i) {
                 renderer->getVolume(i)->updateVoxels([](int x, int y, int z, GLubyte prev){

@@ -4,9 +4,11 @@
 // uniform vec3 light_position;
 uniform vec3 camera_position;
 uniform sampler3D volume;
-uniform sampler3D volume_8;
 uniform sampler3D volume_64;
 uniform sampler3D volume_512;
+uniform sampler3D volume_4096;
+uniform sampler3D volume_32k;
+uniform sampler3D volume_256k;
 uniform sampler3D volume_sdf;
 uniform float voxel_size;
 uniform float lod;
@@ -195,14 +197,18 @@ vec3 shade(hit_t hit, vec3 albedo){
 
 hit_t fvta_step_help(vec3 ro, vec3 rd, vec3 normal, int mipmap, bool exit_when_exit_larger_mipmap){
     float voxel_size_local = voxel_size*lod; //1 - normal, 2 - twice the size of the steps
-    if(mipmap == 3) voxel_size_local *= 8;
-    if(mipmap == 2) voxel_size_local *= 4;
-    else if(mipmap == 1) voxel_size_local *= 2;
+    if(mipmap == 5) voxel_size_local *= 64;
+    if(mipmap == 4) voxel_size_local *= 32;
+    if(mipmap == 3) voxel_size_local *= 16;
+    if(mipmap == 2) voxel_size_local *= 8;
+    else if(mipmap == 1) voxel_size_local *= 4;
 
     float voxel_size_local_larger_mipmap = voxel_size*lod; //1 - normal, 2 - twice the size of the steps
-    if(mipmap == 2) voxel_size_local_larger_mipmap *= 8;
-    if(mipmap == 1) voxel_size_local_larger_mipmap *= 4;
-    else if(mipmap == 0) voxel_size_local_larger_mipmap *= 2;
+    if(mipmap == 4) voxel_size_local_larger_mipmap *= 64;
+    if(mipmap == 3) voxel_size_local_larger_mipmap *= 32;
+    if(mipmap == 2) voxel_size_local_larger_mipmap *= 16;
+    if(mipmap == 1) voxel_size_local_larger_mipmap *= 8;
+    else if(mipmap == 0) voxel_size_local_larger_mipmap *= 4;
     vec3 larger_mipmap_voxel_index = floor(ro * (1./voxel_size_local_larger_mipmap));
 
 
@@ -222,7 +228,7 @@ hit_t fvta_step_help(vec3 ro, vec3 rd, vec3 normal, int mipmap, bool exit_when_e
     int num_reads = 0;
     for (int i = 0; i < max_steps; i++){
         vec3 larger_mipmap_voxel_index_new = floor(pos * (1./voxel_size_local_larger_mipmap));
-        if(exit_when_exit_larger_mipmap && larger_mipmap_voxel_index_new != larger_mipmap_voxel_index) return hit_t(num_reads, voxel_pos, pos, uvw, uv, normal, 0);
+        if(exit_when_exit_larger_mipmap && larger_mipmap_voxel_index_new != larger_mipmap_voxel_index) return hit_t(num_reads, voxel_pos, pos, uvw, uv, normal, -1);
         if (isInside(pos) < 0.5){
             //return hit_t(t, voxel_pos, pos, uvw, uv, vec3(1,0,0), 0);
             discard;
@@ -248,9 +254,11 @@ hit_t fvta_step_help(vec3 ro, vec3 rd, vec3 normal, int mipmap, bool exit_when_e
         else {
             num_reads++;
             float sampl;
-            if(mipmap == 3) sampl = texture(volume_512, voxel_pos + 0.1 * voxel_size).r;
-            if(mipmap == 2) sampl = texture(volume_64, voxel_pos + 0.1 * voxel_size).r;
-            else if(mipmap == 1) sampl = texture(volume_8, voxel_pos + 0.1 * voxel_size).r;
+            if(mipmap == 5) sampl = texture(volume_256k, voxel_pos + 0.1 * voxel_size).r;
+            if(mipmap == 4) sampl = texture(volume_32k, voxel_pos + 0.1 * voxel_size).r;
+            if(mipmap == 3) sampl = texture(volume_4096, voxel_pos + 0.1 * voxel_size).r;
+            if(mipmap == 2) sampl = texture(volume_512, voxel_pos + 0.1 * voxel_size).r;
+            if(mipmap == 1) sampl = texture(volume_64, voxel_pos + 0.1 * voxel_size).r;
             else if(mipmap == 0) sampl = texture(volume, voxel_pos + 0.1 * voxel_size).r;
             int mat = int(round(sampl * 255));
             if(mat > 0) return hit_t(num_reads, voxel_pos, pos, uvw, uv, normal, mat);
@@ -315,20 +323,17 @@ hit_t fvta_step(){
 */
 
     bool done = false;
+    int mipmap = mipmap_levels;
     while(!done){
-        if(mipmap_levels == 3){
-            hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 3, false);
+        if(mipmap > 1)
+        {
+            hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, mipmap, mipmap_levels >= mipmap);
             start.pos = hit.pixel_pos;
             start.normal = hit.normal;
-            depth += hit.depth;
+            if (hit.material != -1 && hit.material != 0) mipmap--;
+            else if (mipmap_levels > mipmap) mipmap++;
+            depth += hit.depth * 1;
         }
-        if(mipmap_levels >= 2){
-            hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 2, mipmap_levels > 2);
-            start.pos = hit.pixel_pos;
-            start.normal = hit.normal;
-            depth += hit.depth * 4;
-        }
-
 /*
         if(mipmap_levels >= 1){
             hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 1, mipmap_levels > 1);
@@ -338,16 +343,21 @@ hit_t fvta_step(){
             if(hit.material == 0) { continue; }
         }
 */
-
-        hit_t hit =  fvta_step_help(start.pos, normalize(fV), start.normal, 0, true);
-        start.pos = hit.pixel_pos;
-        start.normal = hit.normal;
-        depth += hit.depth;
-        if(hit.material == 0) { continue; }
-
-        hit.depth = depth;
-        return hit;
+        if(mipmap == 0){
+            hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 0, mipmap_levels != 0);
+            start.pos = hit.pixel_pos;
+            start.normal = hit.normal;
+            //depth += hit.depth;
+            if (hit.material == -1) {
+                mipmap++;
+                continue;
+            }
+            else mipmap--;
+            hit.depth = depth;
+            return hit;
+        }
     }
+    return hit_t(0, vec3(0), vec3(0), vec3(0), vec2(0), vec3(0), 0);
 }
 mat4 rotationX(in float angle) {
     return mat4(1.0, 0, 0, 0,

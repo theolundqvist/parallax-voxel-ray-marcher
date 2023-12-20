@@ -10,14 +10,20 @@
 class VoxelVolume {
 private:
     GLubyte *texels;
-    GLubyte *texels_8;
+    GLubyte *texels_8; // still kept to update cpu mipmap to calculate texels 64, unnecessary i know
     GLubyte *texels_64;
     GLubyte *texels_512;
+    GLubyte *texels_4096;
+    GLubyte *texels_32k;
+    GLubyte *texels_256k;
     GLubyte *sdf;
     GLuint texture{};
-    GLuint texture_8{};
+    //GLuint texture_8{};
     GLuint texture_64{};
     GLuint texture_512{};
+    GLuint texture_4096{};
+    GLuint texture_32k{};
+    GLuint texture_256k{};
     GLuint sdf_texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
@@ -33,21 +39,30 @@ public:
     int LOD = 1;
     int sdf_dist = 0;
     int mipmap_levels = 2;
-    int W, H, D, W_2, H_2, D_2, W_4, H_4, D_4, W_8, H_8, D_8;
+    int W, H, D, W_2, H_2, D_2, W_4, H_4, D_4, W_8, H_8, D_8, W_16, H_16, D_16, W_32, H_32, D_32, W_64, H_64, D_64;
 
     VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf) {
         W = WIDTH;
         W_2 = W / 2;
         W_4 = W / 4;
         W_8 = W / 8;
+        W_16 = W / 16;
+        W_32 = W / 32;
+        W_64 = W / 64;
         H = HEIGHT;
         H_2 = H / 2;
         H_4 = H / 4;
         H_8 = H / 8;
+        H_16 = H / 16;
+        H_32 = H / 32;
+        H_64 = H / 64;
         D = DEPTH;
         D_2 = D / 2;
         D_4 = D / 4;
         D_8 = D / 8;
+        D_16 = D / 16;
+        D_32 = D / 32;
+        D_64 = D / 64;
         this->transform = tf;
 
         voxel_size = 1.0f / (float) W;
@@ -56,6 +71,9 @@ public:
         texels_8 = (GLubyte *) calloc(W_2 * H_2 * D_2, sizeof(GLubyte));
         texels_64 = (GLubyte *) calloc(W_4 * H_4 * D_4, sizeof(GLubyte));
         texels_512 = (GLubyte *) calloc(W_8 * H_8 * D_8, sizeof(GLubyte));
+        texels_4096 = (GLubyte *) calloc(W_16 * H_16 * D_16, sizeof(GLubyte));
+        texels_32k = (GLubyte *) calloc(W_32 * H_32 * D_32, sizeof(GLubyte));
+        texels_256k = (GLubyte *) calloc(W_64 * H_64 * D_64, sizeof(GLubyte));
         //sdf = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
@@ -69,6 +87,10 @@ public:
         free(texels);
         free(texels_8);
         free(texels_64);
+        free(texels_512);
+        free(texels_4096);
+        free(texels_32k);
+        free(texels_256k);
     }
 
     glm::ivec3 size() const {
@@ -321,8 +343,8 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 */
         glGenTextures(1, &texture_64);
-        glUniform1i(glGetUniformLocation(program, "volume_64"), 2);
-        glActiveTexture(GL_TEXTURE0 + 2);
+        glUniform1i(glGetUniformLocation(program, "volume_64"), 1);
+        glActiveTexture(GL_TEXTURE0 + 1);
         // Bind 3D texture
         glBindTexture(GL_TEXTURE_3D, texture_64);
 
@@ -336,9 +358,10 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
         glGenTextures(1, &texture_512);
-        glUniform1i(glGetUniformLocation(program, "volume_512"), 3);
-        glActiveTexture(GL_TEXTURE0 + 3);
+        glUniform1i(glGetUniformLocation(program, "volume_512"), 2);
+        glActiveTexture(GL_TEXTURE0 + 2);
         // Bind 3D texture
         glBindTexture(GL_TEXTURE_3D, texture_512);
 
@@ -347,6 +370,58 @@ public:
         glBindTexture(GL_TEXTURE_3D, texture_512);
         glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_8, H_8, D_8, 0, GL_RED, GL_UNSIGNED_BYTE,
                      texels_512);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+        glGenTextures(1, &texture_4096);
+        glUniform1i(glGetUniformLocation(program, "volume_4096"), 3);
+        glActiveTexture(GL_TEXTURE0 + 3);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture_4096);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, texture_4096);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_16, H_16, D_16, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     texels_4096);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+        glGenTextures(1, &texture_32k);
+        glUniform1i(glGetUniformLocation(program, "volume_32k"), 4);
+        glActiveTexture(GL_TEXTURE0 + 4);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture_32k);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, texture_32k);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_32, H_32, D_32, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     texels_32k);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+
+        glGenTextures(1, &texture_256k);
+        glUniform1i(glGetUniformLocation(program, "volume_256k"), 5);
+        glActiveTexture(GL_TEXTURE0 + 5);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture_256k);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, texture_256k);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_64, H_64, D_64, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     texels_256k);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -366,10 +441,13 @@ public:
 
         // Unbind texture and shader program
         glDeleteTextures(1, &texture);
-        glDeleteTextures(1, &texture_8);
+        //glDeleteTextures(1, &texture_8);
         glDeleteTextures(1, &texture_64);
         glDeleteTextures(1, &texture_512);
-        glDeleteTextures(1, &sdf_texture);
+        glDeleteTextures(1, &texture_4096);
+        glDeleteTextures(1, &texture_32k);
+        glDeleteTextures(1, &texture_256k);
+        //glDeleteTextures(1, &sdf_texture);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
 
@@ -520,6 +598,74 @@ private:
                         }
                     }
 
+                }
+            }
+        }
+        for (int i = 0; i < W_16; ++i) {
+            for (int j = 0; j < H_16; ++j) {
+                for (int k = 0; k < D_16; ++k) {
+                    int index = i + j * W_16 + k * W_16 * H_16;
+                    int x = i * 2;
+                    int y = j * 2;
+                    int z = k * 2;
+                    texels_4096[index] = 0;
+                    for (int l = x; l <= x+1; ++l) {
+                        if(texels_4096[index] == 1) break;
+                        for (int m = y; m <= y+1; ++m) {
+                            for (int n = z; n <= z+1; ++n) {
+                                int other = l + m * W_8 + n * W_8 * H_8;
+                                if(texels_512[other] > 0){
+                                    texels_4096[index] = 1;
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+        for (int i = 0; i < W_32; ++i) {
+            for (int j = 0; j < H_32; ++j) {
+                for (int k = 0; k < D_32; ++k) {
+                    int index = i + j * W_32 + k * W_32 * H_32;
+                    int x = i * 2;
+                    int y = j * 2;
+                    int z = k * 2;
+                    texels_32k[index] = 0;
+                    for (int l = x; l <= x+1; ++l) {
+                        if(texels_32k[index] == 1) break;
+                        for (int m = y; m <= y+1; ++m) {
+                            for (int n = z; n <= z+1; ++n) {
+                                int other = l + m * W_16 + n * W_16 * H_16;
+                                if(texels_4096[other] > 0){
+                                    texels_32k[index] = 1;
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+        for (int i = 0; i < W_64; ++i) {
+            for (int j = 0; j < H_64; ++j) {
+                for (int k = 0; k < D_64; ++k) {
+                    int index = i + j * W_64 + k * W_64 * H_64;
+                    int x = i * 2;
+                    int y = j * 2;
+                    int z = k * 2;
+                    texels_256k[index] = 0;
+                    for (int l = x; l <= x+1; ++l) {
+                        if(texels_256k[index] == 1) break;
+                        for (int m = y; m <= y+1; ++m) {
+                            for (int n = z; n <= z+1; ++n) {
+                                int other = l + m * W_32 + n * W_32 * H_32;
+                                if(texels_32k[other] > 0){
+                                    texels_256k[index] = 1;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
