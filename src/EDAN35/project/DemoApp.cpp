@@ -209,9 +209,9 @@ public:
                 scene->orbit = false;
                 if (scene->ruled_changed) {
                     volume0->updateVoxels([](int x, int y, int z, GLubyte prev) {
-                        return 0;
+                        //return 0;
                         //if (!voxel_util::wave(1.0f, x, y, z, 64)) return 0;
-                        //return voxel_util::hash(glm::ivec3(x, y, z));
+                        return voxel_util::hash(glm::ivec3(x, y, z));
                     });
                 }
                 break;
@@ -361,7 +361,7 @@ public:
             }
         }
         if(getKey(GLFW_KEY_N)){
-            scene->mipmap_levels = (scene->mipmap_levels + 1)%3;
+            scene->mipmap_levels = (scene->mipmap_levels + 1)%4;
             printf("mipmap_levels: %d\n", scene->mipmap_levels);
             for (int i = 0; i < renderer->numberVolumes(); ++i) {
                 renderer->getVolume(i)->updateVoxels([](int x, int y, int z, GLubyte prev){

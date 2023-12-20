@@ -12,10 +12,12 @@ private:
     GLubyte *texels;
     GLubyte *texels_8;
     GLubyte *texels_64;
+    GLubyte *texels_512;
     GLubyte *sdf;
     GLuint texture{};
     GLuint texture_8{};
     GLuint texture_64{};
+    GLuint texture_512{};
     GLuint sdf_texture{};
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
@@ -31,18 +33,21 @@ public:
     int LOD = 1;
     int sdf_dist = 0;
     int mipmap_levels = 2;
-    int W, H, D, W_2, H_2, D_2, W_4, H_4, D_4;
+    int W, H, D, W_2, H_2, D_2, W_4, H_4, D_4, W_8, H_8, D_8;
 
     VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf) {
         W = WIDTH;
         W_2 = W / 2;
         W_4 = W / 4;
+        W_8 = W / 8;
         H = HEIGHT;
         H_2 = H / 2;
         H_4 = H / 4;
+        H_8 = H / 8;
         D = DEPTH;
         D_2 = D / 2;
         D_4 = D / 4;
+        D_8 = D / 8;
         this->transform = tf;
 
         voxel_size = 1.0f / (float) W;
@@ -50,6 +55,7 @@ public:
         texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         texels_8 = (GLubyte *) calloc(W_2 * H_2 * D_2, sizeof(GLubyte));
         texels_64 = (GLubyte *) calloc(W_4 * H_4 * D_4, sizeof(GLubyte));
+        texels_512 = (GLubyte *) calloc(W_8 * H_8 * D_8, sizeof(GLubyte));
         //sdf = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         //bounding_box = parametric_shapes::createQuad(1.0f, 1.0f, 0, 0);
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
@@ -328,6 +334,22 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glGenTextures(1, &texture_512);
+        glUniform1i(glGetUniformLocation(program, "volume_512"), 3);
+        glActiveTexture(GL_TEXTURE0 + 3);
+        // Bind 3D texture
+        glBindTexture(GL_TEXTURE_3D, texture_512);
+
+        // setup texture
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glBindTexture(GL_TEXTURE_3D, texture_512);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W_8, H_8, D_8, 0, GL_RED, GL_UNSIGNED_BYTE,
+                     texels_512);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
 
         // uniforms
@@ -344,6 +366,7 @@ public:
         glDeleteTextures(1, &texture);
         glDeleteTextures(1, &texture_8);
         glDeleteTextures(1, &texture_64);
+        glDeleteTextures(1, &texture_512);
         glDeleteTextures(1, &sdf_texture);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
@@ -467,6 +490,29 @@ private:
                                 int other = l + m * W_2 + n * W_2 * H_2;
                                 if(texels_8[other] > 0){
                                     texels_64[index] = 1;
+                                }
+                            }
+                        }
+                    }
+
+                }
+            }
+        }
+        for (int i = 0; i < W_8; ++i) {
+            for (int j = 0; j < H_8; ++j) {
+                for (int k = 0; k < D_8; ++k) {
+                    int index = i + j * W_8 + k * W_8 * H_8;
+                    int x = i * 2;
+                    int y = j * 2;
+                    int z = k * 2;
+                    texels_512[index] = 0;
+                    for (int l = x; l <= x+1; ++l) {
+                        if(texels_512[index] == 1) break;
+                        for (int m = y; m <= y+1; ++m) {
+                            for (int n = z; n <= z+1; ++n) {
+                                int other = l + m * W_4 + n * W_4 * H_4;
+                                if(texels_64[other] > 0){
+                                    texels_512[index] = 1;
                                 }
                             }
                         }
