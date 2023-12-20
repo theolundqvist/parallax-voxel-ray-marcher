@@ -302,6 +302,7 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 */
+/*
         glGenTextures(1, &texture_8);
         glUniform1i(glGetUniformLocation(program, "volume_8"), 1);
         glActiveTexture(GL_TEXTURE0 + 1);
@@ -318,6 +319,7 @@ public:
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+*/
         glGenTextures(1, &texture_64);
         glUniform1i(glGetUniformLocation(program, "volume_64"), 2);
         glActiveTexture(GL_TEXTURE0 + 2);
