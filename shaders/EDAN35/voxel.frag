@@ -339,7 +339,7 @@ hit_t fvta_step(){
             hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 1, mipmap_levels > 1);
             start.pos = hit.pixel_pos;
             start.normal = hit.normal;
-            depth += hit.depth * 3;
+            depth += hit.depth;
             if(hit.material == 0) { continue; }
         }
 */
