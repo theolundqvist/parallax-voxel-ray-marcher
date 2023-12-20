@@ -224,6 +224,7 @@ public:
                     };
                     scene->shader_setting = shaders[(rule - 1) % 2];
                 }
+                if (*elapsed > checkpoint.time + 1000) break;
                 if (rule == 1 || rule == 2) { //sphere
                     auto r =
                             size.x / 2 * glm::smoothstep(checkpoint.time, checkpoint.time + 1000, *elapsed);

@@ -326,21 +326,21 @@ hit_t fvta_step(){
             hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 2, mipmap_levels > 2);
             start.pos = hit.pixel_pos;
             start.normal = hit.normal;
-            depth += hit.depth * 4;
+            depth += hit.depth;
         }
 
         if(mipmap_levels >= 1){
             hit_t hit = fvta_step_help(start.pos, normalize(fV), start.normal, 1, mipmap_levels > 1);
             start.pos = hit.pixel_pos;
             start.normal = hit.normal;
-            depth += hit.depth * 3;
+            depth += hit.depth;
             if(hit.material == 0) { continue; }
         }
 
         hit_t hit =  fvta_step_help(start.pos, normalize(fV), start.normal, 0, true);
         start.pos = hit.pixel_pos;
         start.normal = hit.normal;
-        depth += hit.depth;
+        //depth += hit.depth;
         if(hit.material == 0) { continue; }
 
         hit.depth = depth;

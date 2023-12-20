@@ -73,7 +73,7 @@ public:
     }
 
     void orbit(float dt){
-        volumes[0]->transform.rotateAroundY(glm::pi<float>()*dt*0.0001f);
+        volumes[0]->transform.rotateAroundY(glm::pi<float>()*dt*0.00002f);
     }
 
     void setSDFOptDist(int dist){
