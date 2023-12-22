@@ -1,10 +1,22 @@
-## Parallax Voxel Ray Marching
+## Parallax Voxel Ray Marcher
 Project in High Performance Computer Graphics (3rd place) at LTH by Theodor Lundqvist, Jiuming Zeng and Jintao Yu.
 
+Video:
 https://youtu.be/21KFuvCqHIU
 
+Paper:
+[Parallax Voxel Ray Marcher.pdf](https://github.com/theolundqvist/parallax-voxel-ray-marcher/files/13754011/Parallax.Voxel.Ray.Marcher.pdf)
 
 
+
+
+
+\
+\
+\
+\
+\
+\
 Some personal notes:
 
 ### GRID TRAVERSAL
