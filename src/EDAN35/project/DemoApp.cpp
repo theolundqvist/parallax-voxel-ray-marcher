@@ -79,6 +79,24 @@ public:
     }
 
 
+    void calc_nbr_triangles(){
+        scene->triangles = 0;
+        auto vol = renderer->getVolume(0);
+        for (int x = 0; x < vol->W; x++) {
+            for (int y = 0; y < vol->H; y++) {
+                for (int z = 0; z < vol->D; z++) {
+                    if(vol->getVoxel(x, y, z) > 0){
+                        if(vol->getVoxel(x, y, z+1) <= 0) scene->triangles+=2;
+                        if(vol->getVoxel(x, y, z-1) <= 0) scene->triangles+=2;
+                        if(vol->getVoxel(x, y+1, z) <= 0) scene->triangles+=2;
+                        if(vol->getVoxel(x, y-1, z) <= 0) scene->triangles+=2;
+                        if(vol->getVoxel(x+1, y, z) <= 0) scene->triangles+=2;
+                        if(vol->getVoxel(x-1, y, z) <= 0) scene->triangles+=2;
+                    }
+                }
+            }
+        }
+    }
     void setScene(int index) {
         current_scene = index;
         scene = &scenes[current_scene];
@@ -114,6 +132,7 @@ public:
 
         scene->voxel_count = scene->volume_size * scene->volume_size * scene->volume_size * scene->volumes;
         scene->ruled_changed = true;
+        calc_nbr_triangles();
     }
 
 
@@ -342,7 +361,10 @@ public:
                 break;
         }
 
-        if (scene->ruled_changed) scene->ruled_changed = false;
+        if (scene->ruled_changed) {
+            scene->ruled_changed = false;
+            calc_nbr_triangles();
+        }
         if (getKey(GLFW_KEY_DOWN)) rule -= 1;
         if (getKey(GLFW_KEY_UP)) rule += 1;
         rule = glm::clamp(rule, 1, scene->highest_rule);
@@ -437,7 +459,8 @@ public:
                 ui->resize();
                 if (settings.show_fps) ui->fps(gpu_time, cpu_time, 10);
                 if (settings.show_crosshair) ui->crosshair();
-                ui->displaySceneSettings(scene, *elapsed);
+
+                ui->displaySceneSettings(scene, *elapsed, scene->triangles);
                 break;
             case PAUSED:
                 ui->resize();
@@ -464,6 +487,8 @@ public:
         }
         const auto end = std::chrono::high_resolution_clock::now();
     }
+
+
 
     void handleInput() {
         if (getKey(GLFW_KEY_ESCAPE, JUST_PRESSED)) {
@@ -493,6 +518,7 @@ public:
                     for (auto volume: volumes) {
                         volume->setSphere(hit.world_pos, settings.edit_size, 0);
                     }
+                    calc_nbr_triangles();
                 }
             }
             if (getKey(GLFW_KEY_X, PRESSED, settings.edit_cooldown) ||
@@ -507,6 +533,7 @@ public:
                         // material = -1, means hash on index
                         volume->setSphere(hit.world_pos, settings.edit_size, -1);
                     }
+                    calc_nbr_triangles();
                 }
             }
 

@@ -56,6 +56,7 @@ typedef struct scene_settings_t {
     bool lod = false;
     int sdf_dist = 0;
     int mipmap_levels = 0;
+    int triangles = 0;
 } scene_settings_t;
 
 

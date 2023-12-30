@@ -72,13 +72,13 @@ public:
         ImGui::End();
     }
 
-    void displaySceneSettings(scene_settings_t *scene, float elapsed) {
+    void displaySceneSettings(scene_settings_t *scene, float elapsed, int number_triangles) {
         auto flags = ImGuiWindowFlags_NoDecoration |
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoBackground;
         ImGui::Begin("SCENE", nullptr, flags);
         int h = window_size.y / window_scale.y;
-        int number_rows = 4;
+        int number_rows = 6;
         float font_scale = 0.25f;
         ImGui::SetWindowPos(ImVec2(0, h - font_height * font_scale * (number_rows + 1)));
         ImGui::SetWindowFontScale(font_scale);
@@ -94,6 +94,7 @@ public:
         else
             ImGui::TextColored(ImColor(0, 0, 0), "Voxel count: %d", (int)count);
         ImGui::TextColored(ImColor(0, 0, 0), "Time: %.0f s", elapsed/1000.f);        ImGui::TextColored(ImColor(0,0,0),"Shader: %d", scene->shader_setting);
+        ImGui::TextColored(ImColor(0, 0, 0), "Triangles: %d", number_triangles);
 
         ImGui::PopFont();
         ImGui::SetWindowFontScale(1.0f);
