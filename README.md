@@ -2,7 +2,7 @@
 Project in High Performance Computer Graphics (3rd place) at LTH by Theodor Lundqvist, Jiuming Zeng and Jintao Yu.
 
 Video:
-https://youtu.be/21KFuvCqHIU (8000+ views)
+https://youtu.be/21KFuvCqHIU (10000+ views)
 
 Paper:
 [Parallax Voxel Ray Marcher.pdf](https://github.com/theolundqvist/parallax-voxel-ray-marcher/files/13754011/Parallax.Voxel.Ray.Marcher.pdf)
