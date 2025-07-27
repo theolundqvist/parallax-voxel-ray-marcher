@@ -19,44 +19,43 @@ Paper:
 \
 \
 Some personal notes:
+### Grid Traversal
+- **FVTA Algorithm**: Efficient voxel traversal algorithm for ray casting through a grid.  
+  [Paper (Amanatides & Woo)](http://www.cse.yorku.ca/~amana/research/grid.pdf)
 
-### GRID TRAVERSAL
-voxel traversal using FVTA algorithm 
-http://www.cse.yorku.ca/~amana/research/grid.pdf
+### Mesh to Voxel Conversion
+- Convert mesh models into voxel grids:
+  - [David Stutz's mesh voxelizer (GitHub)](https://github.com/davidstutz/mesh-voxelization)
+  - [Drububu online voxelizer (OBJ export)](https://drububu.com/miscellaneous/voxelizer/?out=obj)
 
+### Voxel Ray Marching
+- **Teardown-style voxel rendering**:
+  - [YouTube: How Teardown Does Destruction](https://www.youtube.com/watch?v=0VzE8ROwC58)
+- **Parallax voxel raymarching**:
+  - [YouTube](https://www.youtube.com/watch?v=h81I8hR56vQ)
+- **Distance fields**:
+  - Fast on GPU but can still be slower than grid-based methods  
+  - [YouTube: Distance Fields Explained](https://www.youtube.com/watch?v=REKcTBgkrsE)
 
-### MODELS
-Models can be converted from mesh to voxel grid using online resources
-https://github.com/davidstutz/mesh-voxelization
-https://drububu.com/miscellaneous/voxelizer/?out=obj
+### Atomontage Engine
+- Highly optimized voxel engine supporting dynamic updates and intersections:
+  - [Overview](https://www.youtube.com/watch?v=nr5JqYYye3w)
+  - [Rendering approach](https://www.youtube.com/watch?v=4AYBm-9cBqs)
+  - [Advanced techniques](https://www.youtube.com/watch?v=1sfWYUgxGBE)
 
+### Fragment Shader Techniques
+- **Depth Handling in Voxel Rendering**:
+  - Early depth test must be disabled when depth is modified in the fragment shader.
+  - Use the `conservative_depth` extension:
+    - [OpenGL: Conservative Depth](https://www.khronos.org/opengl/wiki/Fragment_Shader#Conservative_Depth)
+    - Shader declaration example:
+      ```glsl
+      layout (depth_less) out float gl_FragDepth;
+      ```
+    - This declares that fragments will always move closer than their original depth (e.g. when rendering backfaces).
 
-### voxel ray marching techniques 
-
-how Teardown does it: 
-https://www.youtube.com/watch?v=0VzE8ROwC58
-
-distance fields - can be made fast on gpu but still slower it seems
-https://www.youtube.com/watch?v=REKcTBgkrsE
-
-parallax voxel raymarching
-https://www.youtube.com/watch?v=h81I8hR56vQ
-
-### atomotage engine
-- https://www.youtube.com/watch?v=nr5JqYYye3w
-- https://www.youtube.com/watch?v=4AYBm-9cBqs
-- https://www.youtube.com/watch?v=1sfWYUgxGBE
-
-### moving voxelvolumes around and intersecting.
-Have to disable early depth test since depth can change in fragment shader.
-Though we can use an extension:
-https://www.khronos.org/opengl/wiki/Fragment_Shader#Conservative_Depth
-```glsl
-layout (depth_less) out float gl_FragDepth;
-```
-To say that we always will move the pixel closer than the plane it was rendered on, which is the only thing we will do when rendering backfaces
-
-cool examples:
-https://www.shadertoy.com/view/cdsGz7
-https://www.shadertoy.com/view/dtVSzw
-https://www.shadertoy.com/view/tdlSR8
+### Cool Shader Examples
+- Impressive real-time voxel rendering:
+  - [Shadertoy: Voxel Cone Tracing](https://www.shadertoy.com/view/cdsGz7)
+  - [Shadertoy: Soft Voxel Global Illumination](https://www.shadertoy.com/view/dtVSzw)
+  - [Shadertoy: Sparse Voxel Rendering](https://www.shadertoy.com/view/tdlSR8)
