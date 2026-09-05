@@ -22,6 +22,7 @@
 
 #include <list>
 #include <map>
+#include <memory>
 
 edan35::Project::Project(WindowManager &windowManager)
         : mCamera(0.5f * glm::half_pi<float>(),
@@ -115,7 +116,7 @@ void edan35::Project::run() {
     // CHANGE HERE FOR DEMOAPP OR REGULAR APP
     // new App...
     // new DemoApp...
-    auto app = new DemoApp(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
+    auto app = std::make_unique<DemoApp>(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
 
 
     glClearDepthf(1.0f);

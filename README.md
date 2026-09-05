@@ -12,6 +12,46 @@ Paper:
   <img src="https://github.com/theolundqvist/parallax-voxel-ray-marcher/assets/31588188/90c3f8b3-3802-4cdf-89db-8212d5adde82" width=40% height=50%>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="https://github.com/theolundqvist/parallax-voxel-ray-marcher/assets/31588188/b4da6f9a-168f-4347-a2c9-c26bf00fe66e" width=40% height=50%>
 </p>
 
+### Persistent voxel storage
+
+Each volume retains one `GL_R8` 3D texture. The first render uploads the volume;
+unchanged frames upload nothing. Edits track an XY rectangle per Z slice and merge
+matching adjacent slices into `glTexSubImage3D` updates. This uses OpenGL 4.1 APIs,
+including on macOS, without staging copies or changes to the ray-marching shader.
+An update can include unchanged voxels inside its rectangle; it does not upload
+untouched slices. Volume destruction releases the texture and bounding-box buffers.
+Bulk generation visits X-contiguous storage order to keep CPU writes cache-local.
+
+### Reproduce correctness and performance
+
+Use a C++20 compiler and CMake. With Apple Clang 21, provide an installed recent
+Assimp package (the native benchmark used 5.4.3); the bundled 5.1.2 fails to build
+with that compiler. Set `CMAKE_PREFIX_PATH` to its installation prefix if necessary.
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DLUGGCGL_DOWNLOAD_RESOURCES=OFF -DLUGGCGL_BUILD_VOXEL_BENCHMARK=ON
+cmake --build build --target voxel_benchmark --parallel 1
+build/src/EDAN35/voxel_benchmark --strict --output build/voxel
+```
+
+The benchmark uses the real volume implementation and FVTA shader with an offscreen
+1000×1000 framebuffer. macOS uses native CGL; Linux/Windows use GLFW (Linux needs a
+display, or `xvfb-run -a` for software-rendering correctness checks).
+Defaults: 10 warmup frames, 100 measured frames, 100 × 128³ volumes for static,
+spherical boundary edits, and scattered edits; four volumes for full regeneration.
+The terrain is a deterministic sinusoidal heightfield, not the paper's original world.
+
+CSV output separates uploaded bytes/calls, CPU upload time, CPU mutation time, and
+GPU-completed frame time. Texture readbacks are checked and raw RGBA images are saved
+outside timing; `--scenario smoke --strict` checks mutations, no-op updates, bounds, unpack
+state, and texture lifetime. `--isolate-uploads` adds GPU waits around uploads for
+diagnosis only: do not treat those serialized frames as normal frame-rate results.
+For before/after comparisons, use the same harness, dependencies, scene, resolution,
+and arguments on both revisions; omit `--strict` only on the old implementation,
+which does not satisfy the new persistence contract. Report the actual GL renderer:
+software rasterization is not hardware GPU performance.
+
 \
 \
 \

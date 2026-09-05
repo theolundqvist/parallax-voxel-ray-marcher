@@ -16,6 +16,7 @@
 #include "../util/AppState.cpp"
 #include <map>
 #include <iostream>
+#include <memory>
 
 #include "../util/cellularAutomata.hpp"
 
@@ -23,7 +24,7 @@
 
 class DemoApp {
 private:
-    VoxelRenderer *renderer;
+    std::unique_ptr<VoxelRenderer> renderer;
     UI *ui;
     InputHandler *inputHandler;
     GLFWwindow *window;
@@ -65,7 +66,7 @@ public:
         this->elapsed = elapsed_time_ms;
         this->shaderManager = shaderManager;
         ui = new UI(window);
-        this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
+        this->renderer = std::make_unique<VoxelRenderer>(cam, shaderManager, elapsed_time_ms);
 
 
         this->playerBody = new GameObject("playerbody");

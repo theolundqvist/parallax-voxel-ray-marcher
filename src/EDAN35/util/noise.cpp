@@ -3,6 +3,7 @@
 #include <cmath>
 #include <vector>
 #include <cstdlib>
+#include <ctime>
 #include <random>
 #include "glm/glm.hpp"
 

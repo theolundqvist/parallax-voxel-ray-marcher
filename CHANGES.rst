@@ -1,5 +1,17 @@
 Revision history for CG_Labs
 
+Unreleased
+==========
+
+* Keep voxel textures resident on the GPU and upload only edited slice regions.
+  Unchanged frames and no-op edits perform no voxel transfers.
+* Reject out-of-range voxel coordinates on each axis and release volume-owned
+  GPU resources before the OpenGL context is destroyed.
+  Keep picking valid on all six closed volume faces, including transformed volumes.
+* Regenerate voxel data in contiguous storage order to avoid strided CPU writes.
+* Add a native OpenGL readback smoke check and before/after upload benchmark.
+
+
 
 v2021.2 2021-12-02
 ==================

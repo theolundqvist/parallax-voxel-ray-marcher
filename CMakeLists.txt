@@ -67,7 +67,10 @@ include (CMake/InstallTinyFileDialogs.cmake)
 include (CMake/InstallSTB.cmake)
 
 # Resources are found in an external archive
-include (CMake/RetrieveResourceArchive.cmake)
+option (LUGGCGL_DOWNLOAD_RESOURCES "Download the optional course model/texture archive" ON)
+if (LUGGCGL_DOWNLOAD_RESOURCES)
+	include (CMake/RetrieveResourceArchive.cmake)
+endif ()
 
 
 # Configure *C++ Environment Variables*
