@@ -19,6 +19,10 @@
 
 #include "project/App.cpp"
 #include "project/DemoApp.cpp"
+#include "world/WorldApp.hpp"
+#include <charconv>
+#include <cstdlib>
+#include <string_view>
 
 #include <list>
 #include <map>
@@ -50,7 +54,8 @@ edan35::Project::Project(WindowManager &windowManager)
 
 edan35::Project::~Project() { bonobo::deinit(); }
 
-void edan35::Project::run() {
+void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
+                         std::optional<std::uint64_t> seed) {
     // Set up the camera
     mCamera.mWorld.SetTranslate(glm::vec3(0.0f, 0.0f, 6.0f));
     mCamera.mMouseSensitivity = glm::vec2(0.003f);
@@ -113,10 +118,10 @@ void edan35::Project::run() {
     // GameObject::addShaderToLibrary(&program_manager, "shield",
     //                                phong_set_uniforms);
 
-    // CHANGE HERE FOR DEMOAPP OR REGULAR APP
-    // new App...
-    // new DemoApp...
-    auto app = std::make_unique<DemoApp>(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
+    std::unique_ptr<DemoApp> demoApp;
+    std::unique_ptr<world::WorldApp> worldApp;
+    if (demo) demoApp = std::make_unique<DemoApp>(window, &mCamera, &inputHandler, &program_manager, &elapsed_time_ms);
+    else worldApp = std::make_unique<world::WorldApp>(window, &mCamera, &inputHandler, &program_manager, worldPath, seed);
 
 
     glClearDepthf(1.0f);
@@ -148,17 +153,16 @@ void edan35::Project::run() {
 
         glfwPollEvents();
         inputHandler.Advance();
-        app->update(deltaTimeUs);
+        if (worldApp) worldApp->update(deltaTimeUs);
+        else demoApp->update(deltaTimeUs);
 
         if (inputHandler.GetKeycodeState(GLFW_KEY_R) & JUST_PRESSED) {
             shader_reload_failed = !program_manager.ReloadAllPrograms();
-            if (shader_reload_failed)
-                tinyfd_notifyPopup("Shader Program Reload Error",
-                                   "An error occurred while reloading shader programs; "
-                                   "see the logs for details.\n"
-                                   "Rendering is suspended until the issue is solved. "
-                                   "Once fixed, just reload the shaders again.",
-                                   "error");
+            if (worldApp && !shader_reload_failed) worldApp->refreshPrograms();
+            if (shader_reload_failed) {
+                LogError("Shader reload failed; fix the shader and press R to retry.");
+                show_logs = true;
+            }
         }
         if (inputHandler.GetKeycodeState(GLFW_KEY_F3) & JUST_RELEASED)
             show_logs = !show_logs;
@@ -198,7 +202,8 @@ void edan35::Project::run() {
         glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         // RENDER
-        app->render(show_basis, basis_length_scale, basis_thickness_scale, dt);
+        if (worldApp) worldApp->render(show_basis, basis_length_scale, basis_thickness_scale, dt);
+        else demoApp->render(show_basis, basis_length_scale, basis_thickness_scale, dt);
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
@@ -225,15 +230,55 @@ void edan35::Project::run() {
     }
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::setlocale(LC_ALL, "");
-
-    Bonobo framework;
-
     try {
+        bool demo = false;
+        std::filesystem::path worldPath;
+        std::optional<std::uint64_t> seed;
+        for (int i = 1; i < argc; ++i) {
+            std::string_view arg = argv[i];
+            if (arg == "--help") {
+                std::cout << "EDAN35_Project [--world PATH] [--seed INTEGER] [--demo]\n"
+                             "Floating islands: WASD fly, Shift sprint, Space carve, X build, Esc menu.\n"
+                             "Edits are saved before becoming visible. --demo opens the original scenes.\n";
+                return 0;
+            }
+            if (arg == "--demo") { demo = true; continue; }
+            if ((arg != "--world" && arg != "--seed") || i + 1 == argc)
+                throw std::runtime_error("Expected --world PATH, --seed INTEGER, or --demo");
+            std::string_view value = argv[++i];
+            if (arg == "--world") worldPath = value;
+            else {
+                std::uint64_t parsed = 0;
+                auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+                if (result.ec != std::errc{} || result.ptr != value.data() + value.size())
+                    throw std::runtime_error("Seed must be an unsigned 64-bit integer");
+                seed = parsed;
+            }
+        }
+        if (!demo && worldPath.empty()) {
+#if defined(_WIN32)
+            auto root = std::getenv("LOCALAPPDATA");
+            if (!root) throw std::runtime_error("LOCALAPPDATA unavailable; pass --world PATH");
+            worldPath = std::filesystem::path(root) / "ParallaxVoxel" / "worlds" / "islands";
+#else
+            auto home = std::getenv("HOME");
+            if (!home) throw std::runtime_error("HOME unavailable; pass --world PATH");
+#if defined(__APPLE__)
+            worldPath = std::filesystem::path(home) / "Library" / "Application Support" / "ParallaxVoxel" / "worlds" / "islands";
+#else
+            auto data = std::getenv("XDG_DATA_HOME");
+            worldPath = (data && *data ? std::filesystem::path(data) : std::filesystem::path(home) / ".local" / "share")
+                        / "parallax-voxel" / "worlds" / "islands";
+#endif
+#endif
+        }
+        Bonobo framework;
         edan35::Project project(framework.GetWindowManager());
-        project.run();
-    } catch (std::runtime_error const &e) {
-        LogError(e.what());
+        project.run(demo, worldPath, seed);
+    } catch (std::exception const& error) {
+        std::cerr << error.what() << '\n';
+        return 1;
     }
 }

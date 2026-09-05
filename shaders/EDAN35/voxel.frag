@@ -8,6 +8,14 @@ uniform float voxel_size;
 uniform float lod;
 uniform ivec3 grid_size;
 uniform vec3 light_direction;
+uniform sampler3D coarse_occupancy;
+uniform bool world_acceleration = true;
+uniform bool world_lighting = true;
+uniform bool world_debug_material = false;
+uniform float world_fog_radius = 26.0;
+uniform mat4 model_to_world;
+uniform mat4 normal_model_to_world;
+uniform mat4 vertex_world_to_clip;
 
 // color palette
 uniform vec3 colorPalette[256];
@@ -306,10 +314,145 @@ float ao(hit_t hit){
     return mix(smoothstep(0, 1, 1-2*ao), 1, 1-2*ao);
 }
 
+// The reference and accelerated paths share the same coarse traversal and
+// fine-cell entry arithmetic. Acceleration only omits an entirely empty cell;
+// no approximate LOD, epsilon advance, or repeated t accumulation is involved.
+vec3 boundaryTimes(vec3 origin, vec3 direction, ivec3 low, ivec3 high) {
+    vec3 times = vec3(1e30);
+    for (int axis = 0; axis < 3; ++axis) {
+        if (direction[axis] != 0.0) {
+            int boundary = direction[axis] > 0.0 ? high[axis] : low[axis];
+            times[axis] = (float(boundary) / float(grid_size[axis]) - origin[axis]) / direction[axis];
+        }
+    }
+    return times;
+}
+
+vec3 crossingNormal(bvec3 crossed, ivec3 step_dir) {
+    if (crossed.x) return vec3(-step_dir.x, 0, 0);
+    if (crossed.y) return vec3(0, -step_dir.y, 0);
+    return vec3(0, 0, -step_dir.z);
+}
+
+hit_t worldHit() {
+    vec3 ro = model_cam_pos;
+    vec3 rd = normalize(fV);
+    float entry = 0.0, exit = 1e30;
+    vec3 normal = -rd;
+    for (int axis = 0; axis < 3; ++axis) {
+        if (rd[axis] == 0.0) {
+            if (ro[axis] < 0.0 || ro[axis] >= 1.0) discard;
+        } else {
+            float a = -ro[axis] / rd[axis];
+            float b = (1.0 - ro[axis]) / rd[axis];
+            float near_t = min(a, b);
+            if (near_t > entry) {
+                entry = near_t;
+                normal = vec3(0);
+                normal[axis] = -sign(rd[axis]);
+            }
+            exit = min(exit, max(a, b));
+        }
+    }
+    if (exit <= entry) discard;
+    ivec3 step_dir = ivec3(sign(rd));
+    vec3 at_entry = clamp((ro + rd * entry) * vec3(grid_size), vec3(0), vec3(grid_size));
+    ivec3 initial = ivec3(floor(at_entry));
+    for (int axis = 0; axis < 3; ++axis)
+        if (rd[axis] < 0.0 && at_entry[axis] == floor(at_entry[axis])) --initial[axis];
+    initial = clamp(initial, ivec3(0), grid_size - 1);
+    ivec3 cell = initial / 8;
+    ivec3 cells = (grid_size + 7) / 8;
+    float cell_entry = entry;
+    int coarse_limit = cells.x + cells.y + cells.z;
+    for (int coarse_step = 0; coarse_step < coarse_limit; ++coarse_step) {
+        if (any(lessThan(cell, ivec3(0))) || any(greaterThanEqual(cell, cells))) break;
+        ivec3 low = cell * 8;
+        ivec3 high = min(low + 8, grid_size);
+        vec3 cell_times = boundaryTimes(ro, rd, low, high);
+        float cell_exit = min(cell_times.x, min(cell_times.y, cell_times.z));
+        if (!world_acceleration || texelFetch(coarse_occupancy, cell, 0).r != 0.0) {
+            vec3 p = (ro + rd * cell_entry) * vec3(grid_size);
+            ivec3 voxel = ivec3(floor(p));
+            for (int axis = 0; axis < 3; ++axis)
+                if (rd[axis] < 0.0 && p[axis] == floor(p[axis])) --voxel[axis];
+            voxel = clamp(voxel, low, high - 1);
+            float t = cell_entry;
+            vec3 face_normal = normal;
+            for (int fine_step = 0; fine_step < 24; ++fine_step) {
+                int material = int(round(texelFetch(volume, voxel, 0).r * 255.0));
+                if (material != 0) {
+                    vec3 hit_pos = ro + rd * t;
+                    vec3 uvw = hit_pos * vec3(grid_size) - vec3(voxel);
+                    return hit_t(t, vec3(voxel), hit_pos, uvw, vec2(0), face_normal, material);
+                }
+                vec3 times = boundaryTimes(ro, rd, voxel, voxel + 1);
+                float next_t = min(times.x, min(times.y, times.z));
+                if (next_t >= cell_exit) break;
+                bvec3 crossed = lessThanEqual(times, vec3(next_t));
+                voxel += ivec3(crossed) * step_dir;
+                if (any(lessThan(voxel, low)) || any(greaterThanEqual(voxel, high))) break;
+                face_normal = crossingNormal(crossed, step_dir);
+                t = next_t;
+            }
+        }
+        if (cell_exit >= exit) break;
+        bvec3 crossed = lessThanEqual(cell_times, vec3(cell_exit));
+        cell += ivec3(crossed) * step_dir;
+        normal = crossingNormal(crossed, step_dir);
+        cell_entry = cell_exit;
+    }
+    discard;
+}
+
+// Keep this formula identical to worldsky.frag: fog converges exactly to sky.
+vec3 worldSky(vec3 direction) {
+    vec3 sun = normalize(vec3(0.35, 0.80, 0.45));
+    vec3 sky = mix(vec3(0.78, 0.84, 0.92), vec3(0.30, 0.50, 0.90),
+                   pow(max(direction.y, 0.0), 0.6));
+    sky = mix(sky, vec3(0.80, 0.82, 0.86), smoothstep(0.0, 0.6, -direction.y));
+    float sun_dot = max(dot(direction, sun), 0.0);
+    return sky + vec3(1.0, 0.95, 0.85) *
+        (smoothstep(0.9985, 0.9995, sun_dot) * 8.0 + pow(sun_dot, 64.0) * 0.4);
+}
+
+vec3 worldShade(hit_t hit, vec3 world_pos) {
+    vec3 albedo = colorPalette[hit.material];
+    if (!world_lighting) return albedo;
+    vec3 normal = normalize((normal_model_to_world * vec4(hit.normal, 0)).xyz);
+    vec3 sun = normalize(vec3(0.35, 0.80, 0.45));
+    vec3 ambient = mix(vec3(0.28, 0.24, 0.20), vec3(0.55, 0.68, 0.85),
+                       normal.y * 0.5 + 0.5);
+    vec3 color = albedo * (ambient + vec3(1.0, 0.95, 0.85) * 2.2 * max(dot(normal, sun), 0.0));
+    if ((hit.material & 15) == 5) color = albedo * 1.9;
+    vec3 direction = normalize((model_to_world * vec4(normalize(fV), 0)).xyz);
+    float distance_to_hit = length(world_pos - camera_position);
+    float fog = max(1.0 - exp(-pow(distance_to_hit * 0.025, 2.0)),
+                    smoothstep(world_fog_radius * 0.7, world_fog_radius * 0.97, distance_to_hit));
+    // The cloud sea increases extinction, not a different fog color, so even
+    // the lowest streamed surfaces disappear continuously into the same sky.
+    fog = max(fog, smoothstep(6.0, 22.0, -world_pos.y));
+    if (hit.depth == 0.0) color = vec3(0.05, 0.05, 0.06);
+    return reinhard_jodie(mix(color, worldSky(direction), fog) * 0.9);
+}
+
 void main()
 {
     // custom front face culling to do it based on cam pos
     if (face_dot_v < 0.0) discard;
+    // Statically writing depth in this shader requires defining it on every
+    // surviving legacy path as well; demos retain their original proxy depth.
+    gl_FragDepth = gl_FragCoord.z;
+    if (Shader_manager == 13) {
+        hit_t world_hit = worldHit();
+        vec4 world_pos = model_to_world * vec4(world_hit.pixel_pos, 1);
+        vec4 clip = vertex_world_to_clip * world_pos;
+        gl_FragDepth = world_hit.depth == 0.0 ? 0.0 : clamp(clip.z / clip.w * 0.5 + 0.5, 0.0, 1.0);
+        vec3 color = world_debug_material ? vec3(float(world_hit.material) / 255.0, 0, 0)
+                                          : worldShade(world_hit, world_pos.xyz);
+        fColor = vec4(color, 1);
+        return;
+    }
 
     hit_t hit;
     vec3 color = vec3(0, 0, 0);

@@ -1,5 +1,6 @@
 // Native instrumentation: every intercepted call is forwarded to the real GL driver.
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -29,6 +30,7 @@
 #include "EDAN35/util/IntersectionTests.cpp"
 #include "EDAN35/util/parametric_shapes.cpp"
 #include "EDAN35/project/VoxelVolume.cpp"
+#include "EDAN35/world/Generate.hpp"
 
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -80,6 +82,9 @@ void APIENTRY subimage(GLenum target, GLint level, GLint x, GLint y, GLint z,
 void APIENTRY draw(GLenum mode, GLsizei count, GLenum type, void const* indices) {
     if (expected) {
         GLint bound = 0;
+        GLint active = 0;
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &active);
+        glActiveTexture(GL_TEXTURE0);
         glGetIntegerv(GL_TEXTURE_BINDING_3D, &bound);
         sampled_texture = GLuint(bound);
         std::vector<GLubyte> data(expected->size());
@@ -87,6 +92,7 @@ void APIENTRY draw(GLenum mode, GLsizei count, GLenum type, void const* indices)
         glGetTexImage(GL_TEXTURE_3D, 0, GL_RED, GL_UNSIGNED_BYTE, data.data());
         require(data == *expected, "Real 3D texture readback differs from CPU voxels");
         texture_hash = hash(data);
+        glActiveTexture(GLenum(active));
     }
     real_draw(mode, count, type, indices);
 }
@@ -114,9 +120,9 @@ GLuint shader(GLenum type, std::string const& path) {
     }
     return object;
 }
-GLuint program() {
-    auto vs = shader(GL_VERTEX_SHADER, std::string(VOXEL_BENCHMARK_SHADER_DIR) + "/voxel.vert");
-    auto fs = shader(GL_FRAGMENT_SHADER, std::string(VOXEL_BENCHMARK_SHADER_DIR) + "/voxel.frag");
+GLuint program(std::string const& stem = "voxel") {
+    auto vs = shader(GL_VERTEX_SHADER, std::string(VOXEL_BENCHMARK_SHADER_DIR) + "/" + stem + ".vert");
+    auto fs = shader(GL_FRAGMENT_SHADER, std::string(VOXEL_BENCHMARK_SHADER_DIR) + "/" + stem + ".frag");
     auto result = glCreateProgram();
     glAttachShader(result, vs); glAttachShader(result, fs); glLinkProgram(result);
     GLint ok = 0;
@@ -229,7 +235,7 @@ void smoke(GLuint shader_program, bool strict, std::ostream& log, std::string co
         log << "smoke," << stage << ",bytes=" << counters.bytes << ",image_calls=" << counters.image_calls << ",subimage_calls=" << counters.subimage_calls << ",texture_hash=" << texture_hash << '\n';
     };
     verify("initial");
-    if (strict) require(counters.image_calls == 1 && counters.bytes == 17 * 9 * 5, "Initial upload not exactly once");
+    if (strict) require(counters.image_calls == 2 && counters.bytes == 17 * 9 * 5 + 3 * 2, "Initial material and occupancy upload not exactly once");
     verify("unchanged", true);
     volume->setVoxel(0,0,0,13); volume->setVoxel(16,8,4,201);
     volume->setVoxel(3,7,2,77); volume->setVoxel(15,1,2,88);
@@ -280,9 +286,18 @@ void smoke(GLuint shader_program, bool strict, std::ostream& log, std::string co
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER,0); glDeleteBuffers(1,&pbo);
         for (int i=0;i<6;++i) glPixelStorei(keys[i],i==0 ? 4 : 0);
         auto texture = sampled_texture;
+        glActiveTexture(GL_TEXTURE1);
+        // Explicit upload rebinds both persistent textures without changing data.
+        require(volume->upload() == 0, "Clean explicit upload transferred bytes");
+        glActiveTexture(GL_TEXTURE1);
+        GLint coarse = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_3D, &coarse);
+        glActiveTexture(GL_TEXTURE0);
+        require(coarse != 0 && glIsTexture(GLuint(coarse)), "Occupancy texture missing");
         require(glIsTexture(texture)==GL_TRUE,"Volume texture not alive after render");
         volume.reset();
         require(glIsTexture(texture)==GL_FALSE,"Volume texture not deleted by destructor");
+        require(glIsTexture(GLuint(coarse))==GL_FALSE,"Occupancy texture not deleted by destructor");
         log << "smoke,strict-bounds-unpack-lifetime=pass\n";
     }
 }
@@ -327,9 +342,208 @@ void raycastSmoke(bool strict, std::ostream& log) {
     if (strict) require(correct, "Six-face raycast/editing contract failed");
 }
 
+struct Capture {
+    std::vector<GLubyte> color;
+    std::vector<float> depth;
+};
+Capture capture(int pixels) {
+    Capture result{std::vector<GLubyte>(pixels * pixels * 4),
+                   std::vector<float>(pixels * pixels)};
+    glReadPixels(0, 0, pixels, pixels, GL_RGBA, GL_UNSIGNED_BYTE, result.color.data());
+    glReadPixels(0, 0, pixels, pixels, GL_DEPTH_COMPONENT, GL_FLOAT, result.depth.data());
+    return result;
+}
+
+// Independent double-precision slab oracle over all occupied voxel boxes.
+// Zero-area edge/corner contact is not a hit: tied DDA axes advance together.
+void checkCenterRay(VoxelVolume const& volume, glm::vec3 camera, glm::vec3 target,
+                    glm::mat4 const& clip, Capture const& image, int pixels) {
+    glm::dvec3 origin(camera), direction = glm::normalize(glm::dvec3(target - camera));
+    double nearest = 1e100;
+    int material = 0;
+    for (int z = 0; z < volume.D; ++z)
+        for (int y = 0; y < volume.H; ++y)
+            for (int x = 0; x < volume.W; ++x) {
+                int value = volume.getVoxel(x, y, z);
+                if (!value) continue;
+                glm::dvec3 low = glm::dvec3(x,y,z) / glm::dvec3(volume.size());
+                glm::dvec3 high = glm::dvec3(x+1,y+1,z+1) / glm::dvec3(volume.size());
+                double enter = 0, exit = 1e100;
+                for (int axis = 0; axis < 3; ++axis) {
+                    if (direction[axis] == 0) {
+                        if (origin[axis] < low[axis] || origin[axis] >= high[axis]) exit = -1;
+                    } else {
+                        double a = (low[axis] - origin[axis]) / direction[axis];
+                        double b = (high[axis] - origin[axis]) / direction[axis];
+                        enter = std::max(enter, std::min(a,b));
+                        exit = std::min(exit, std::max(a,b));
+                    }
+                }
+                if (enter < exit && enter < nearest) { nearest = enter; material = value; }
+            }
+    auto center = (pixels / 2) + pixels * (pixels / 2);
+    require(image.color[center * 4] == (material ? material : 26),
+            "World DDA center material differs from independent voxel-box oracle: actual=" +
+            std::to_string(image.color[center*4]) + " expected=" + std::to_string(material) +
+            " size=" + std::to_string(volume.W) + ":" + std::to_string(volume.H) + ":" + std::to_string(volume.D) +
+            " camera=" + std::to_string(camera.x) + ":" + std::to_string(camera.y) + ":" + std::to_string(camera.z));
+    float depth = 1;
+    if (material) {
+        auto position = glm::dvec4(origin + direction * nearest, 1);
+        auto projected = glm::dmat4(clip) * position;
+        depth = nearest == 0 ? 0 : float(std::clamp(projected.z / projected.w * 0.5 + 0.5, 0.0, 1.0));
+    }
+    require(std::isfinite(image.depth[center]) && std::abs(image.depth[center] - depth) < 0.00001f,
+            "World DDA center depth differs from independent voxel-box oracle");
+}
+
+void worldSmoke(GLuint shader_program, std::ostream& log) {
+    int pixels = std::min(framebuffer_pixels, 129);
+    if (pixels % 2 == 0) --pixels;
+    glViewport(0, 0, pixels, pixels);
+    std::array<glm::vec3,256> palette;
+    for (int i = 0; i < 256; ++i) palette[i] = glm::vec3((i % 7 + 1) / 8.0f, (i % 11 + 1) / 12.0f, (i % 13 + 1) / 14.0f);
+    int comparisons = 0;
+    for (auto size : {glm::ivec3(32), glm::ivec3(17,9,5), glm::ivec3(1)}) {
+        VoxelVolume volume(size.x, size.y, size.z, Transform());
+        volume.setProgram(shader_program);
+        volume.setWorldStyle(true);
+        volume.setPalette(palette);
+        std::vector<uint8_t> data(std::size_t(size.x) * size.y * size.z);
+        require(volume.empty(), "New volume occupancy is not empty");
+        bool rejected = false;
+        try { volume.setData(std::span<const uint8_t>(data).first(data.size()-1)); }
+        catch (std::invalid_argument const&) { rejected = true; }
+        require(rejected, "Mismatched world chunk dimensions accepted");
+        for (int shape = 0; shape < 5; ++shape) {
+            std::fill(data.begin(), data.end(), 0);
+            for (int z=0; z<size.z; ++z) for (int y=0; y<size.y; ++y) for (int x=0; x<size.x; ++x) {
+                bool solid = shape == 1 || (shape == 2 && (x == std::min(8,size.x-1) || z == size.z-1)) ||
+                             (shape == 3 && x == size.x-1 && y == size.y/2 && z == size.z/2);
+                if (solid) data[x + size.x * (y + size.y * z)] = uint8_t(1 + (x + y + z) % 5 + 16 * ((x + z) % 4));
+            }
+            volume.setData(data);
+            if (shape == 4) {
+                // Callback mutation must update zero transitions even when reentrant.
+                volume.updateVoxels([&](int x,int y,int z,GLubyte) {
+                    volume.setVoxel(x,y,z,5);
+                    return GLubyte(0);
+                });
+            }
+            require(volume.empty() == (shape == 0 || shape == 4), "World empty count differs from material data");
+            counters = {};
+            auto bytes = volume.upload();
+            require(bytes == counters.bytes, "Explicit upload payload accounting mismatch");
+            require(volume.upload() == 0, "Clean world upload transferred data");
+            // Inspect the actual GL_R8 coarse texture after every mutation path.
+            glActiveTexture(GL_TEXTURE1);
+            auto cells = (size + 7) / 8;
+            std::vector<GLubyte> coarse(std::size_t(cells.x) * cells.y * cells.z);
+            GLint bound = 0;
+            glGetIntegerv(GL_TEXTURE_BINDING_3D, &bound);
+            require(bound != 0, "Explicit world upload did not bind occupancy texture");
+            glGetTexImage(GL_TEXTURE_3D, 0, GL_RED, GL_UNSIGNED_BYTE, coarse.data());
+            for (int cz=0; cz<cells.z; ++cz) for (int cy=0; cy<cells.y; ++cy) for (int cx=0; cx<cells.x; ++cx) {
+                bool occupied = false;
+                for (int z=cz*8; z<std::min(cz*8+8,size.z); ++z)
+                    for (int y=cy*8; y<std::min(cy*8+8,size.y); ++y)
+                        for (int x=cx*8; x<std::min(cx*8+8,size.x); ++x)
+                            occupied |= volume.getVoxel(x,y,z) != 0;
+                require(coarse[cx + cells.x * (cy + cells.y * cz)] == (occupied ? 255 : 0),
+                        "Coarse texture differs from actual voxel occupancy");
+            }
+            glActiveTexture(GL_TEXTURE0);
+            // Axis rays pass through voxel interiors: raster interpolation can
+            // perturb an ideal ray lying exactly along a material boundary.
+            // Diagonal ties and every framebuffer pixel still require exact
+            // reference/accelerated parity below.
+            std::vector<glm::vec3> cameras = {{-1,.51f,.51f},{2,.51f,.51f},{.51f,-1,.51f},
+                {.51f,2,.51f},{.51f,.51f,-1},{.51f,.51f,2},{-1,-1,-1},{.51f,.51f,.51f}};
+            for (auto camera : cameras) {
+                glm::vec3 target = camera == cameras.back() ? glm::vec3(1,.51f,.51f) : glm::vec3(.51f);
+                auto direction = glm::normalize(target-camera);
+                auto up = std::abs(direction.y) > .99f ? glm::vec3(0,0,1) : glm::vec3(0,1,0);
+                auto clip = glm::perspective(glm::radians(50.0f), 1.0f, .001f, 20.0f) * glm::lookAt(camera,target,up);
+                for (bool material : {true,false}) {
+                    glUseProgram(shader_program);
+                    glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),material);
+                    glUniform1i(glGetUniformLocation(shader_program,"world_lighting"),true);
+                    volume.setAcceleration(false);
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                    render(volume,clip,camera);
+                    auto reference = capture(pixels);
+                    if (material) checkCenterRay(volume,camera,target,clip,reference,pixels);
+                    volume.setAcceleration(true);
+                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                    render(volume,clip,camera);
+                    auto accelerated = capture(pixels);
+                    require(reference.color == accelerated.color, "World accelerated color/material parity failed");
+                    require(reference.depth == accelerated.depth, "World accelerated exact depth parity failed");
+                    for (float depth : accelerated.depth) require(std::isfinite(depth), "World depth is not finite");
+                    ++comparisons;
+                }
+            }
+        }
+    }
+    glUseProgram(shader_program);
+    glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),false);
+    glUseProgram(0);
+    glViewport(0,0,framebuffer_pixels,framebuffer_pixels);
+    checkGL("world reference/accelerated smoke");
+    log << "world,parity_pairs=" << comparisons << ",material-and-lit-color=byte-exact,depth=bit-exact,center-slab-oracle=pass,occupancy-readback=pass\n";
+}
+
+void skySmoke(GLuint voxel_program, std::ostream& log) {
+    auto sky_program = program("worldsky");
+    GLuint vao;
+    glGenVertexArrays(1,&vao);
+    glm::vec3 camera(-1,.5f,.5f);
+    auto clip = glm::perspective(glm::radians(50.0f),1.0f,.001f,20.0f) *
+        glm::lookAt(camera,glm::vec3(.5f),glm::vec3(0,1,0));
+    auto inverse = glm::inverse(clip);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glUseProgram(sky_program);
+    glUniformMatrix4fv(glGetUniformLocation(sky_program,"clip_to_world"),1,GL_FALSE,glm::value_ptr(inverse));
+    glUniform3fv(glGetUniformLocation(sky_program,"camera_position"),1,glm::value_ptr(camera));
+    glBindVertexArray(vao);
+    glDrawArrays(GL_TRIANGLES,0,3);
+    auto sky = capture(framebuffer_pixels);
+    glBindVertexArray(0);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    VoxelVolume volume(1,1,1,Transform());
+    volume.setProgram(voxel_program);
+    volume.setWorldStyle(true);
+    volume.setVoxel(0,0,0,5);
+    glUseProgram(voxel_program);
+    glUniform1i(glGetUniformLocation(voxel_program,"world_lighting"),true);
+    glUniform1i(glGetUniformLocation(voxel_program,"world_debug_material"),false);
+    glUniform1f(glGetUniformLocation(voxel_program,"world_fog_radius"),.01f);
+    render(volume,clip,camera);
+    auto fogged = capture(framebuffer_pixels);
+    for (std::size_t i=0; i<sky.color.size(); ++i)
+        require(std::abs(int(sky.color[i])-int(fogged.color[i])) <= 1,
+                "Fully fogged geometry does not converge to actual fullscreen sky");
+    int center = framebuffer_pixels/2 + framebuffer_pixels*(framebuffer_pixels/2);
+    require(fogged.depth[center] < 1, "Sky/fog parity scene did not draw geometry");
+    glUseProgram(voxel_program);
+    glUniform1f(glGetUniformLocation(voxel_program,"world_fog_radius"),world::FogDistance);
+    glUseProgram(0);
+    glDeleteVertexArrays(1,&vao);
+    glDeleteProgram(sky_program);
+    checkGL("fullscreen sky and fog smoke");
+    log << "world,fullscreen-sky-and-fog-convergence=pass\n";
+}
+
 struct Options {
     int volumes=100, dynamic_volumes=4, frames=100, warmup=10;
+    int pairs=1;
+    bool world_lighting=true;
+    std::uint64_t seed = world::DefaultSeed;
     bool strict=false;
+    std::string pose = "spawn";
     std::string label="candidate", scenario="all", output="voxel-benchmark";
 };
 Options options(int argc, char** argv) {
@@ -348,13 +562,178 @@ Options options(int argc, char** argv) {
         else if (arg=="--frames") result.frames=std::stoi(value);
         else if (arg=="--warmup") result.warmup=std::stoi(value);
         else if (arg=="--pixels") framebuffer_pixels=std::stoi(value);
+        else if (arg=="--pairs") result.pairs=std::stoi(value);
+        else if (arg=="--world-lighting") result.world_lighting=std::stoi(value)!=0;
+        else if (arg=="--pose") result.pose=value;
+        else if (arg=="--seed") result.seed=std::stoull(value);
         else throw std::runtime_error("Unknown option "+arg);
     }
     require(result.volumes>0 && result.dynamic_volumes>0 && result.frames>0 && result.warmup>=0,"Invalid workload sizes");
     require(framebuffer_pixels>0 && framebuffer_pixels<=4096,"Invalid framebuffer size");
-    require(result.scenario=="all" || result.scenario=="smoke" || result.scenario=="static" || result.scenario=="local" || result.scenario=="scattered" || result.scenario=="full","Invalid scenario");
+    require(result.pose=="spawn" || result.pose=="cave" || result.pose=="underside","Invalid world pose");
+    require(result.pairs>0,"Invalid pair count");
+    require(result.scenario=="all" || result.scenario=="islands" || result.scenario=="world" || result.scenario=="smoke" || result.scenario=="static" || result.scenario=="local" || result.scenario=="scattered" || result.scenario=="full","Invalid scenario");
     return result;
 }
+void worldBenchmark(Options const& opts, GLuint shader_program, std::ostream& log) {
+    std::ofstream csv(opts.output + "-world.csv");
+    require(bool(csv), "Cannot open world benchmark CSV");
+    csv << "pair,frame,accelerated,lighting,volumes,gpu_ms,cpu_submit_ms,cpu_finish_ms,uploaded_bytes\n";
+    bool const islands = opts.scenario == "islands";
+    const int side = int(std::ceil(std::sqrt(double(opts.volumes))));
+    glm::vec3 center(side * .5f,.5f,side * .5f);
+    glm::vec3 camera = center + glm::vec3(side * .8f,side * .7f,side * 1.1f);
+    auto clip = glm::perspective(glm::radians(45.0f),1.0f,.01f,1000.0f) *
+                glm::lookAt(camera,center,glm::vec3(0,1,0));
+    if (islands) {
+        camera = world::spawnPosition(opts.seed);
+        center = world::spawnTarget(opts.seed);
+        if (opts.pose == "cave") { camera = glm::vec3(0,1.5f,19.5f); center = glm::vec3(0,.5f,14.7f); }
+        else if (opts.pose == "underside") { camera = glm::vec3(0,-12,26); center = glm::vec3(0,-6,0); }
+        clip = glm::perspective(glm::radians(65.0f),1.0f,.01f,1000.0f) *
+            glm::lookAt(camera,center,glm::vec3(0,1,0));
+    }
+    std::vector<std::unique_ptr<VoxelVolume>> volumes;
+    std::array<glm::vec3,256> palette;
+    for (int i=0; i<256; ++i) palette[i] = glm::vec3(.3f,.5f,.2f) * (.7f + .02f * (i >> 4));
+    counters = {};
+    auto generation_start = Clock::now();
+    if (islands) {
+        palette = world::worldPalette();
+        auto camera_key = world::keyAt(camera);
+        constexpr int radius = world::LoadRadius;
+        for (int z=-radius; z<=radius; ++z) for (int y=-radius; y<=radius; ++y) for (int x=-radius; x<=radius; ++x) {
+            if (x*x+y*y+z*z > radius*radius) continue;
+            world::ChunkKey key{camera_key.x+x,camera_key.y+y,camera_key.z+z};
+            if (!world::valid(key)) continue;
+            auto data = world::generateChunk(opts.seed,key);
+            if (std::none_of(data.begin(),data.end(),[](auto material) { return material != 0; })) continue;
+            auto position = world::origin(key);
+            auto volume = std::make_unique<VoxelVolume>(32,32,32,
+                Transform().translate(position.x,position.y,position.z).scale(world::ChunkSpan));
+            volume->setProgram(shader_program);
+            volume->setWorldStyle(true);
+            volume->setData(data);
+            volume->upload();
+            volumes.push_back(std::move(volume));
+        }
+    } else for (int i=0; i<opts.volumes; ++i) {
+        auto volume = std::make_unique<VoxelVolume>(32,32,32,
+            Transform().translate(float(i%side),0,float(i/side)));
+        volume->setProgram(shader_program);
+        volume->setWorldStyle(true);
+        volume->updateVoxels([i](int x,int y,int z,GLubyte) {
+            float dx=x-15.5f, dz=z-15.5f;
+            bool solid = dx*dx+dz*dz < 210 && y < 12 + 3*std::sin((x+z+i)*.2f) && y > 3;
+            bool cave = (y-8)*(y-8)+(z-16)*(z-16) < 10;
+            return GLubyte(solid && !cave ? 1 + (x+z)%5 + 16*((x+y+z)%4) : 0);
+        });
+        volume->upload();
+        volumes.push_back(std::move(volume));
+    }
+    log << "world,initial_bytes=" << counters.bytes << ",initial_texture_allocations=" << counters.image_calls
+        << ",workload=" << (islands ? "generated-islands" : "32-cubed-cave-islands")
+        << ",load_radius=" << (islands ? world::LoadRadius : 0)
+        << ",pose=" << opts.pose
+        << ",seed=" << opts.seed << ",volumes=" << volumes.size()
+        << ",generation-and-upload_ms=" << milliseconds(generation_start)
+        << ",lighting=" << opts.world_lighting << '\n';
+    glUseProgram(shader_program);
+    glUniform3fv(glGetUniformLocation(shader_program,"colorPalette"),256,glm::value_ptr(palette[0]));
+    glUniform1i(glGetUniformLocation(shader_program,"world_lighting"),opts.world_lighting);
+    glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),false);
+    glUniform1f(glGetUniformLocation(shader_program,"world_fog_radius"),islands ? world::FogDistance : 1000.0f);
+    GLuint sky_program = 0, sky_vao = 0;
+    if (islands) {
+        sky_program = program("worldsky");
+        glGenVertexArrays(1,&sky_vao);
+        glUseProgram(sky_program);
+        auto inverse = glm::inverse(clip);
+        glUniformMatrix4fv(glGetUniformLocation(sky_program,"clip_to_world"),1,GL_FALSE,glm::value_ptr(inverse));
+        glUniform3fv(glGetUniformLocation(sky_program,"camera_position"),1,glm::value_ptr(camera));
+    }
+    auto draw_scene = [&](bool verify = false, bool sky = true) {
+        if (sky_program && sky) {
+            glDisable(GL_DEPTH_TEST); glDepthMask(GL_FALSE);
+            glUseProgram(sky_program); glBindVertexArray(sky_vao);
+            glDrawArrays(GL_TRIANGLES,0,3);
+            glBindVertexArray(0); glDepthMask(GL_TRUE); glEnable(GL_DEPTH_TEST);
+        }
+        for (auto& volume : volumes) render(*volume,clip,camera,verify);
+    };
+    // Whole generated scene parity is proven before timing, with material bytes
+    // and actual hit depths as well as identical controllable lighting.
+    for (bool material : {true,false}) {
+        glUseProgram(shader_program);
+        glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),material);
+        Capture reference;
+        for (bool accelerated : {false,true}) {
+            for (auto& volume : volumes) volume->setAcceleration(accelerated);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            draw_scene(false,!material);
+            auto frame = capture(framebuffer_pixels);
+            auto suffix = std::string(material ? "-material" : "-shaded") + (accelerated ? "-accelerated" : "-reference");
+            saveImage(opts.output + suffix + ".rgba");
+            std::ofstream depth_file(opts.output + suffix + ".depth",std::ios::binary);
+            require(bool(depth_file),"Cannot write world depth capture");
+            depth_file.write(reinterpret_cast<char const*>(frame.depth.data()),std::streamsize(frame.depth.size()*sizeof(float)));
+            if (!accelerated) reference = std::move(frame);
+            else {
+                require(reference.color == frame.color,"Whole-world material/shaded parity failed");
+                require(reference.depth == frame.depth,"Whole-world exact depth parity failed");
+            }
+        }
+    }
+    log << "world,whole-scene-material-and-shaded-parity=byte-exact,depth=bit-exact\n";
+    GLuint timer;
+    glGenQueries(1,&timer);
+    for (int pair=0; pair<opts.pairs; ++pair) {
+        std::array<std::vector<double>,2> gpu_times, cpu_times;
+        for (int frame=-opts.warmup; frame<opts.frames; ++frame) {
+            // Alternate order each paired frame to avoid a consistently warm path.
+            for (int order=0; order<2; ++order) {
+                int accelerated = (order + frame + opts.warmup + pair) % 2;
+                for (auto& volume : volumes) volume->setAcceleration(accelerated != 0);
+                glFinish();
+                counters = {};
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                auto start = Clock::now();
+                glBeginQuery(GL_TIME_ELAPSED,timer);
+                draw_scene();
+                glEndQuery(GL_TIME_ELAPSED);
+                double submit_ms = milliseconds(start);
+                glFinish();
+                double finish_ms = milliseconds(start);
+                GLuint64 nanoseconds = 0;
+                glGetQueryObjectui64v(timer,GL_QUERY_RESULT,&nanoseconds);
+                double gpu_ms = double(nanoseconds) / 1e6;
+                require(counters.bytes == 0, "Unchanged world benchmark uploaded voxels");
+                if (frame>=0) {
+                    gpu_times[accelerated].push_back(gpu_ms);
+                    cpu_times[accelerated].push_back(finish_ms);
+                    csv << pair << ',' << frame << ',' << accelerated << ',' << opts.world_lighting << ','
+                        << volumes.size() << ',' << gpu_ms << ',' << submit_ms << ',' << finish_ms << ',' << counters.bytes << '\n';
+                }
+            }
+        }
+        for (int accelerated=0; accelerated<2; ++accelerated) {
+            auto& gpu = gpu_times[accelerated];
+            auto& cpu = cpu_times[accelerated];
+            std::sort(gpu.begin(),gpu.end()); std::sort(cpu.begin(),cpu.end());
+            auto percentile = [](auto const& samples, double p) { return samples[std::size_t(std::ceil(samples.size()*p))-1]; };
+            log << "world,pair=" << pair << ",accelerated=" << accelerated
+                << ",gpu_p50_ms=" << percentile(gpu,.5) << ",gpu_p95_ms=" << percentile(gpu,.95)
+                << ",cpu_finish_p50_ms=" << percentile(cpu,.5) << ",cpu_finish_p95_ms=" << percentile(cpu,.95) << '\n';
+        }
+    }
+    glDeleteQueries(1,&timer);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    draw_scene(true);
+    log << "world,image_hash=" << saveImage(opts.output + "-world.rgba") << '\n';
+    checkGL("world paired benchmark");
+    if (sky_program) { glDeleteVertexArrays(1,&sky_vao); glDeleteProgram(sky_program); }
+}
+
 void benchmark(std::string const& scenario, Options const& opts, GLuint shader_program, std::ostream& csv, std::ostream& log) {
     const int count=scenario=="full" ? opts.dynamic_volumes : opts.volumes;
     const int side=int(std::ceil(std::sqrt(double(count))));
@@ -417,11 +796,14 @@ int main(int argc,char** argv) {
         csv << "label,scenario,volumes,width,height,depth,frame,uploaded_bytes,image_calls,subimage_calls,upload_cpu_ms,upload_drained_ms,mutation_ms,render_finish_ms,whole_frame_ms,isolate_uploads\n";
         Surface surface;
         for(auto item:{GL_VENDOR,GL_RENDERER,GL_VERSION,GL_SHADING_LANGUAGE_VERSION}) log << item << '=' << glGetString(item) << '\n';
-        log << "label=" << opts.label << ",warmup=" << opts.warmup << ",frames=" << opts.frames << ",framebuffer=" << framebuffer_pixels << 'x' << framebuffer_pixels << ",shader=fvta_step_material,scene=sinusoidal-heightfield(full:solid),isolate_uploads=" << isolate_uploads << '\n';
+        log << "label=" << opts.label << ",warmup=" << opts.warmup << ",frames=" << opts.frames << ",framebuffer=" << framebuffer_pixels << 'x' << framebuffer_pixels << ",scenario=" << opts.scenario << ",isolate_uploads=" << isolate_uploads << '\n';
         auto shader_program=program();
         smoke(shader_program,opts.strict,log,opts.output);
         raycastSmoke(opts.strict,log);
+        worldSmoke(shader_program,log);
+        skySmoke(shader_program,log);
         if(opts.scenario!="smoke") for(auto const* scenario:{"static","local","scattered","full"}) if(opts.scenario=="all"||opts.scenario==scenario) benchmark(scenario,opts,shader_program,csv,log);
+        if(opts.scenario=="all" || opts.scenario=="world" || opts.scenario=="islands") worldBenchmark(opts,shader_program,log);
         glDeleteProgram(shader_program); checkGL("shutdown");
         std::cout << "PASS " << opts.output << " (.csv, .txt, .rgba)\n";
         return 0;

@@ -3,6 +3,13 @@ Revision history for CG_Labs
 Unreleased
 ==========
 
+* Add a seeded floating-island world with caves, arches, free flight, and carving.
+  Keep the original scenes available through ``--demo``.
+* Stream distance-selected chunks within fixed residency and compressed-cache
+  budgets. Save edits before display, with atomic brush recovery on Linux/macOS.
+* Skip empty voxel cells incrementally, write actual hit depth, and add palette,
+  sunlight, sky, and fog shading. Compare reference/accelerated color and depth
+  using native OpenGL benchmarks; exercise saves and streaming with real files.
 * Keep voxel textures resident on the GPU and upload only edited slice regions.
   Unchanged frames and no-op edits perform no voxel transfers.
 * Reject out-of-range voxel coordinates on each axis and release volume-owned
