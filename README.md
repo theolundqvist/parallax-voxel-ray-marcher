@@ -48,10 +48,12 @@ is five chunks with a six-chunk retention preference and a hard limit of 640
 resident keys; frustum culling only suppresses draws. Each chunk is 32³ voxels at
 0.25 world units per voxel. One background worker, eight queued requests, two
 reply slots, and four normal chunk ingests per frame bound streaming work.
-One committed brush may instead ingest up to eight chunks.
+Brushes stay atomic: one frame can ingest up to eight edited chunks after at most
+three normal replies, for eleven chunk ingests total.
 
-Inactive chunks use the smallest of uniform, run-length, or raw encoding in a
-64 MiB/2,048-entry RAM cache. Edited chunks remain on disk; unedited evicted chunks
+A 64 MiB/2,048-entry RAM refill cache uses uniform, run-length, or raw encoding,
+whichever is smallest, and can overlap resident chunks. Edited chunks remain on
+disk; unedited evicted chunks
 regenerate from the seed. The resident material payload is at most 20 MiB each on
 CPU and GPU, plus occupancy, meshes, bounded transaction buffers, and driver
 overhead. Cache limits count allocated encoded payload capacity, not just lengths.
