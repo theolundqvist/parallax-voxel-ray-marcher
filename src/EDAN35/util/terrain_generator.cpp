@@ -7,7 +7,7 @@ private:
     const int nbr_threads = std::thread::hardware_concurrency() - 1;
     ctpl::thread_pool queue = ctpl::thread_pool(nbr_threads);
     typedef struct result_t {
-        terrain *terrain = nullptr;
+        ::terrain *terrain = nullptr;
         bool retrieved = false;
     } result_t;
     std::vector<result_t> results;

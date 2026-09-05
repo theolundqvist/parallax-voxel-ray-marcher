@@ -5,12 +5,20 @@
 #include "core/opengl.hpp"
 #include <glm/gtx/component_wise.hpp>
 #include "../util/colorPalette.hpp"
+#include <algorithm>
+#include <vector>
 
 
 class VoxelVolume {
 private:
     GLubyte *texels;
     GLuint texture{};
+    struct DirtySlice {
+        int min_x, min_y, max_x, max_y;
+        bool operator==(DirtySlice const &) const = default;
+    };
+    std::vector<DirtySlice> dirty_slices;
+    bool dirty = false;
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
     std::vector<glm::vec3> colorPalette = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
@@ -22,15 +30,14 @@ public:
     Transform transform;
     float voxel_size = 0.1f;
     int LOD = 1;
-    int W;
-    int H;
-    int D;
+    const int W;
+    const int H;
+    const int D;
 
-    VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf) {
-        W = WIDTH;
-        H = HEIGHT;
-        D = DEPTH;
+    VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf)
+        : W(WIDTH), H(HEIGHT), D(DEPTH) {
         this->transform = tf;
+        dirty_slices.resize(D, {W, H, 0, 0});
 
         voxel_size = 1.0f / (float) W;
 
@@ -39,11 +46,18 @@ public:
         bounding_box = parametric_shapes::createCube(1.0f, 1.0f, 1.0f);
     }
 
+    VoxelVolume(VoxelVolume const &) = delete;
+    VoxelVolume &operator=(VoxelVolume const &) = delete;
+
     void setLOD(int lod) {
         LOD = lod;
     }
 
     ~VoxelVolume() {
+        glDeleteTextures(1, &texture);
+        glDeleteVertexArrays(1, &bounding_box.vao);
+        glDeleteBuffers(1, &bounding_box.bo);
+        glDeleteBuffers(1, &bounding_box.ibo);
         free(texels);
     }
 
@@ -59,8 +73,7 @@ public:
     void setProgram(GLuint shaderProgram) { this->program = shaderProgram; }
 
     int getVoxel(int x, int y, int z) const {
-        int index = x + y * W + z * W * H;
-        if (index >= W * H * D || index < 0) return -1;
+        if (x < 0 || x >= W || y < 0 || y >= H || z < 0 || z >= D) return -1;
         return texels[x + y * W + z * W * H];
     }
 
@@ -69,9 +82,12 @@ public:
     }
 
     bool setVoxel(int x, int y, int z, GLubyte value) {
+        if (x < 0 || x >= W || y < 0 || y >= H || z < 0 || z >= D) return false;
         auto i = x + y * W + z * W * H;
-        if (i < 0 || i >= W * H * D) return false;
-        texels[i] = value;
+        if (texels[i] != value) {
+            texels[i] = value;
+            markDirty(x, y, z);
+        }
         return true;
     }
 
@@ -94,22 +110,25 @@ public:
     }
 
     void updateVoxels(std::function<GLubyte(int x,int y,int z, GLubyte previous)> const get_material){
-        for (int x = 0; x < W; x++) {
+        for (int z = 0; z < D; z++) {
             for (int y = 0; y < H; y++) {
-                for (int z = 0; z < D; z++) {
-                    int prev = texels[x + y * W + z * W * H];
-                    texels[x + y * W + z * W * H] = get_material(x,y,z, prev);
+                for (int x = 0; x < W; x++) {
+                    auto i = x + y * W + z * W * H;
+                    auto value = get_material(x, y, z, texels[i]);
+                    if (texels[i] != value) {
+                        texels[i] = value;
+                        markDirty(x, y, z);
+                    }
                 }
             }
         }
     }
 
     void setVolumeData3D(GLubyte ***data) {
-        texels = (GLubyte *) calloc(W * H * D, sizeof(GLubyte));
         for (int x = 0; x < W; x++) {
             for (int y = 0; y < H; y++) {
                 for (int z = 0; z < D; z++) {
-                    texels[x + y * W + z * W * H] = data[x][y][z];
+                    setVoxel(x, y, z, data[x][y][z]);
                 }
             }
         }
@@ -128,7 +147,7 @@ public:
         if (!IntersectionTests::PointInBox(local_pos, local_space_AABB))
             return {.miss=true};
 
-        auto index = localToIndex(local_pos);
+        auto index = glm::min(localToIndex(local_pos), size() - 1);
         return {
                 .miss=false,
                 .index=index,
@@ -199,21 +218,21 @@ public:
                 //camera inside BB
                 hit.near = local_origin;
             }
-            auto P = transform.apply(hit.near); //world
+            auto local_pos = glm::clamp(hit.near, local_space_AABB.min, local_space_AABB.max);
             float step_size = 1.0 / 10;
             auto step = normalize(w_direction * transform.getScale()) * voxel_size * step_size;
+            auto local_step = inverse.applyRotation(step);
             int i = 0;
             int max_step = (int) (1.0 / step_size * 1.0 / step_size * 1.0 / voxel_size) * 30;
             for (i = 0; i < max_step; ++i) {
-                auto INDEX = localToIndex(inverse.apply(P));
+                if (!IntersectionTests::PointInBox(local_pos, local_space_AABB)) break;
+                // The closed box's maximum faces belong to the last interior voxel.
+                auto INDEX = glm::min(localToIndex(local_pos), size() - 1);
                 auto mat = getVoxel(INDEX);
                 if (mat > 0) {
-                    return {false, INDEX, (GLubyte)mat, this, P};
+                    return {false, INDEX, (GLubyte)mat, this, transform.apply(local_pos)};
                 }
-                else if (mat == -1) {
-                    return {true };
-                }
-                P += step;
+                local_pos += local_step;
             }
         }
         return {.miss = true};
@@ -235,9 +254,6 @@ public:
         // load shader program
         glUseProgram(program);
 
-        // generate texture object
-        glGenTextures(1, &texture);
-
         // Set texture unit for sampler
         glUniform1i(glGetUniformLocation(program, "volume"), 0);
         // Active texture unit before use
@@ -245,16 +261,7 @@ public:
         // Bind 3D texture
         glBindTexture(GL_TEXTURE_3D, texture);
 
-        // setup texture
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glBindTexture(GL_TEXTURE_3D, texture);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RED, W, H, D, 0, GL_RED, GL_UNSIGNED_BYTE,
-                     texels);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        uploadTexture();
 
 
         // uniforms
@@ -268,7 +275,6 @@ public:
         renderMesh(bounding_box);
 
         // Unbind texture and shader program
-        glDeleteTextures(1, &texture);
         glBindTexture(GL_TEXTURE_3D, 0);
         glUseProgram(0u);
 
@@ -280,6 +286,70 @@ public:
     }
     
 private:
+    void markDirty(int x, int y, int z) {
+        if (texture == 0) return;
+        auto &slice = dirty_slices[z];
+        if (x >= slice.min_x && x < slice.max_x &&
+            y >= slice.min_y && y < slice.max_y) return;
+        slice.min_x = std::min(slice.min_x, x);
+        slice.min_y = std::min(slice.min_y, y);
+        slice.max_x = std::max(slice.max_x, x + 1);
+        slice.max_y = std::max(slice.max_y, y + 1);
+        dirty = true;
+    }
+
+    void uploadTexture() {
+        if (texture != 0 && !dirty) return;
+
+        constexpr GLenum unpack_settings[] = {
+            GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH, GL_UNPACK_IMAGE_HEIGHT,
+            GL_UNPACK_SKIP_PIXELS, GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_IMAGES
+        };
+        GLint previous[6];
+        for (int i = 0; i < 6; ++i) {
+            glGetIntegerv(unpack_settings[i], &previous[i]);
+            glPixelStorei(unpack_settings[i], i == 0 ? 1 : 0);
+        }
+        GLint unpack_buffer;
+        glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack_buffer);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+        if (texture == 0) {
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_3D, texture);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_R8, W, H, D, 0, GL_RED,
+                         GL_UNSIGNED_BYTE, texels);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        } else {
+            // Strides address the CPU volume directly, without packing a staging copy.
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, W);
+            glPixelStorei(GL_UNPACK_IMAGE_HEIGHT, H);
+            for (int z = 0; z < D;) {
+                auto const region = dirty_slices[z];
+                if (region.max_x == 0) {
+                    ++z;
+                    continue;
+                }
+                int end_z = z + 1;
+                while (end_z < D && dirty_slices[end_z] == region) ++end_z;
+                glTexSubImage3D(GL_TEXTURE_3D, 0, region.min_x, region.min_y, z,
+                                region.max_x - region.min_x, region.max_y - region.min_y,
+                                end_z - z, GL_RED, GL_UNSIGNED_BYTE,
+                                texels + region.min_x + region.min_y * W + z * W * H);
+                std::fill(dirty_slices.begin() + z, dirty_slices.begin() + end_z,
+                          DirtySlice{W, H, 0, 0});
+                z = end_z;
+            }
+        }
+        dirty = false;
+        for (int i = 0; i < 6; ++i) glPixelStorei(unpack_settings[i], previous[i]);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer);
+    }
+
     void setUniforms(glm::mat4 const &tf,
                      glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
         // shader manager

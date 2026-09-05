@@ -15,10 +15,11 @@
 #include "../util/AppState.cpp"
 #include <map>
 #include <iostream>
+#include <memory>
 
 class App {
 private:
-    VoxelRenderer *renderer;
+    std::unique_ptr<VoxelRenderer> renderer;
     bool showCrosshair = false;
     bool dragToMove = true;
     bool showFps = true;
@@ -66,7 +67,7 @@ public:
         //GameObject::addShaderToLibrary(shaderManager, "fallback", [](GLuint p) {});
         //hitMin->setShader("fallback");
         //hitMax->setShader("fallback");
-        this->renderer = new VoxelRenderer(cam, shaderManager, elapsed_time_ms);
+        this->renderer = std::make_unique<VoxelRenderer>(cam, shaderManager, elapsed_time_ms);
         // create volumes and renderer
         auto tf = Transform().translate(glm::vec3(-1.5)).scale(3.0f);
         //renderer->remove_volumes();

@@ -33,3 +33,14 @@ target_link_libraries (EDAN35_Project PRIVATE assignment_setup)
 install (TARGETS EDAN35_Project DESTINATION bin)
 
 copy_dlls (EDAN35_Project "${CMAKE_CURRENT_BINARY_DIR}")
+
+option (LUGGCGL_BUILD_VOXEL_BENCHMARK "Build the native voxel upload benchmark" OFF)
+if (LUGGCGL_BUILD_VOXEL_BENCHMARK)
+	add_executable (voxel_benchmark benchmark/voxel_benchmark.cpp util/colorPalette.cpp)
+	target_link_libraries (voxel_benchmark PRIVATE assignment_setup)
+	if (APPLE)
+		target_link_libraries (voxel_benchmark PRIVATE "-framework OpenGL")
+	endif ()
+	target_compile_definitions (voxel_benchmark PRIVATE
+		VOXEL_BENCHMARK_SHADER_DIR="${CMAKE_SOURCE_DIR}/shaders/EDAN35")
+endif ()

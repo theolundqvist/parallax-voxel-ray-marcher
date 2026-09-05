@@ -30,6 +30,8 @@ if (NOT glm_FOUND)
 		                         -DCMAKE_INSTALL_PREFIX=${glm_INSTALL_DIR}
 		                         -DCMAKE_BUILD_TYPE=Release
 					 -DGLM_TEST_ENABLE=OFF
+		                         -DBUILD_STATIC_LIBS=OFF
+		                         -DBUILD_SHARED_LIBS=OFF
 		                         ${glm_SOURCE_DIR}
 		OUTPUT_VARIABLE stdout
 		ERROR_VARIABLE stderr
