@@ -547,8 +547,12 @@ Pose mountainPose(std::string const& name, std::uint64_t seed) {
     auto summit = extremeColumn(seed, glm::dvec2(coarse.x, coarse.z), 50, 5, true);
     auto sea = nearestColumn(seed, glm::dvec2(summit.x, summit.z), 6000, 50, [](double h) { return h < SeaLevel; });
     require(bool(sea), "No sea within 6 km of the summit");
-    // The 5 m search grid can miss a neighbouring column up to ~5 m higher on alpine slopes.
-    return {worldAt(glm::dvec3(summit.x, summit.y + 12, summit.z)), worldAt(glm::dvec3(sea->x, SeaLevel, sea->z))};
+    // The 5 m search grid can miss a neighbouring column up to ~5 m higher on alpine slopes. Look
+    // towards the nearest sea but no steeper than 15 degrees down so the horizon stays in frame.
+    glm::dvec3 eye(summit.x, summit.y + 12, summit.z);
+    double run = glm::length(glm::dvec2(sea->x, sea->z) - glm::dvec2(summit.x, summit.z));
+    double targetY = std::max(SeaLevel, eye.y - run * std::tan(glm::radians(15.0)));
+    return {worldAt(eye), worldAt(glm::dvec3(sea->x, targetY, sea->z))};
 }
 
 struct Resident {
