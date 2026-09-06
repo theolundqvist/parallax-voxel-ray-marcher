@@ -23,7 +23,7 @@ struct UnpackState {
     }
 };
 
-GLuint texture3D(GLenum internalFormat, glm::ivec3 size, GLenum format, GLenum type) {
+GLuint texture3D(GLenum internalFormat, glm::ivec3 size, GLenum format, GLenum type, void const* data = nullptr) {
     GLuint id = 0;
     glGenTextures(1, &id);
     glBindTexture(GL_TEXTURE_3D, id);
@@ -33,7 +33,7 @@ GLuint texture3D(GLenum internalFormat, glm::ivec3 size, GLenum format, GLenum t
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAX_LEVEL, 0);
-    glTexImage3D(GL_TEXTURE_3D, 0, GLint(internalFormat), size.x, size.y, size.z, 0, format, type, nullptr);
+    glTexImage3D(GL_TEXTURE_3D, 0, GLint(internalFormat), size.x, size.y, size.z, 0, format, type, data);
     return id;
 }
 
@@ -93,8 +93,10 @@ std::size_t BrickPool::upload(std::uint16_t slot, ChunkData const& data) {
 LevelAtlas::~LevelAtlas() { glDeleteTextures(1, &atlas); }
 
 void LevelAtlas::init() {
+    std::uint16_t empty[PageSize * PageSize * PageSize * LevelCount] = {};
+    UnpackState unpack;
     atlas = texture3D(GL_R16UI, glm::ivec3(PageSize, PageSize, PageSize * LevelCount), GL_RED_INTEGER,
-                      GL_UNSIGNED_SHORT);
+                      GL_UNSIGNED_SHORT, empty);
 }
 
 void LevelTable::init(LevelAtlas const& levels, int level) {

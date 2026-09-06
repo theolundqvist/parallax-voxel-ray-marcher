@@ -51,6 +51,7 @@ struct Counters {
     double upload_cpu_ms = 0, upload_drained_ms = 0;
 } counters;
 bool isolate_uploads = false;
+bool poison_empty_atlas = false;
 int framebuffer_pixels = 1000;
 PFNGLTEXIMAGE3DPROC real_image;
 PFNGLTEXSUBIMAGE3DPROC real_subimage;
@@ -68,6 +69,11 @@ void APIENTRY image(GLenum target, GLint level, GLint internal, GLsizei w,
                     GLenum type, void const* data) {
     if (isolate_uploads) glFinish();
     auto start = Clock::now();
+    std::vector<GLushort> undefined;
+    if (poison_empty_atlas && internal == GL_R16UI && !data) {
+        undefined.assign(std::size_t(w) * h * d, 0xffff);
+        data = undefined.data();
+    }
     real_image(target, level, internal, w, h, d, border, format, type, data);
     counters.upload_cpu_ms += milliseconds(start);
     if (isolate_uploads) { glFinish(); counters.upload_drained_ms += milliseconds(start); }
@@ -227,6 +233,25 @@ std::uint64_t saveImage(std::string const& path) {
     output.write(reinterpret_cast<char const*>(image.data()), image.size());
     return hash(image);
 }
+void atlasSmoke(std::ostream& log) {
+    world::LevelAtlas atlas;
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    // Allocation without data may legally return nonzero GPU memory.
+    poison_empty_atlas = true;
+    atlas.init();
+    poison_empty_atlas = false;
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    std::vector<GLushort> entries(world::PageSize * world::PageSize * world::PageSize * world::LevelCount);
+    glBindTexture(GL_TEXTURE_3D, atlas.texture());
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glGetTexImage(GL_TEXTURE_3D, 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, entries.data());
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    require(std::all_of(entries.begin(), entries.end(), [](auto entry) { return entry == 0; }),
+            "New page atlas contains nonempty entries");
+    checkGL("page atlas initialization");
+    log << "smoke,page-atlas-initialization=pass\n";
+}
+
 void smoke(GLuint shader_program, bool strict, std::ostream& log, std::string const& prefix) {
     glm::vec3 camera(2, 1.7f, 2.5f);
     auto clip = glm::perspective(glm::radians(40.0f), 1.0f, 0.1f, 20.0f) * glm::lookAt(camera, glm::vec3(0.5f), glm::vec3(0,1,0));
@@ -1131,6 +1156,7 @@ int main(int argc,char** argv) {
         Surface surface;
         for(auto item:{GL_VENDOR,GL_RENDERER,GL_VERSION,GL_SHADING_LANGUAGE_VERSION}) log << item << '=' << glGetString(item) << '\n';
         log << "label=" << opts.label << ",warmup=" << opts.warmup << ",frames=" << opts.frames << ",framebuffer=" << framebuffer_pixels << 'x' << framebuffer_pixels << ",scenario=" << opts.scenario << ",isolate_uploads=" << isolate_uploads << '\n';
+        atlasSmoke(log);
         if(mountains) {
             mountainsBenchmark(opts,prefix,csv,log);
             checkGL("shutdown");

@@ -118,7 +118,7 @@ The terrain is a deterministic sinusoidal heightfield, not the paper's original 
 CSV output separates uploaded bytes/calls, CPU upload time, CPU mutation time, and
 GPU-completed frame time. Texture readbacks are checked and raw RGBA images are saved
 outside timing; `--scenario smoke --strict` checks mutations, no-op updates, bounds, unpack
-state, and texture lifetime. `--isolate-uploads` adds GPU waits around uploads for
+state, initially empty world page tables, and texture lifetime. `--isolate-uploads` adds GPU waits around uploads for
 diagnosis only: do not treat those serialized frames as normal frame-rate results.
 For before/after comparisons, use the same harness, dependencies, scene, resolution,
 and arguments on both revisions; omit `--strict` only on the old implementation,

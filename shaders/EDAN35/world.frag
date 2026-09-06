@@ -15,7 +15,6 @@ const int LevelCount = 10;
 const int OccupancyCells = 4;
 const int Water = 9;
 const float NoHit = 1e30;
-const uint PendingPage = 0xffffffffu;
 struct level_t {
     vec4 origin_span;
     ivec4 size_drawn;
@@ -194,9 +193,7 @@ cursor_t beginCursor(int level, vec3 ro, vec3 rd, ivec3 step_dir) {
     }
     if (c.t >= c.exit) return c;
     c.chunk = voxelAt(ro, rd, ivec3(0), c.t, ivec3(0), L.size_drawn.xyz * 32) / 32;
-    // A geometric lower bound is enough until this cursor is nearest. Do not fetch distant
-    // pages that an earlier opaque hit may make irrelevant.
-    c.entry = PendingPage;
+    seekChunk(level, ro, rd, step_dir, c);
     return c;
 }
 vec3 reinhard_jodie(vec3 v) {
@@ -224,34 +221,21 @@ void main() {
     march_t m = march_t(NoHit, vec3(0), 0, 0.0, 0.0, NoHit, 0.0, false);
     float previous_exit = 0.0;
     vec3 exit_normal = -rd;
-    // Each nonempty chunk can cause one deferred seek and one consumption; exhausted levels
-    // add at most one seek each. This bound covers every page without a distance epsilon.
-    for (int step = 0; step < LevelCount * (6 * PageSize + 1); ++step) {
+    for (int step = 0; step < LevelCount * 3 * PageSize; ++step) {
         int selected = -1;
-        float t = NoHit, following = NoHit;
+        float t = NoHit;
         for (int level = 0; level < LevelCount; ++level) {
             float candidate = cursors[level].t * levels[level].origin_span.w;
-            if (cursors[level].entry == 0u) continue;
-            if (candidate < t) {
-                following = t;
+            if (cursors[level].entry != 0u && candidate < t) {
                 selected = level;
                 t = candidate;
-            } else {
-                following = min(following, candidate);
             }
         }
         if (selected < 0) break;
+        if (t > previous_exit) medium(m, false, previous_exit, exit_normal);
         cursor_t c = cursors[selected];
         float span = levels[selected].origin_span.w;
         vec3 ro = (camera_position - levels[selected].origin_span.xyz) / span;
-        if (c.entry == PendingPage) {
-            seekChunk(selected, ro, rd, step_dir, c);
-            cursors[selected] = c;
-            t = c.t * span;
-            // Seeking can move behind another LOD's lower bound; preserve global ray order.
-            if (c.entry == 0u || t > following) continue;
-        }
-        if (t > previous_exit) medium(m, false, previous_exit, exit_normal);
         if (c.entry >= 256u) brickHit(ro, rd, step_dir, c, brickOf(c.entry), span, m);
         else if ((c.entry & 15u) == uint(Water)) medium(m, true, t, c.normal);
         else solid(m, int(c.entry), t, c.normal);
@@ -259,7 +243,7 @@ void main() {
         previous_exit = c.next * span;
         advanceCursor(ro, rd, step_dir, c);
         exit_normal = c.normal;
-        c.entry = c.t < c.exit ? PendingPage : 0u;
+        seekChunk(selected, ro, rd, step_dir, c);
         cursors[selected] = c;
     }
     // Beyond the recorded frontier is unknown/air, not an infinite analytical ocean.
