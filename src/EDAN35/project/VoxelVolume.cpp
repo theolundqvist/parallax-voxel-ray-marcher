@@ -23,7 +23,6 @@ private:
     std::vector<bool> occupancy_dirty;
     std::size_t solid_count = 0;
     bool acceleration = true;
-    bool world_style = false;
     bool coarse_dirty = false;
     struct DirtySlice {
         int min_x, min_y, max_x, max_y;
@@ -45,7 +44,7 @@ private:
     GLuint program{};
     shader_setting_t shader_setting = fixed_step_material;
     struct Uniforms {
-        GLint volume, occupancy, shader, acceleration, voxel_size, lod, grid_size;
+        GLint volume, occupancy, shader, acceleration, voxel_size, lod;
         GLint model_to_world, world_to_model, normal_to_world, world_to_clip;
         GLint camera, light, palette;
     } uniforms{};
@@ -107,7 +106,7 @@ public:
         auto location = [&](char const *name) { return glGetUniformLocation(program, name); };
         uniforms = {location("volume"), location("coarse_occupancy"),
             location("Shader_manager"), location("world_acceleration"),
-            location("voxel_size"), location("lod"), location("grid_size"),
+            location("voxel_size"), location("lod"),
             location("model_to_world"), location("world_to_model"),
             location("normal_model_to_world"), location("vertex_world_to_clip"),
             location("camera_position"), location("light_direction"), location("colorPalette")};
@@ -115,7 +114,6 @@ public:
 
     bool empty() const { return solid_count == 0; }
     void setAcceleration(bool enabled) { acceleration = enabled; }
-    void setWorldStyle(bool enabled) { world_style = enabled; }
 
     void setPalette(std::span<const glm::vec3> palette) {
         if (palette.size() != 256)
@@ -482,24 +480,18 @@ private:
 
     void setUniforms(glm::mat4 const &tf,
                      glm::mat4 world_to_clip, glm::vec3 cam_pos) {
-        glUniform1i(uniforms.shader, world_style ? 13 : shader_setting);
+        glUniform1i(uniforms.shader, shader_setting);
         glUniform1i(uniforms.acceleration, acceleration);
         glUniform1f(uniforms.voxel_size, voxel_size);
         glUniform1f(uniforms.lod, LOD);
-        glUniform3iv(uniforms.grid_size, 1, glm::value_ptr(glm::ivec3(W, H, D)));
         glUniformMatrix4fv(uniforms.model_to_world, 1, GL_FALSE, glm::value_ptr(tf));
         auto inverse = glm::inverse(tf);
         glUniformMatrix4fv(uniforms.world_to_model, 1, GL_FALSE, glm::value_ptr(inverse));
         auto normal = glm::transpose(inverse);
         glUniformMatrix4fv(uniforms.normal_to_world, 1, GL_FALSE, glm::value_ptr(normal));
-        // Default world volumes share the app's once-per-frame palette uniform.
-        // An explicit per-volume palette remains an override on every draw,
-        // including when other volumes sharing this program use another palette.
-        if (!world_style || !colorPalette.empty()) {
-            auto const &palette = colorPalette.empty() ? defaultPalette() : colorPalette;
-            glUniform3fv(uniforms.palette, static_cast<GLsizei>(palette.size()),
-                         glm::value_ptr(palette[0]));
-        }
+        auto const &palette = colorPalette.empty() ? defaultPalette() : colorPalette;
+        glUniform3fv(uniforms.palette, static_cast<GLsizei>(palette.size()),
+                     glm::value_ptr(palette[0]));
         glUniformMatrix4fv(uniforms.world_to_clip, 1, GL_FALSE, glm::value_ptr(world_to_clip));
         glUniform3fv(uniforms.camera, 1, glm::value_ptr(cam_pos));
         glUniform3fv(uniforms.light, 1,

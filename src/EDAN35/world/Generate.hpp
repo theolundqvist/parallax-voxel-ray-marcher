@@ -3,19 +3,35 @@
 #include "Chunk.hpp"
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <glm/glm.hpp>
 
 namespace world {
-// Pure floating-island generator. Every voxel is a function of (seed, world
-// position) only: island placement is a seeded jittered lattice, every noise
-// field is evaluated on world-aligned lattices, so chunk faces are continuous
-// by construction. Material byte: low 4 bits Material id, upper 4 bits tint
-// (palette index = raw byte); air is always byte 0.
-ChunkData generateChunk(std::uint64_t seed, ChunkKey key);
+inline constexpr double SeaLevel = 0.0;
+inline constexpr double TerrainFloor = -128.0;
+inline constexpr double TerrainCeiling = 2048.0;
+inline constexpr double TravelCeiling = 2048.0;
 
-// Camera pose in front of the forced spawn island (never inside solid).
-glm::vec3 spawnPosition(std::uint64_t seed);
-glm::vec3 spawnTarget(std::uint64_t seed);
+// Metres. Every field is hashed on integer lattices, so results are bit-identical across
+// platforms; inputs are quantised to 1/8 m, which is the finest voxel-centre grid.
+double terrainHeight(std::uint64_t seed, double x, double z);
+// Rise over run from a central difference at 2 m spacing.
+float terrainSlope(std::uint64_t seed, double x, double z);
+std::uint8_t surfaceMaterial(std::uint64_t seed, double x, double z, double height, double depthBelow,
+                             float slope);
+bool caveAt(std::uint64_t seed, double x, double y, double z, float voxelSize);
+
+// Any level: voxel solid iff its bottom is below terrainHeight at the column centre and not
+// inside a cave wide enough for that level's voxel size.
+ChunkData generateChunk(std::uint64_t seed, ChunkKey key);
+// Air when the chunk bottom is at or above TerrainCeiling, Bedrock when its top is at or below
+// TerrainFloor, nullopt otherwise; a value always equals isUniform of generateChunk(seed, key).
+std::optional<std::uint8_t> trivialUniform(std::uint64_t seed, ChunkKey key);
+bool isUniform(ChunkData const& data, std::uint8_t& value);
+void overlaySaved(ChunkData& coarse, ChunkKey coarseKey, ChunkKey savedKey, ChunkData const& savedL0);
+
+WorldPosition spawnPosition(std::uint64_t seed);
+WorldPosition spawnTarget(std::uint64_t seed);
 
 // 256-entry palette indexed by raw material byte (16 tints x 16 ids).
 std::array<glm::vec3, 256> worldPalette();

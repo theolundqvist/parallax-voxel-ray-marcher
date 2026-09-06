@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,9 @@ namespace fs = std::filesystem;
 using Bytes = std::vector<std::uint8_t>;
 using namespace world;
 constexpr std::uint64_t Seed = DefaultSeed;
+constexpr std::int64_t Big = std::int64_t{1} << 62;
+constexpr std::int64_t Fine = (std::int64_t{1} << 53) + 1;
+constexpr std::size_t Header = 60;
 
 void require(bool value, std::string const& message) {
     if (!value) throw std::runtime_error(message);
@@ -80,9 +84,22 @@ Bytes read(fs::path const& path) {
     file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     return bytes;
 }
+std::map<std::string, Bytes> readAll(fs::path const& directory) {
+    std::map<std::string, Bytes> contents;
+    for (auto const& entry : fs::directory_iterator(directory))
+        contents[entry.path().filename().string()] = read(entry.path());
+    return contents;
+}
 fs::path snapshot(fs::path const& directory, ChunkKey key) {
     return directory / ("chunk_" + std::to_string(key.x) + "_" + std::to_string(key.y) + "_" +
                         std::to_string(key.z) + ".bin");
+}
+WorldPosition at(ChunkKey anchor, glm::dvec3 offset) { return {anchor, offset}; }
+WorldPosition metres(glm::dvec3 position) { return *normalizedPosition({0, 0, 0, 0}, position); }
+// A level-0 key whose generated chunk is solid terrain at the given column.
+ChunkKey ground(std::int64_t x, std::int64_t z) {
+    auto height = terrainHeight(Seed, double(x) * ChunkSpan + 4.0, double(z) * ChunkSpan + 4.0);
+    return {x, std::int64_t(std::floor(height / ChunkSpan)) - 1, z, 0};
 }
 // Independent on-disk fixtures, not production fault hooks. All multibyte fields are LE.
 Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding) {
@@ -100,16 +117,16 @@ Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding) {
         }
     }
     Bytes bytes;
-    bytes.reserve(52 + payload.size());
+    bytes.reserve(Header + 4 + payload.size());
     magic(bytes, "FWCHNK01");
-    put32(bytes, 1);
+    put32(bytes, 2);
     put32(bytes, GeneratorVersion);
     put64(bytes, Seed);
-    put32(bytes, static_cast<std::uint32_t>(key.x));
-    put32(bytes, static_cast<std::uint32_t>(key.y));
-    put32(bytes, static_cast<std::uint32_t>(key.z));
+    put64(bytes, static_cast<std::uint64_t>(key.x));
+    put64(bytes, static_cast<std::uint64_t>(key.y));
+    put64(bytes, static_cast<std::uint64_t>(key.z));
+    put32(bytes, key.level);
     put32(bytes, encoding);
-    put32(bytes, static_cast<std::uint32_t>(data.size()));
     put32(bytes, static_cast<std::uint32_t>(payload.size()));
     bytes.insert(bytes.end(), payload.begin(), payload.end());
     seal(bytes);
@@ -118,7 +135,7 @@ Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding) {
 Bytes journal(std::vector<Bytes> const& records) {
     Bytes bytes;
     magic(bytes, "FWTXN001");
-    put32(bytes, 1);
+    put32(bytes, 2);
     put32(bytes, GeneratorVersion);
     put64(bytes, Seed);
     put32(bytes, static_cast<std::uint32_t>(records.size()));
@@ -129,6 +146,19 @@ Bytes journal(std::vector<Bytes> const& records) {
         put32(bytes, static_cast<std::uint32_t>(entry.size()));
         bytes.insert(bytes.end(), entry.begin(), entry.end());
     }
+    seal(bytes);
+    return bytes;
+}
+Bytes islandsManifest() {
+    Bytes bytes;
+    magic(bytes, "FWORLD01");
+    put32(bytes, 1);
+    put32(bytes, 1);
+    put32(bytes, ChunkSize);
+    put32(bytes, 1);
+    put32(bytes, 1);
+    put32(bytes, 4);
+    put64(bytes, 20251205);
     seal(bytes);
     return bytes;
 }
@@ -148,46 +178,79 @@ void manifestAndLock(fs::path const& root) {
     { Store store(directory); require(store.seed() == Seed, "Implicit reopen changed seed"); }
     fails([&] { Store store(directory, Seed + 1); }, "seed");
     auto original = read(directory / "manifest.bin");
+    require(get32(original, 8) == 2 && get32(original, 12) == GeneratorVersion, "Manifest is not format 2 / current generator");
     auto broken = original;
     set32(broken, 12, GeneratorVersion + 1);
     reseal(broken);
     write(directory / "manifest.bin", broken);
-    fails([&] { Store store(directory); }, "Unsupported");
+    fails([&] { Store store(directory); }, "Unsupported world format/generator");
     write(directory / "manifest.bin", original);
     { Store store(directory); } // Failed constructors released the actual lock.
     fs::create_directories(root / "orphan");
     write(root / "orphan" / "unrelated", Bytes{1});
     fails([&] { Store store(root / "orphan"); }, "Missing manifest");
-    std::cout << "PASS manifest seed/version, exclusive writer, failed-open lock release\n";
+
+    auto islands = root / "islands";
+    fs::create_directories(islands);
+    write(islands / "manifest.bin", islandsManifest());
+    write(islands / "world.lock", Bytes{});
+    ChunkData solid;
+    solid.fill(Stone);
+    Bytes v1;
+    magic(v1, "FWCHNK01");
+    put32(v1, 1);
+    put32(v1, 1);
+    put64(v1, 20251205);
+    put32(v1, 3); put32(v1, 0); put32(v1, 3);
+    put32(v1, 0);
+    put32(v1, static_cast<std::uint32_t>(solid.size()));
+    put32(v1, 1);
+    v1.push_back(Stone);
+    seal(v1);
+    write(islands / "chunk_3_0_3.bin", v1);
+    write(islands / "pending.txn", Bytes{1, 2, 3});
+    auto before = readAll(islands);
+    fails([&] { Store store(islands); }, "Unsupported world format/generator");
+    fails([&] { Store store(islands, Seed); }, "Unsupported world format/generator");
+    require(readAll(islands) == before, "Rejected islands directory was mutated");
+    std::cout << "PASS manifest seed/version, exclusive writer, failed-open lock release, v1 islands rejected untouched\n";
 }
 
 void negativeBrushAndAir(fs::path const& root) {
     auto directory = root / "brush";
-    Brush brush{glm::vec3(-8.f, 0.f, -8.f), .25f, 0x55};
+    Brush brush{metres({-8.0, 0.0, -8.0}), .25f, 0x55};
     std::vector<Chunk> edited;
     {
         Store store(directory, Seed);
+        fails([&] { store.load({0, 0, 0, 1}); }, "Store only holds level-0 chunks");
+        fails([&] { store.edit({at({0, 0, 0, 1}, glm::dvec3(4.0)), .25f, Stone}); }, "Store only holds level-0 chunks");
+        require(store.savedCount() == 0 && !fs::exists(directory / "pending.txn"), "Level check mutated the store");
+    }
+    {
+        Store store(directory);
         edited = store.edit(brush);
         require(edited.size() == 8, "Negative corner brush did not edit eight chunks");
         for (auto const& chunk : edited) {
             require(chunk.key.x == -2 || chunk.key.x == -1, "Negative X floor ownership wrong");
             require(chunk.key.y == -1 || chunk.key.y == 0, "Y floor ownership wrong");
             require(chunk.key.z == -2 || chunk.key.z == -1, "Negative Z floor ownership wrong");
+            require(chunk.key.level == 0 && chunk.data != nullptr, "Edited chunk is not a level-0 data chunk");
             auto before = generateChunk(Seed, chunk.key);
             auto expected = before;
             int x = chunk.key.x == -2 ? 31 : 0;
             int y = chunk.key.y == -1 ? 31 : 0;
             int z = chunk.key.z == -2 ? 31 : 0;
             expected[index(x, y, z)] = brush.material;
-            require(chunk.data == expected, "Brush changed voxels outside center-sampled sphere");
-            require(store.load(chunk.key) == chunk.data, "Acknowledged edit was not readable");
+            require(*chunk.data == expected, "Brush changed voxels outside center-sampled sphere");
+            require(store.load(chunk.key) == *chunk.data, "Acknowledged edit was not readable");
         }
         require(!fs::exists(directory / "pending.txn"), "Successful edit retained pending journal");
+        require(store.savedCount() == 8, "Committed keys missing from saved set");
     }
     { Store store(directory); for (auto const& chunk : edited)
-        require(store.load(chunk.key) == chunk.data, "Restart lost negative cross-chunk edit"); }
+        require(store.load(chunk.key) == *chunk.data, "Restart lost negative cross-chunk edit"); }
 
-    ChunkKey key{0, 0, 0};
+    auto key = ground(0, 0);
     ChunkData empty{};
     auto generated = generateChunk(Seed, key);
     require(std::any_of(generated.begin(), generated.end(), [](auto v) { return v != Air; }),
@@ -196,17 +259,17 @@ void negativeBrushAndAir(fs::path const& root) {
     {
         Store store(directory);
         require(store.load(key) == empty, "Saved air regenerated");
-        Brush one{glm::vec3(1.125f), .25f, Crystal};
+        Brush one{at(key, glm::dvec3(1.125)), .25f, Crystal};
         auto added = store.edit(one);
-        require(added.size() == 1 && added[0].data[index(4, 4, 4)] == Crystal, "Interior brush insertion failed");
+        require(added.size() == 1 && (*added[0].data)[index(4, 4, 4)] == Crystal, "Interior brush insertion failed");
         one.material = Air;
         auto erased = store.edit(one);
-        require(erased.size() == 1 && erased[0].data == empty, "Last solid brush did not erase to air");
+        require(erased.size() == 1 && *erased[0].data == empty, "Last solid brush did not erase to air");
     }
     { Store store(directory); require(store.load(key) == empty, "All-air edit lost on restart"); }
     auto saved = read(snapshot(directory, key));
-    require(get32(saved, 36) == 0 && saved.size() == 53, "All-air snapshot is not explicit uniform encoding");
-    std::cout << "PASS negative eight-chunk center sampling, tint, durable restart, edited all-air snapshot\n";
+    require(get32(saved, 52) == 0 && saved.size() == Header + 1 + 4, "All-air snapshot is not explicit uniform encoding");
+    std::cout << "PASS negative eight-chunk center sampling, tint, durable restart, edited all-air snapshot, level-0 only\n";
 }
 
 void codecsAndCorruption(fs::path const& root) {
@@ -230,14 +293,14 @@ void codecsAndCorruption(fs::path const& root) {
         // Actual encoder rewrites edited full snapshots; the same pattern must retain RLE/raw choice.
         for (int code = 1; code != 3; ++code) {
             ChunkKey key{10 + code, 0, 0};
-            auto changes = store.edit({origin(key) + glm::vec3(1.125f), .25f, Crystal});
+            auto changes = store.edit({at(key, glm::dvec3(1.125)), .25f, Crystal});
             require(changes.size() == 1, "Codec edit did not change fixture");
             auto expected = *values[code];
             for (int z = 3; z <= 5; ++z) for (int y = 3; y <= 5; ++y) for (int x = 3; x <= 5; ++x)
                 if ((x - 4) * (x - 4) + (y - 4) * (y - 4) + (z - 4) * (z - 4) <= 1)
                     expected[index(x, y, z)] = Crystal;
-            require(changes[0].data == expected && store.load(key) == expected, "Encoded edit lost data");
-            require(get32(read(snapshot(directory, key)), 36) == std::uint32_t(code), "Encoder chose nonminimal codec");
+            require(*changes[0].data == expected && store.load(key) == expected, "Encoded edit lost data");
+            require(get32(read(snapshot(directory, key)), 52) == std::uint32_t(code), "Encoder chose nonminimal codec");
         }
     }
     {
@@ -246,16 +309,16 @@ void codecsAndCorruption(fs::path const& root) {
         ChunkKey key{10, 0, 0};
         auto original = read(snapshot(directory, key));
         auto broken = original;
-        broken[48] ^= 1;
+        broken[Header] ^= 1;
         write(snapshot(directory, key), broken);
         fails([&] { load(key); }, "checksum");
         broken = original;
-        set32(broken, 44, 0xffffffffu);
+        set32(broken, 56, 0xffffffffu);
         reseal(broken);
         write(snapshot(directory, key), broken);
         fails([&] { load(key); }, "payload length");
         broken = original;
-        broken[48] = 0x10; // A tinted air byte is invalid, not empty.
+        broken[Header] = 0x10; // A tinted air byte is invalid, not empty.
         reseal(broken);
         write(snapshot(directory, key), broken);
         fails([&] { load(key); }, "material");
@@ -264,6 +327,16 @@ void codecsAndCorruption(fs::path const& root) {
         reseal(broken);
         write(snapshot(directory, key), broken);
         fails([&] { load(key); }, "filename/key");
+        broken = original;
+        set32(broken, 48, 1);
+        reseal(broken);
+        write(snapshot(directory, key), broken);
+        fails([&] { load(key); }, "level");
+        broken = original;
+        set32(broken, 8, 1);
+        reseal(broken);
+        write(snapshot(directory, key), broken);
+        fails([&] { load(key); }, "Unsupported snapshot format");
         write(snapshot(directory, key), original);
         fs::resize_file(snapshot(directory, key), 1024 * 1024 * 1024);
         fails([&] { load(key); }, "length");
@@ -272,7 +345,7 @@ void codecsAndCorruption(fs::path const& root) {
         fails([&] { load(key); }, "length");
         write(snapshot(directory, key), original);
         auto malformedRle = record({11, 0, 0}, rle, 1);
-        malformedRle[48] = malformedRle[49] = 0;
+        malformedRle[Header] = malformedRle[Header + 1] = 0;
         reseal(malformedRle);
         write(snapshot(directory, {11, 0, 0}), malformedRle);
         fails([&] { load({11, 0, 0}); }, "RLE run");
@@ -280,13 +353,13 @@ void codecsAndCorruption(fs::path const& root) {
         fs::create_directory(snapshot(directory, key));
         fails([&] { load(key); }, "type/length");
     }
-    std::cout << "PASS uniform/RLE/raw codec, encoder selection, corruption, checksum/identity/material/length bounds\n";
+    std::cout << "PASS uniform/RLE/raw codec, encoder selection, corruption, checksum/identity/level/material/length bounds\n";
 }
 
 void failureAndRecovery(fs::path const& root) {
     auto directory = root / "failure";
     initialize(directory);
-    Brush brush{glm::vec3(-8.f, 0.f, -8.f), .25f, 0x55};
+    Brush brush{metres({-8.0, 0.0, -8.0}), .25f, 0x55};
     std::array<ChunkKey, 8> keys{};
     std::size_t keyCount = 0;
     for (int z = -2; z <= -1; ++z) for (int y = -1; y <= 0; ++y) for (int x = -2; x <= -1; ++x)
@@ -319,6 +392,7 @@ void failureAndRecovery(fs::path const& root) {
     std::array<ChunkData, 8> recovered;
     {
         Store store(directory);
+        require(store.savedCount() == keys.size(), "Journal recovery did not populate saved keys");
         for (std::size_t i = 0; i < keys.size(); ++i) {
             auto key = keys[i];
             auto expected = generateChunk(Seed, key);
@@ -347,43 +421,141 @@ void failureAndRecovery(fs::path const& root) {
     std::cout << "PASS before-commit refusal, poisoned instance, real checkpoint failure, full recovery, idempotent replay, bounded corrupt journals\n";
 }
 
+void farKeys(fs::path const& root) {
+    auto directory = root / "far";
+    std::array<ChunkKey, 4> corners{ChunkKey{Big, Big, Big}, ChunkKey{-Big, -Big, -Big},
+                                    ChunkKey{Big, -Big, Big}, ChunkKey{-Big, Big, -Big}};
+    std::vector<std::pair<ChunkKey, ChunkData>> committed;
+    {
+        Store store(directory, Seed);
+        for (auto corner : corners) {
+            auto edited = store.edit({at(corner, glm::dvec3(0.0)), .25f, Crystal});
+            require(edited.size() == 8, "Corner brush at +-2^62 did not span eight chunks");
+            for (auto& chunk : edited) {
+                require(chunk.key.level == 0 && std::abs(chunk.key.x - corner.x) <= 1 &&
+                        std::abs(chunk.key.y - corner.y) <= 1 && std::abs(chunk.key.z - corner.z) <= 1,
+                        "Far brush touched a non-neighbouring chunk");
+                committed.emplace_back(chunk.key, *chunk.data);
+            }
+        }
+        for (auto const& [key, data] : committed) require(store.load(key) == data, "Far edit not readable");
+        ChunkKey neighbours[2]{{Fine, 0, Fine}, {Fine + 1, 0, Fine}};
+        ChunkData a, b;
+        a.fill(Stone);
+        b.fill(Sand);
+        write(snapshot(directory, neighbours[0]), record(neighbours[0], a, 0));
+        write(snapshot(directory, neighbours[1]), record(neighbours[1], b, 0));
+    }
+    {
+        Store store(directory);
+        require(store.savedCount() == committed.size() + 2, "Directory scan missed far snapshots");
+        for (auto const& [key, data] : committed) require(store.load(key) == data, "Far edit lost on reopen");
+        ChunkData a, b;
+        a.fill(Stone);
+        b.fill(Sand);
+        require(store.load({Fine, 0, Fine}) == a && store.load({Fine + 1, 0, Fine}) == b,
+                "Adjacent keys beyond 2^53 collapsed");
+        auto edited = store.edit({at({Fine, 0, Fine}, glm::dvec3(7.9, 3.875, 3.875)), .25f, Crystal});
+        require(edited.size() == 2 && edited[0].key == ChunkKey{Fine, 0, Fine} && edited[1].key == ChunkKey{Fine + 1, 0, Fine},
+                "Brush across 2^53 boundary did not edit both neighbours");
+        require((*edited[1].data)[index(0, 15, 15)] == Crystal && (*edited[1].data)[index(1, 15, 15)] == Sand,
+                "Brush across 2^53 boundary mis-sampled the neighbour");
+
+        constexpr auto max = std::numeric_limits<std::int64_t>::max();
+        auto before = readAll(directory);
+        auto savedBefore = store.savedCount();
+        fails([&] { store.edit({at({max, Big, 0}, glm::dvec3(7.9, 4.0, 4.0)), .25f, Crystal}); }, "not representable");
+        require(readAll(directory) == before && store.savedCount() == savedBefore,
+                "Unrepresentable brush footprint mutated the store");
+    }
+    {
+        Store store(directory);
+        constexpr auto min = std::numeric_limits<std::int64_t>::min();
+        fails([&] { store.edit({at({0, min, 0}, glm::dvec3(4.0, 0.1, 4.0)), .25f, Crystal}); }, "not representable");
+    }
+    {
+        Store store(directory);
+        constexpr auto max = std::numeric_limits<std::int64_t>::max();
+        auto interior = store.edit({at({max, Big, 0}, glm::dvec3(4.0)), .25f, Crystal});
+        require(interior.size() == 1 && interior[0].key == ChunkKey{max, Big, 0}, "Interior brush at INT64_MAX rejected");
+    }
+    std::cout << "PASS int64 keys at +-2^62, adjacent keys beyond 2^53 distinct, unrepresentable footprints rejected untouched\n";
+}
+
+void savedWithin(fs::path const& root) {
+    auto directory = root / "within";
+    ChunkData solid;
+    solid.fill(Stone);
+    std::vector<ChunkKey> saved{{0, 0, 0}, {7, 7, 7}, {8, 0, 0}, {-1, -1, -1}, {-8, 0, 0}, {3, 9, 3}, {Big, Big, Big}, {Big + 7, Big, Big + 1}};
+    initialize(directory);
+    for (auto key : saved) write(snapshot(directory, key), record(key, solid, 0));
+    write(directory / "chunk_1_2.bin", Bytes{1});
+    write(directory / "chunk_+1_2_3.bin", Bytes{1});
+    write(directory / "chunk_01_2_3.bin", Bytes{1});
+    Store store(directory);
+    require(store.savedCount() == saved.size(), "Non-canonical snapshot names were counted");
+    auto expect = [&](ChunkKey coarse, std::vector<ChunkKey> expected) {
+        std::sort(expected.begin(), expected.end());
+        require(store.savedKeysWithin(coarse) == expected, "savedKeysWithin mismatch at level " + std::to_string(coarse.level));
+    };
+    expect({0, 0, 0, 3}, {{0, 0, 0}, {7, 7, 7}});
+    expect({0, 0, 0, 2}, {{0, 0, 0}});
+    expect({1, 1, 1, 2}, {{7, 7, 7}});
+    expect({0, 0, 0, 1}, {{0, 0, 0}});
+    expect({1, 0, 0, 3}, {{8, 0, 0}});
+    expect({-1, -1, -1, 3}, {{-1, -1, -1}});
+    expect({-1, 0, 0, 3}, {{-8, 0, 0}});
+    expect({-1, 0, 0, 1}, {});
+    expect({-1, -1, -1, 1}, {{-1, -1, -1}});
+    expect({0, 1, 0, 3}, {{3, 9, 3}});
+    expect({0, 0, 0, 4}, {{0, 0, 0}, {7, 7, 7}, {8, 0, 0}, {3, 9, 3}});
+    expect({0, 0, 0, 0}, {{0, 0, 0}});
+    expect({1, 0, 0, 0}, {});
+    expect({Big >> 3, Big >> 3, Big >> 3, 3}, {{Big, Big, Big}, {Big + 7, Big, Big + 1}});
+    expect({Big >> 1, Big >> 1, Big >> 1, 1}, {{Big, Big, Big}});
+    require(store.savedKeysWithin({std::numeric_limits<std::int64_t>::max(), 0, 0, 1}).empty(),
+            "Unrepresentable coarse corner returned keys");
+    auto edited = store.edit({at({16, 0, 16}, glm::dvec3(4.0)), .25f, Crystal});
+    require(edited.size() == 1, "Within edit did not commit");
+    expect({2, 0, 2, 3}, {{16, 0, 16}});
+    std::cout << "PASS savedKeysWithin at levels 0..4 and +-2^62, canonical filename scan, committed keys visible\n";
+}
+
 void cacheTravel(fs::path const& root) {
     auto directory = root / "travel";
-    Store store(directory, Seed);
-    auto start = std::chrono::steady_clock::now();
-    std::uint64_t fingerprint = 14695981039346656037ull;
-    for (int i = 0; i != 1000; ++i) {
-        ChunkKey key{i - 500, (i % (MaxChunkY - MinChunkY + 1)) + MinChunkY, 137};
-        auto data = store.load(key);
-        require(data == generateChunk(Seed, key), "Travel generation differs from pure generator");
-        for (auto byte : data) {
-            fingerprint ^= byte;
-            fingerprint *= 1099511628211ull;
+    {
+        Store store(directory, Seed);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i != 1000; ++i) {
+            ChunkKey key{i - 500, (i % 8) - 2, 137};
+            auto data = store.load(key);
+            require(data == generateChunk(Seed, key), "Travel generation differs from pure generator");
+            checkBounds(store);
         }
-        checkBounds(store);
+        auto milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        std::cout << "PASS 1000 generated-chunk travel: " << milliseconds << " ms, "
+                  << store.cachedBytes() << " allocated encoded bytes, " << store.cachedChunks() << " entries\n";
+        ChunkData air{}, bedrock;
+        bedrock.fill(Bedrock);
+        require(store.load({0, 100, 0}) == air && store.load({0, -100, 0}) == bedrock,
+                "Trivial uniform columns differ from generator contract");
     }
-    // Generator v1 is a persisted-world compatibility contract. FMA contraction on
-    // ARM changed boundary voxels without changing encoded sizes; this catches it.
-    require(GeneratorVersion == 1 && fingerprint == 0x1382c1d279ff8167ull,
-            "Generator v1 raw-byte portability fingerprint changed");
-    std::cout << "PASS generator v1 1000-chunk raw-byte fingerprint: " << std::hex
-              << fingerprint << std::dec << '\n';
-    auto milliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-    std::cout << "PASS 1000 generated-chunk travel: " << milliseconds << " ms, "
-              << store.cachedBytes() << " allocated encoded bytes, " << store.cachedChunks() << " entries\n";
     ChunkData raw;
     for (std::size_t i = 0; i < raw.size(); ++i) raw[i] = static_cast<std::uint8_t>(1 + i % 5);
     // Exercise BOTH caps at the actual limit, not just a small-map upper-bound assertion.
     for (int i = 0; i != 2050; ++i) {
-        ChunkKey key{i, MaxChunkY, 500};
+        ChunkKey key{i, 3, 500};
         write(snapshot(directory, key), record(key, raw, 2));
-        require(store.load(key) == raw, "Raw travel cache changed snapshot");
-        checkBounds(store);
     }
-    require(store.cachedChunks() == 2048 && store.cachedBytes() == 64 * 1024 * 1024,
+    Store reopened(directory);
+    for (int i = 0; i != 2050; ++i) {
+        require(reopened.load({i, 3, 500}) == raw, "Raw travel cache changed snapshot");
+        checkBounds(reopened);
+    }
+    require(reopened.cachedChunks() == 2048 && reopened.cachedBytes() == 64 * 1024 * 1024,
             "Worst-case raw cache did not hit and hold both limits");
-    require(store.load({0, MaxChunkY, 500}) == raw, "Evicted saved snapshot did not reload");
-    checkBounds(store);
+    require(reopened.load({0, 3, 500}) == raw, "Evicted saved snapshot did not reload");
+    checkBounds(reopened);
     std::cout << "PASS 2050 raw-snapshot travel: LRU holds 2048 entries / 64 MiB; evicted edit remains authoritative\n";
 }
 }
@@ -398,7 +570,7 @@ int main() {
         auto base = fs::temp_directory_path();
         auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
         for (int attempt = 0; attempt != 100; ++attempt) {
-            auto candidate = base / ("floating-world-storage-" + std::to_string(stamp) + "-" + std::to_string(attempt));
+            auto candidate = base / ("mountain-world-storage-" + std::to_string(stamp) + "-" + std::to_string(attempt));
             if (fs::create_directory(candidate)) { root = candidate; break; }
         }
         require(!root.empty(), "Could not create unique smoke directory");
@@ -406,6 +578,8 @@ int main() {
         negativeBrushAndAir(root);
         codecsAndCorruption(root);
         failureAndRecovery(root);
+        farKeys(root);
+        savedWithin(root);
         cacheTravel(root);
         fs::remove_all(root);
         std::cout << "PASS world storage smoke (real Store + generator + filesystem; no GL)\n";
