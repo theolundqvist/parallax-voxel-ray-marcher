@@ -35,6 +35,8 @@ target_sources (
 		[[project.cpp]]
 		world/Store.cpp
 		world/Generate.cpp
+		world/BrickPool.cpp
+		world/WorldRenderer.cpp
 )
 
 target_link_libraries (EDAN35_Project PRIVATE assignment_setup)
@@ -45,7 +47,7 @@ copy_dlls (EDAN35_Project "${CMAKE_CURRENT_BINARY_DIR}")
 
 option (LUGGCGL_BUILD_VOXEL_BENCHMARK "Build the native voxel upload benchmark" OFF)
 if (LUGGCGL_BUILD_VOXEL_BENCHMARK)
-	add_executable (voxel_benchmark benchmark/voxel_benchmark.cpp util/colorPalette.cpp world/Generate.cpp)
+	add_executable (voxel_benchmark benchmark/voxel_benchmark.cpp util/colorPalette.cpp world/Generate.cpp world/BrickPool.cpp world/WorldRenderer.cpp)
 	target_link_libraries (voxel_benchmark PRIVATE assignment_setup)
 	if (APPLE)
 		target_link_libraries (voxel_benchmark PRIVATE "-framework OpenGL")
@@ -56,4 +58,8 @@ if (LUGGCGL_BUILD_VOXEL_BENCHMARK)
 	target_link_libraries (world_storage_smoke PRIVATE assignment_setup)
 	add_executable (world_stream_smoke benchmark/world_stream_smoke.cpp world/Store.cpp world/Generate.cpp)
 	target_link_libraries (world_stream_smoke PRIVATE assignment_setup)
+	add_executable (world_frontier_test benchmark/world_frontier_test.cpp)
+	target_link_libraries (world_frontier_test PRIVATE assignment_setup)
+	add_executable (world_generate_test benchmark/world_generate_test.cpp world/Generate.cpp)
+	target_link_libraries (world_generate_test PRIVATE assignment_setup)
 endif ()

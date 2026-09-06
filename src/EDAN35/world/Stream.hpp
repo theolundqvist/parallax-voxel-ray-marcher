@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Chunk.hpp"
+#include "Generate.hpp"
 #include "Store.hpp"
 #include <algorithm>
 #include <condition_variable>
@@ -20,6 +21,9 @@
 namespace world {
 class Stream {
 public:
+    static constexpr std::size_t RequestCapacity = 64;
+    // One frame can ingest FrameUploadBudget of bricks, so the worker may run that far ahead.
+    static constexpr std::size_t DataRepliesInFlight = FrameUploadBudget / sizeof(ChunkData);
     struct Reply {
         std::uint64_t epoch = 0;
         bool edit = false;
@@ -65,11 +69,13 @@ public:
             [](Request const& request) { return !request.brush; }), requests.end());
         replies.erase(std::remove_if(replies.begin(), replies.end(),
             [](Reply const& reply) { return !reply.edit; }), replies.end());
+        dataReplies = countDataReplies();
         changed.notify_all();
     }
     bool request(ChunkKey key, std::uint64_t epoch) {
         std::lock_guard lock(mutex);
-        if (!state.ready || !state.error.empty() || stopping || requests.size() >= 8 || epoch != currentEpoch)
+        if (!state.ready || !state.error.empty() || stopping || requests.size() >= RequestCapacity ||
+            epoch != currentEpoch)
             return false;
         requests.push_back({key, epoch, std::nullopt});
         changed.notify_one();
@@ -77,7 +83,8 @@ public:
     }
     bool edit(Brush brush) {
         std::lock_guard lock(mutex);
-        if (!state.ready || state.editing || !state.error.empty() || stopping || requests.size() >= 8)
+        if (!state.ready || state.editing || !state.error.empty() || stopping ||
+            requests.size() >= RequestCapacity)
             return false;
         state.editing = true;
         requests.push_front({{}, currentEpoch, brush});
@@ -90,6 +97,7 @@ public:
         Reply reply = std::move(replies.front());
         replies.pop_front();
         if (reply.edit) state.editing = false;
+        if (carriesData(reply)) --dataReplies;
         changed.notify_one();
         return reply;
     }
@@ -106,8 +114,42 @@ private:
     std::deque<Reply> replies;
     Status state;
     std::uint64_t currentEpoch = 0;
+    std::size_t dataReplies = 0;
     bool stopping = false;
     std::thread worker;
+
+    static bool carriesData(Reply const& reply) {
+        return std::any_of(reply.chunks.begin(), reply.chunks.end(), [](Chunk const& c) { return c.data != nullptr; });
+    }
+    std::size_t countDataReplies() const {
+        return std::size_t(std::count_if(replies.begin(), replies.end(), carriesData));
+    }
+    static void collapse(Chunk& chunk) {
+        std::uint8_t value;
+        if (chunk.data && isUniform(*chunk.data, value)) {
+            chunk.uniform = value;
+            chunk.data.reset();
+        }
+    }
+    static Chunk produce(Store& store, ChunkKey key) {
+        Chunk chunk{key, Air, nullptr};
+        if (key.level == 0) {
+            chunk.data = std::make_unique<ChunkData>(store.load(key));
+            collapse(chunk);
+            return chunk;
+        }
+        std::vector<ChunkKey> saved;
+        if (key.level <= OverlayLevels) saved = store.savedKeysWithin(key);
+        if (saved.empty())
+            if (auto uniform = trivialUniform(store.seed(), key)) {
+                chunk.uniform = *uniform;
+                return chunk;
+            }
+        chunk.data = std::make_unique<ChunkData>(generateChunk(store.seed(), key));
+        for (auto savedKey : saved) overlaySaved(*chunk.data, key, savedKey, store.load(savedKey));
+        collapse(chunk);
+        return chunk;
+    }
 
     void run(std::filesystem::path const& path, std::optional<std::uint64_t> seed) {
         #if defined(__linux__)
@@ -132,16 +174,23 @@ private:
                     requests.pop_front();
                 }
                 Reply reply{request.epoch, request.brush.has_value(), {}};
-                if (request.brush) reply.chunks = store.edit(*request.brush);
-                else reply.chunks.push_back({request.key, store.load(request.key)});
+                if (request.brush) {
+                    reply.chunks = store.edit(*request.brush);
+                    for (auto& chunk : reply.chunks) collapse(chunk);
+                } else reply.chunks.push_back(produce(store, request.key));
+                bool data = carriesData(reply);
                 {
                     std::unique_lock lock(mutex);
                     state.cachedBytes = store.cachedBytes();
                     state.cachedChunks = store.cachedChunks();
-                    changed.wait(lock, [this, &reply] {
-                        return stopping || (!reply.edit && reply.epoch != currentEpoch) || replies.size() < 2;
+                    changed.wait(lock, [this, &reply, data] {
+                        return stopping || (!reply.edit && reply.epoch != currentEpoch) || !data ||
+                               dataReplies < DataRepliesInFlight;
                     });
-                    if (!stopping && (reply.edit || reply.epoch == currentEpoch)) replies.push_back(std::move(reply));
+                    if (!stopping && (reply.edit || reply.epoch == currentEpoch)) {
+                        replies.push_back(std::move(reply));
+                        dataReplies += data;
+                    }
                 }
             }
         } catch (std::exception const& error) {

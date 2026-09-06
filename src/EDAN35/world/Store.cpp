@@ -4,8 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <list>
 #include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <system_error>
@@ -22,12 +24,13 @@ namespace world {
 namespace {
 namespace fs = std::filesystem;
 using Bytes = std::vector<std::uint8_t>;
-constexpr std::uint32_t FormatVersion = 1;
+constexpr std::uint32_t FormatVersion = 2;
 constexpr std::size_t RawSize = ChunkSize * ChunkSize * ChunkSize;
-constexpr std::size_t RecordHeader = 48;
+constexpr std::size_t RecordHeader = 60;
 constexpr std::size_t MaxRecord = RecordHeader + RawSize + 4;
 constexpr std::size_t JournalHeader = 32;
-constexpr std::size_t MaxJournal = JournalHeader + 8 * (4 + MaxRecord) + 4;
+constexpr std::size_t MaxJournal = JournalHeader + MaxBrushChunks * (4 + MaxRecord) + 4;
+constexpr std::size_t ManifestSize = 44;
 constexpr std::size_t CacheBytes = 64 * 1024 * 1024;
 constexpr std::size_t CacheEntries = 2048;
 constexpr char ManifestMagic[] = "FWORLD01";
@@ -201,7 +204,7 @@ std::span<const std::uint8_t> checked(std::span<const std::uint8_t> data) {
     return body;
 }
 bool materialValid(std::uint8_t byte) {
-    return byte == Air || ((byte & 15) >= Grass && (byte & 15) <= Crystal);
+    return byte == Air || ((byte & MaterialMask) >= Grass && (byte & MaterialMask) <= Bedrock);
 }
 void validateMaterials(std::span<const std::uint8_t> data) {
     for (auto byte : data) if (!materialValid(byte)) fail("Invalid world material byte");
@@ -254,34 +257,34 @@ ChunkData decode(Encoding kind, std::span<const std::uint8_t> payload) {
     return data;
 }
 
-void appendRecord(Bytes& result, std::uint64_t seed, Chunk const& chunk) {
-    auto encoding = chooseEncoding(chunk.data);
+struct Record { ChunkKey key; ChunkData data; };
+void appendRecord(Bytes& result, std::uint64_t seed, ChunkKey key, ChunkData const& data) {
+    auto encoding = chooseEncoding(data);
     auto begin = result.size();
     magic(result, RecordMagic);
     put32(result, FormatVersion);
     put32(result, GeneratorVersion);
     put64(result, seed);
-    put32(result, static_cast<std::uint32_t>(chunk.key.x));
-    put32(result, static_cast<std::uint32_t>(chunk.key.y));
-    put32(result, static_cast<std::uint32_t>(chunk.key.z));
+    put64(result, static_cast<std::uint64_t>(key.x));
+    put64(result, static_cast<std::uint64_t>(key.y));
+    put64(result, static_cast<std::uint64_t>(key.z));
+    put32(result, key.level);
     put32(result, static_cast<std::uint32_t>(encoding.kind));
-    put32(result, RawSize);
     put32(result, static_cast<std::uint32_t>(encoding.bytes));
-    encodeInto(result, chunk.data, encoding.kind);
+    encodeInto(result, data, encoding.kind);
     seal(result, begin);
 }
-Chunk parseRecord(std::span<const std::uint8_t> bytes, std::uint64_t seed) {
+Record parseRecord(std::span<const std::uint8_t> bytes, std::uint64_t seed) {
     if (bytes.size() < RecordHeader + 5 || bytes.size() > MaxRecord) fail("Invalid snapshot length");
     Reader reader{checked(bytes)};
     reader.expectMagic(RecordMagic);
     if (reader.u32() != FormatVersion || reader.u32() != GeneratorVersion)
         fail("Unsupported snapshot format/generator version");
     if (reader.u64() != seed) fail("Snapshot seed mismatch");
-    ChunkKey key{static_cast<std::int32_t>(reader.u32()), static_cast<std::int32_t>(reader.u32()),
-                 static_cast<std::int32_t>(reader.u32())};
-    if (!valid(key)) fail("Snapshot key outside world bounds");
+    ChunkKey key{static_cast<std::int64_t>(reader.u64()), static_cast<std::int64_t>(reader.u64()),
+                 static_cast<std::int64_t>(reader.u64())};
+    if (reader.u32() != 0) fail("Snapshot level is not zero");
     auto encoding = static_cast<Encoding>(reader.u32());
-    if (reader.u32() != RawSize) fail("Invalid snapshot raw length");
     auto length = reader.u32();
     if (length > RawSize) fail("Invalid snapshot payload length");
     auto payload = reader.take(length);
@@ -292,7 +295,25 @@ fs::path chunkPath(fs::path const& directory, ChunkKey key) {
     return directory / ("chunk_" + std::to_string(key.x) + "_" + std::to_string(key.y) + "_" +
                         std::to_string(key.z) + ".bin");
 }
+// Only exactly canonical "chunk_<x>_<y>_<z>.bin" names are snapshots; anything else is ignored.
+std::optional<ChunkKey> parseChunkName(std::string const& name) {
+    if (!name.starts_with("chunk_") || !name.ends_with(".bin")) return std::nullopt;
+    std::int64_t values[3];
+    std::size_t begin = 6, end = name.size() - 4;
+    for (int axis = 0; axis < 3; ++axis) {
+        auto stop = axis == 2 ? end : name.find('_', begin);
+        if (stop == std::string::npos || stop > end || stop == begin) return std::nullopt;
+        auto token = name.substr(begin, stop - begin);
+        auto parsed = std::from_chars(token.data(), token.data() + token.size(), values[axis]);
+        if (parsed.ec != std::errc{} || parsed.ptr != token.data() + token.size() ||
+            std::to_string(values[axis]) != token)
+            return std::nullopt;
+        begin = stop + 1;
+    }
+    return ChunkKey{values[0], values[1], values[2], 0};
+}
 int floorChunk(int voxel) { return voxel >= 0 ? voxel / ChunkSize : (voxel + 1) / ChunkSize - 1; }
+void requireLevelZero(ChunkKey key) { if (key.level != 0) fail("Store only holds level-0 chunks"); }
 }
 
 struct Store::Impl {
@@ -308,6 +329,7 @@ struct Store::Impl {
     std::map<ChunkKey, Cached> cache;
     std::list<ChunkKey> ages;
     std::size_t cacheBytes = 0;
+    std::set<ChunkKey> savedKeys;
 
     Impl(fs::path path, std::optional<std::uint64_t> requested) : directory(fs::absolute(path)) {
         ensureDirectory(directory);
@@ -315,13 +337,13 @@ struct Store::Impl {
         lock.fd = ::open(lockPath.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
         if (lock.fd < 0) ioError("open world lock", lockPath);
         if (::flock(lock.fd, LOCK_EX | LOCK_NB) != 0) ioError("WorldInUse: exclusive lock", lockPath);
-        auto manifest = readFile(directory / "manifest.bin", 44);
+        auto manifest = readFile(directory / "manifest.bin", ManifestSize);
         if (manifest) {
-            if (manifest->size() != 44) fail("Invalid manifest length");
+            if (manifest->size() != ManifestSize) fail("Invalid manifest length");
             Reader reader{checked(*manifest)};
             reader.expectMagic(ManifestMagic);
             if (reader.u32() != FormatVersion || reader.u32() != GeneratorVersion ||
-                reader.u32() != ChunkSize || reader.u32() != 1 ||
+                reader.u32() != ChunkSize || reader.u32() != 2 ||
                 reader.u32() != 1 || reader.u32() != 4)
                 fail("Unsupported world format/generator/material/voxel schema");
             worldSeed = reader.u64();
@@ -333,18 +355,20 @@ struct Store::Impl {
                     fail("Missing manifest in nonempty world directory: " + directory.string());
             worldSeed = requested.value_or(DefaultSeed);
             Bytes bytes;
-            bytes.reserve(44);
+            bytes.reserve(ManifestSize);
             magic(bytes, ManifestMagic);
             put32(bytes, FormatVersion);
             put32(bytes, GeneratorVersion);
             put32(bytes, ChunkSize);
-            put32(bytes, 1); // Material schema.
+            put32(bytes, 2); // Material schema.
             put32(bytes, 1); // Voxel scale numerator / denominator.
             put32(bytes, 4);
             put64(bytes, worldSeed);
             seal(bytes);
             replaceFile(directory / "manifest.bin", bytes);
         }
+        for (auto const& entry : fs::directory_iterator(directory))
+            if (auto key = parseChunkName(entry.path().filename().string())) savedKeys.insert(*key);
         try {
             auto pending = readFile(directory / "pending.txn", MaxJournal);
             if (pending) {
@@ -384,29 +408,45 @@ struct Store::Impl {
     }
     ChunkData load(ChunkKey key) {
         if (blocked) fail("StorageBlocked: reconstruct Store to recover before further requests");
-        if (!valid(key)) fail("Chunk outside supported world bounds");
+        requireLevelZero(key);
         // The exclusive writer lock and commit invalidation keep cached snapshots current.
         auto found = cache.find(key);
         if (found != cache.end()) {
             ages.splice(ages.begin(), ages, found->second.age);
             return decode(found->second.encoding, found->second.payload);
         }
-        auto path = chunkPath(directory, key);
-        auto saved = readFile(path, MaxRecord);
-        if (saved) {
+        if (savedKeys.contains(key)) {
+            auto path = chunkPath(directory, key);
+            auto saved = readFile(path, MaxRecord);
+            if (!saved) fail(path.string() + ": saved snapshot vanished");
             try {
-                auto chunk = parseRecord(*saved, worldSeed);
-                if (chunk.key != key) fail("Snapshot filename/key mismatch");
-                cacheData(key, chunk.data);
-                return chunk.data;
+                auto record = parseRecord(*saved, worldSeed);
+                if (record.key != key) fail("Snapshot filename/key mismatch");
+                cacheData(key, record.data);
+                return record.data;
             } catch (std::exception const& error) {
                 fail(path.string() + ": " + error.what());
             }
         }
-        auto data = generateChunk(worldSeed, key);
+        ChunkData data;
+        if (auto uniform = trivialUniform(worldSeed, key)) data.fill(*uniform);
+        else data = generateChunk(worldSeed, key);
         validateMaterials(data);
         cacheData(key, data);
         return data;
+    }
+
+    std::vector<ChunkKey> savedKeysWithin(ChunkKey coarse) const {
+        std::vector<ChunkKey> result;
+        auto corner = levelZeroCorner(coarse);
+        if (!corner) return result;
+        // corner is a multiple of 2^level, so corner + 2^level - 1 never overflows.
+        auto extent = (std::int64_t{1} << coarse.level) - 1;
+        ChunkKey hi{corner->x + extent, corner->y + extent, corner->z + extent, 0};
+        constexpr auto min = std::numeric_limits<std::int64_t>::min();
+        for (auto it = savedKeys.lower_bound({corner->x, min, min, 0}); it != savedKeys.end() && it->x <= hi.x; ++it)
+            if (it->y >= corner->y && it->y <= hi.y && it->z >= corner->z && it->z <= hi.z) result.push_back(*it);
+        return result;
     }
 
     struct RecordView { ChunkKey key; std::size_t offset, size; };
@@ -418,7 +458,7 @@ struct Store::Impl {
             fail("Unsupported journal version/generator");
         if (reader.u64() != worldSeed) fail("Journal seed mismatch");
         auto count = reader.u32();
-        if (count < 1 || count > 8) fail("Invalid journal chunk count");
+        if (count < 1 || count > MaxBrushChunks) fail("Invalid journal chunk count");
         if (reader.u32() != reader.data.size() - JournalHeader) fail("Invalid journal body length");
         std::vector<RecordView> records;
         records.reserve(count);
@@ -426,17 +466,19 @@ struct Store::Impl {
             auto length = reader.u32();
             if (length > MaxRecord) fail("Invalid journal snapshot length");
             auto offset = reader.offset;
-            auto chunk = parseRecord(reader.take(length), worldSeed);
-            for (auto const& record : records)
-                if (record.key == chunk.key) fail("Duplicate journal chunk key");
-            records.push_back({chunk.key, offset, length});
+            auto record = parseRecord(reader.take(length), worldSeed);
+            for (auto const& previous : records)
+                if (previous.key == record.key) fail("Duplicate journal chunk key");
+            records.push_back({record.key, offset, length});
         }
         reader.end();
         return records;
     }
     void checkpoint(std::span<const std::uint8_t> journal, std::vector<RecordView> const& records) {
-        for (auto const& record : records)
+        for (auto const& record : records) {
             replaceFile(chunkPath(directory, record.key), journal.subspan(record.offset, record.size));
+            savedKeys.insert(record.key);
+        }
         auto pending = directory / "pending.txn";
         if (::unlink(pending.c_str()) != 0) ioError("remove committed journal", pending);
         syncDirectory(directory);
@@ -446,54 +488,54 @@ struct Store::Impl {
         if (blocked) fail("StorageBlocked: reconstruct Store to recover before further requests");
         char const* phase = "FailedBeforeCommit";
         try {
-            if (!std::isfinite(brush.radius) || brush.radius < .25f || brush.radius > 2.f ||
-                !std::isfinite(brush.center.x) || !std::isfinite(brush.center.y) ||
-                !std::isfinite(brush.center.z) || !materialValid(brush.material))
+            requireLevelZero(brush.center.anchor);
+            auto center = normalizedPosition(brush.center.anchor, brush.center.offset);
+            if (!std::isfinite(brush.radius) || brush.radius < .25f || brush.radius > 2.f || !center ||
+                !materialValid(brush.material))
                 fail("Invalid brush radius, center, or material");
+            // Voxel coordinates relative to the anchor chunk's corner; the brush footprint stays within
+            // the anchor's neighbours because the radius is at most a quarter chunk.
             std::array<int, 3> low{}, high{};
-            std::array<int, 3> minimum{-CoordinateLimit * ChunkSize, MinChunkY * ChunkSize,
-                                       -CoordinateLimit * ChunkSize};
-            std::array<int, 3> maximum{CoordinateLimit * ChunkSize - 1, (MaxChunkY + 1) * ChunkSize - 1,
-                                       CoordinateLimit * ChunkSize - 1};
+            glm::ivec3 firstDelta, lastDelta;
             for (int axis = 0; axis < 3; ++axis) {
-                double center = double(brush.center[axis]) / VoxelScale;
+                double voxel = center->offset[axis] / VoxelScale;
                 double radius = double(brush.radius) / VoxelScale;
-                auto first = std::ceil(center - radius - .5);
-                auto last = std::floor(center + radius - .5);
-                if (first < minimum[axis] || last > maximum[axis]) fail("Brush crosses world boundary");
-                low[axis] = static_cast<int>(first);
-                high[axis] = static_cast<int>(last);
+                low[axis] = static_cast<int>(std::ceil(voxel - radius - .5));
+                high[axis] = static_cast<int>(std::floor(voxel + radius - .5));
+                firstDelta[axis] = floorChunk(low[axis]);
+                lastDelta[axis] = floorChunk(high[axis]);
             }
-            ChunkKey first{floorChunk(low[0]), floorChunk(low[1]), floorChunk(low[2])};
-            ChunkKey last{floorChunk(high[0]), floorChunk(high[1]), floorChunk(high[2])};
-            int count = (last.x - first.x + 1) * (last.y - first.y + 1) * (last.z - first.z + 1);
-            if (count < 1 || count > 8) fail("Brush exceeds eight chunks");
+            auto first = offsetKey(center->anchor, firstDelta);
+            auto last = offsetKey(center->anchor, lastDelta);
+            if (!first || !last) fail("Brush chunk footprint is not representable");
+            int count = int(last->x - first->x + 1) * int(last->y - first->y + 1) * int(last->z - first->z + 1);
+            if (count < 1 || count > MaxBrushChunks) fail("Brush exceeds eight chunks");
             std::vector<Chunk> chunks;
             chunks.reserve(count);
             double radiusSquared = double(brush.radius) * brush.radius;
-            for (int z = first.z; z <= last.z; ++z)
-                for (int y = first.y; y <= last.y; ++y)
-                    for (int x = first.x; x <= last.x; ++x) {
-                        ChunkKey key{x, y, z};
-                        auto data = load(key);
+            for (int z = firstDelta.z; z <= lastDelta.z; ++z)
+                for (int y = firstDelta.y; y <= lastDelta.y; ++y)
+                    for (int x = firstDelta.x; x <= lastDelta.x; ++x) {
+                        auto key = *offsetKey(center->anchor, {x, y, z});
+                        auto data = std::make_unique<ChunkData>(load(key));
                         bool changed = false;
                         for (int vz = std::max(low[2], z * ChunkSize); vz <= std::min(high[2], (z + 1) * ChunkSize - 1); ++vz)
                             for (int vy = std::max(low[1], y * ChunkSize); vy <= std::min(high[1], (y + 1) * ChunkSize - 1); ++vy)
                                 for (int vx = std::max(low[0], x * ChunkSize); vx <= std::min(high[0], (x + 1) * ChunkSize - 1); ++vx) {
-                                    double dx = (vx + .5) * VoxelScale - brush.center.x;
-                                    double dy = (vy + .5) * VoxelScale - brush.center.y;
-                                    double dz = (vz + .5) * VoxelScale - brush.center.z;
-                                    auto& voxel = data[index(vx - x * ChunkSize, vy - y * ChunkSize, vz - z * ChunkSize)];
+                                    double dx = (vx + .5) * VoxelScale - center->offset.x;
+                                    double dy = (vy + .5) * VoxelScale - center->offset.y;
+                                    double dz = (vz + .5) * VoxelScale - center->offset.z;
+                                    auto& voxel = (*data)[index(vx - x * ChunkSize, vy - y * ChunkSize, vz - z * ChunkSize)];
                                     if (dx * dx + dy * dy + dz * dz <= radiusSquared && voxel != brush.material) {
                                         voxel = brush.material;
                                         changed = true;
                                     }
                                 }
-                        if (changed) chunks.push_back({key, std::move(data)});
+                        if (changed) chunks.push_back({key, Air, std::move(data)});
                     }
             if (chunks.empty()) return chunks;
             std::size_t bodySize = 0;
-            for (auto const& chunk : chunks) bodySize += 4 + RecordHeader + chooseEncoding(chunk.data).bytes + 4;
+            for (auto const& chunk : chunks) bodySize += 4 + RecordHeader + chooseEncoding(*chunk.data).bytes + 4;
             Bytes journal;
             journal.reserve(JournalHeader + bodySize + 4);
             magic(journal, JournalMagic);
@@ -505,10 +547,10 @@ struct Store::Impl {
             std::vector<RecordView> records;
             records.reserve(chunks.size());
             for (auto const& chunk : chunks) {
-                auto size = RecordHeader + chooseEncoding(chunk.data).bytes + 4;
+                auto size = RecordHeader + chooseEncoding(*chunk.data).bytes + 4;
                 put32(journal, static_cast<std::uint32_t>(size));
                 records.push_back({chunk.key, journal.size(), size});
-                appendRecord(journal, worldSeed, chunk);
+                appendRecord(journal, worldSeed, chunk.key, *chunk.data);
             }
             seal(journal);
             auto temporary = directory / "pending.txn.tmp";
@@ -538,8 +580,10 @@ struct Store::Impl {
     std::uint64_t worldSeed = 0;
     std::size_t cacheBytes = 0;
     std::map<ChunkKey, int> cache;
+    std::set<ChunkKey> savedKeys;
     ChunkData load(ChunkKey) { throw std::runtime_error("Unsupported world storage platform"); }
     std::vector<Chunk> edit(Brush) { throw std::runtime_error("Unsupported world storage platform"); }
+    std::vector<ChunkKey> savedKeysWithin(ChunkKey) const { return {}; }
 };
 #endif
 
@@ -549,6 +593,8 @@ Store::~Store() = default;
 std::uint64_t Store::seed() const { return impl_->worldSeed; }
 ChunkData Store::load(ChunkKey key) { return impl_->load(key); }
 std::vector<Chunk> Store::edit(Brush brush) { return impl_->edit(brush); }
+std::vector<ChunkKey> Store::savedKeysWithin(ChunkKey coarse) const { return impl_->savedKeysWithin(coarse); }
+std::size_t Store::savedCount() const { return impl_->savedKeys.size(); }
 std::size_t Store::cachedBytes() const { return impl_->cacheBytes; }
 std::size_t Store::cachedChunks() const { return impl_->cache.size(); }
 }

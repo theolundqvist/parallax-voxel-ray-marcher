@@ -5,11 +5,15 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -31,6 +35,8 @@
 #include "EDAN35/util/parametric_shapes.cpp"
 #include "EDAN35/project/VoxelVolume.cpp"
 #include "EDAN35/world/Generate.hpp"
+#include "EDAN35/world/Frontier.hpp"
+#include "EDAN35/world/WorldRenderer.hpp"
 
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -342,209 +348,16 @@ void raycastSmoke(bool strict, std::ostream& log) {
     if (strict) require(correct, "Six-face raycast/editing contract failed");
 }
 
-struct Capture {
-    std::vector<GLubyte> color;
-    std::vector<float> depth;
-};
-Capture capture(int pixels) {
-    Capture result{std::vector<GLubyte>(pixels * pixels * 4),
-                   std::vector<float>(pixels * pixels)};
-    glReadPixels(0, 0, pixels, pixels, GL_RGBA, GL_UNSIGNED_BYTE, result.color.data());
-    glReadPixels(0, 0, pixels, pixels, GL_DEPTH_COMPONENT, GL_FLOAT, result.depth.data());
-    return result;
-}
-
-// Independent double-precision slab oracle over all occupied voxel boxes.
-// Zero-area edge/corner contact is not a hit: tied DDA axes advance together.
-void checkCenterRay(VoxelVolume const& volume, glm::vec3 camera, glm::vec3 target,
-                    glm::mat4 const& clip, Capture const& image, int pixels) {
-    glm::dvec3 origin(camera), direction = glm::normalize(glm::dvec3(target - camera));
-    double nearest = 1e100;
-    int material = 0;
-    for (int z = 0; z < volume.D; ++z)
-        for (int y = 0; y < volume.H; ++y)
-            for (int x = 0; x < volume.W; ++x) {
-                int value = volume.getVoxel(x, y, z);
-                if (!value) continue;
-                glm::dvec3 low = glm::dvec3(x,y,z) / glm::dvec3(volume.size());
-                glm::dvec3 high = glm::dvec3(x+1,y+1,z+1) / glm::dvec3(volume.size());
-                double enter = 0, exit = 1e100;
-                for (int axis = 0; axis < 3; ++axis) {
-                    if (direction[axis] == 0) {
-                        if (origin[axis] < low[axis] || origin[axis] >= high[axis]) exit = -1;
-                    } else {
-                        double a = (low[axis] - origin[axis]) / direction[axis];
-                        double b = (high[axis] - origin[axis]) / direction[axis];
-                        enter = std::max(enter, std::min(a,b));
-                        exit = std::min(exit, std::max(a,b));
-                    }
-                }
-                if (enter < exit && enter < nearest) { nearest = enter; material = value; }
-            }
-    auto center = (pixels / 2) + pixels * (pixels / 2);
-    require(image.color[center * 4] == (material ? material : 26),
-            "World DDA center material differs from independent voxel-box oracle: actual=" +
-            std::to_string(image.color[center*4]) + " expected=" + std::to_string(material) +
-            " size=" + std::to_string(volume.W) + ":" + std::to_string(volume.H) + ":" + std::to_string(volume.D) +
-            " camera=" + std::to_string(camera.x) + ":" + std::to_string(camera.y) + ":" + std::to_string(camera.z));
-    float depth = 1;
-    if (material) {
-        auto position = glm::dvec4(origin + direction * nearest, 1);
-        auto projected = glm::dmat4(clip) * position;
-        depth = nearest == 0 ? 0 : float(std::clamp(projected.z / projected.w * 0.5 + 0.5, 0.0, 1.0));
-    }
-    require(std::isfinite(image.depth[center]) && std::abs(image.depth[center] - depth) < 0.00001f,
-            "World DDA center depth differs from independent voxel-box oracle");
-}
-
-void worldSmoke(GLuint shader_program, std::ostream& log) {
-    int pixels = std::min(framebuffer_pixels, 129);
-    if (pixels % 2 == 0) --pixels;
-    glViewport(0, 0, pixels, pixels);
-    std::array<glm::vec3,256> palette;
-    for (int i = 0; i < 256; ++i) palette[i] = glm::vec3((i % 7 + 1) / 8.0f, (i % 11 + 1) / 12.0f, (i % 13 + 1) / 14.0f);
-    int comparisons = 0;
-    for (auto size : {glm::ivec3(32), glm::ivec3(17,9,5), glm::ivec3(1)}) {
-        VoxelVolume volume(size.x, size.y, size.z, Transform());
-        volume.setProgram(shader_program);
-        volume.setWorldStyle(true);
-        volume.setPalette(palette);
-        std::vector<uint8_t> data(std::size_t(size.x) * size.y * size.z);
-        require(volume.empty(), "New volume occupancy is not empty");
-        bool rejected = false;
-        try { volume.setData(std::span<const uint8_t>(data).first(data.size()-1)); }
-        catch (std::invalid_argument const&) { rejected = true; }
-        require(rejected, "Mismatched world chunk dimensions accepted");
-        for (int shape = 0; shape < 5; ++shape) {
-            std::fill(data.begin(), data.end(), 0);
-            for (int z=0; z<size.z; ++z) for (int y=0; y<size.y; ++y) for (int x=0; x<size.x; ++x) {
-                bool solid = shape == 1 || (shape == 2 && (x == std::min(8,size.x-1) || z == size.z-1)) ||
-                             (shape == 3 && x == size.x-1 && y == size.y/2 && z == size.z/2);
-                if (solid) data[x + size.x * (y + size.y * z)] = uint8_t(1 + (x + y + z) % 5 + 16 * ((x + z) % 4));
-            }
-            volume.setData(data);
-            if (shape == 4) {
-                // Callback mutation must update zero transitions even when reentrant.
-                volume.updateVoxels([&](int x,int y,int z,GLubyte) {
-                    volume.setVoxel(x,y,z,5);
-                    return GLubyte(0);
-                });
-            }
-            require(volume.empty() == (shape == 0 || shape == 4), "World empty count differs from material data");
-            counters = {};
-            auto bytes = volume.upload();
-            require(bytes == counters.bytes, "Explicit upload payload accounting mismatch");
-            require(volume.upload() == 0, "Clean world upload transferred data");
-            // Inspect the actual GL_R8 coarse texture after every mutation path.
-            glActiveTexture(GL_TEXTURE1);
-            auto cells = (size + 7) / 8;
-            std::vector<GLubyte> coarse(std::size_t(cells.x) * cells.y * cells.z);
-            GLint bound = 0;
-            glGetIntegerv(GL_TEXTURE_BINDING_3D, &bound);
-            require(bound != 0, "Explicit world upload did not bind occupancy texture");
-            glGetTexImage(GL_TEXTURE_3D, 0, GL_RED, GL_UNSIGNED_BYTE, coarse.data());
-            for (int cz=0; cz<cells.z; ++cz) for (int cy=0; cy<cells.y; ++cy) for (int cx=0; cx<cells.x; ++cx) {
-                bool occupied = false;
-                for (int z=cz*8; z<std::min(cz*8+8,size.z); ++z)
-                    for (int y=cy*8; y<std::min(cy*8+8,size.y); ++y)
-                        for (int x=cx*8; x<std::min(cx*8+8,size.x); ++x)
-                            occupied |= volume.getVoxel(x,y,z) != 0;
-                require(coarse[cx + cells.x * (cy + cells.y * cz)] == (occupied ? 255 : 0),
-                        "Coarse texture differs from actual voxel occupancy");
-            }
-            glActiveTexture(GL_TEXTURE0);
-            // Axis rays pass through voxel interiors: raster interpolation can
-            // perturb an ideal ray lying exactly along a material boundary.
-            // Diagonal ties and every framebuffer pixel still require exact
-            // reference/accelerated parity below.
-            std::vector<glm::vec3> cameras = {{-1,.51f,.51f},{2,.51f,.51f},{.51f,-1,.51f},
-                {.51f,2,.51f},{.51f,.51f,-1},{.51f,.51f,2},{-1,-1,-1},{.51f,.51f,.51f}};
-            for (auto camera : cameras) {
-                glm::vec3 target = camera == cameras.back() ? glm::vec3(1,.51f,.51f) : glm::vec3(.51f);
-                auto direction = glm::normalize(target-camera);
-                auto up = std::abs(direction.y) > .99f ? glm::vec3(0,0,1) : glm::vec3(0,1,0);
-                auto clip = glm::perspective(glm::radians(50.0f), 1.0f, .001f, 20.0f) * glm::lookAt(camera,target,up);
-                for (bool material : {true,false}) {
-                    glUseProgram(shader_program);
-                    glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),material);
-                    glUniform1i(glGetUniformLocation(shader_program,"world_lighting"),true);
-                    volume.setAcceleration(false);
-                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                    render(volume,clip,camera);
-                    auto reference = capture(pixels);
-                    if (material) checkCenterRay(volume,camera,target,clip,reference,pixels);
-                    volume.setAcceleration(true);
-                    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                    render(volume,clip,camera);
-                    auto accelerated = capture(pixels);
-                    require(reference.color == accelerated.color, "World accelerated color/material parity failed");
-                    require(reference.depth == accelerated.depth, "World accelerated exact depth parity failed");
-                    for (float depth : accelerated.depth) require(std::isfinite(depth), "World depth is not finite");
-                    ++comparisons;
-                }
-            }
-        }
-    }
-    glUseProgram(shader_program);
-    glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),false);
-    glUseProgram(0);
-    glViewport(0,0,framebuffer_pixels,framebuffer_pixels);
-    checkGL("world reference/accelerated smoke");
-    log << "world,parity_pairs=" << comparisons << ",material-and-lit-color=byte-exact,depth=bit-exact,center-slab-oracle=pass,occupancy-readback=pass\n";
-}
-
-void skySmoke(GLuint voxel_program, std::ostream& log) {
-    auto sky_program = program("worldsky");
-    GLuint vao;
-    glGenVertexArrays(1,&vao);
-    glm::vec3 camera(-1,.5f,.5f);
-    auto clip = glm::perspective(glm::radians(50.0f),1.0f,.001f,20.0f) *
-        glm::lookAt(camera,glm::vec3(.5f),glm::vec3(0,1,0));
-    auto inverse = glm::inverse(clip);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glUseProgram(sky_program);
-    glUniformMatrix4fv(glGetUniformLocation(sky_program,"clip_to_world"),1,GL_FALSE,glm::value_ptr(inverse));
-    glUniform3fv(glGetUniformLocation(sky_program,"camera_position"),1,glm::value_ptr(camera));
-    glBindVertexArray(vao);
-    glDrawArrays(GL_TRIANGLES,0,3);
-    auto sky = capture(framebuffer_pixels);
-    glBindVertexArray(0);
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
-    VoxelVolume volume(1,1,1,Transform());
-    volume.setProgram(voxel_program);
-    volume.setWorldStyle(true);
-    volume.setVoxel(0,0,0,5);
-    glUseProgram(voxel_program);
-    glUniform1i(glGetUniformLocation(voxel_program,"world_lighting"),true);
-    glUniform1i(glGetUniformLocation(voxel_program,"world_debug_material"),false);
-    glUniform1f(glGetUniformLocation(voxel_program,"world_fog_radius"),.01f);
-    render(volume,clip,camera);
-    auto fogged = capture(framebuffer_pixels);
-    for (std::size_t i=0; i<sky.color.size(); ++i)
-        require(std::abs(int(sky.color[i])-int(fogged.color[i])) <= 1,
-                "Fully fogged geometry does not converge to actual fullscreen sky");
-    int center = framebuffer_pixels/2 + framebuffer_pixels*(framebuffer_pixels/2);
-    require(fogged.depth[center] < 1, "Sky/fog parity scene did not draw geometry");
-    glUseProgram(voxel_program);
-    glUniform1f(glGetUniformLocation(voxel_program,"world_fog_radius"),world::FogDistance);
-    glUseProgram(0);
-    glDeleteVertexArrays(1,&vao);
-    glDeleteProgram(sky_program);
-    checkGL("fullscreen sky and fog smoke");
-    log << "world,fullscreen-sky-and-fog-convergence=pass\n";
-}
-
 struct Options {
     int volumes=100, dynamic_volumes=4, frames=100, warmup=10;
-    int pairs=1;
-    bool world_lighting=true;
-    std::uint64_t seed = world::DefaultSeed;
     bool strict=false;
-    std::string pose = "spawn";
     std::string label="candidate", scenario="all", output="voxel-benchmark";
+    // Mountains only.
+    int pairs=1;
+    std::uint64_t seed = world::DefaultSeed;
+    std::string pose = "ridge";
+    int width = 0, height = 0;
+    bool water = true;
 };
 Options options(int argc, char** argv) {
     Options result;
@@ -563,175 +376,546 @@ Options options(int argc, char** argv) {
         else if (arg=="--warmup") result.warmup=std::stoi(value);
         else if (arg=="--pixels") framebuffer_pixels=std::stoi(value);
         else if (arg=="--pairs") result.pairs=std::stoi(value);
-        else if (arg=="--world-lighting") result.world_lighting=std::stoi(value)!=0;
         else if (arg=="--pose") result.pose=value;
+        else if (arg=="--width") result.width=std::stoi(value);
+        else if (arg=="--height") result.height=std::stoi(value);
+        else if (arg=="--water") result.water=std::stoi(value)!=0;
         else if (arg=="--seed") result.seed=std::stoull(value);
         else throw std::runtime_error("Unknown option "+arg);
     }
     require(result.volumes>0 && result.dynamic_volumes>0 && result.frames>0 && result.warmup>=0,"Invalid workload sizes");
     require(framebuffer_pixels>0 && framebuffer_pixels<=4096,"Invalid framebuffer size");
-    require(result.pose=="spawn" || result.pose=="cave" || result.pose=="underside","Invalid world pose");
+    require(result.pose=="spawn" || result.pose=="ridge" || result.pose=="valley" || result.pose=="underwater" || result.pose=="summit","Invalid mountains pose");
     require(result.pairs>0,"Invalid pair count");
-    require(result.scenario=="all" || result.scenario=="islands" || result.scenario=="world" || result.scenario=="smoke" || result.scenario=="static" || result.scenario=="local" || result.scenario=="scattered" || result.scenario=="full","Invalid scenario");
+    require(result.scenario=="all" || result.scenario=="mountains" || result.scenario=="smoke" || result.scenario=="static" || result.scenario=="local" || result.scenario=="scattered" || result.scenario=="full","Invalid scenario");
+    if (result.width == 0) result.width = framebuffer_pixels;
+    if (result.height == 0) result.height = framebuffer_pixels;
+    require(result.width>0 && result.width<=4096 && result.height>0 && result.height<=4096,"Invalid mountains framebuffer size");
     return result;
 }
-void worldBenchmark(Options const& opts, GLuint shader_program, std::ostream& log) {
-    std::ofstream csv(opts.output + "-world.csv");
-    require(bool(csv), "Cannot open world benchmark CSV");
-    csv << "pair,frame,accelerated,lighting,volumes,gpu_ms,cpu_submit_ms,cpu_finish_ms,uploaded_bytes\n";
-    bool const islands = opts.scenario == "islands";
-    const int side = int(std::ceil(std::sqrt(double(opts.volumes))));
-    glm::vec3 center(side * .5f,.5f,side * .5f);
-    glm::vec3 camera = center + glm::vec3(side * .8f,side * .7f,side * 1.1f);
-    auto clip = glm::perspective(glm::radians(45.0f),1.0f,.01f,1000.0f) *
-                glm::lookAt(camera,center,glm::vec3(0,1,0));
-    if (islands) {
-        camera = world::spawnPosition(opts.seed);
-        center = world::spawnTarget(opts.seed);
-        if (opts.pose == "cave") { camera = glm::vec3(0,1.5f,19.5f); center = glm::vec3(0,.5f,14.7f); }
-        else if (opts.pose == "underside") { camera = glm::vec3(0,-12,26); center = glm::vec3(0,-6,0); }
-        clip = glm::perspective(glm::radians(65.0f),1.0f,.01f,1000.0f) *
-            glm::lookAt(camera,center,glm::vec3(0,1,0));
-    }
-    std::vector<std::unique_ptr<VoxelVolume>> volumes;
-    std::array<glm::vec3,256> palette;
-    for (int i=0; i<256; ++i) palette[i] = glm::vec3(.3f,.5f,.2f) * (.7f + .02f * (i >> 4));
-    counters = {};
-    auto generation_start = Clock::now();
-    if (islands) {
-        palette = world::worldPalette();
-        auto camera_key = world::keyAt(camera);
-        constexpr int radius = world::LoadRadius;
-        for (int z=-radius; z<=radius; ++z) for (int y=-radius; y<=radius; ++y) for (int x=-radius; x<=radius; ++x) {
-            if (x*x+y*y+z*z > radius*radius) continue;
-            world::ChunkKey key{camera_key.x+x,camera_key.y+y,camera_key.z+z};
-            if (!world::valid(key)) continue;
-            auto data = world::generateChunk(opts.seed,key);
-            if (std::none_of(data.begin(),data.end(),[](auto material) { return material != 0; })) continue;
-            auto position = world::origin(key);
-            auto volume = std::make_unique<VoxelVolume>(32,32,32,
-                Transform().translate(position.x,position.y,position.z).scale(world::ChunkSpan));
-            volume->setProgram(shader_program);
-            volume->setWorldStyle(true);
-            volume->setData(data);
-            volume->upload();
-            volumes.push_back(std::move(volume));
+// ----------------------------------------------------------------- mountains --
+// Minimal PNG (stored deflate) so every pose leaves an inspectable image without extra tooling.
+std::uint32_t crc32(std::uint8_t const* data, std::size_t size) {
+    static std::array<std::uint32_t, 256> const table = [] {
+        std::array<std::uint32_t, 256> t{};
+        for (std::uint32_t n = 0; n < 256; ++n) {
+            std::uint32_t c = n;
+            for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+            t[n] = c;
         }
-    } else for (int i=0; i<opts.volumes; ++i) {
-        auto volume = std::make_unique<VoxelVolume>(32,32,32,
-            Transform().translate(float(i%side),0,float(i/side)));
-        volume->setProgram(shader_program);
-        volume->setWorldStyle(true);
-        volume->updateVoxels([i](int x,int y,int z,GLubyte) {
-            float dx=x-15.5f, dz=z-15.5f;
-            bool solid = dx*dx+dz*dz < 210 && y < 12 + 3*std::sin((x+z+i)*.2f) && y > 3;
-            bool cave = (y-8)*(y-8)+(z-16)*(z-16) < 10;
-            return GLubyte(solid && !cave ? 1 + (x+z)%5 + 16*((x+y+z)%4) : 0);
-        });
-        volume->upload();
-        volumes.push_back(std::move(volume));
+        return t;
+    }();
+    std::uint32_t crc = 0xFFFFFFFFu;
+    for (std::size_t i = 0; i < size; ++i) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    return crc ^ 0xFFFFFFFFu;
+}
+void writePng(std::string const& path, int width, int height, std::vector<GLubyte> const& rgbaBottomUp) {
+    std::vector<std::uint8_t> raw;
+    raw.reserve(std::size_t(height) * (1 + 3 * std::size_t(width)));
+    for (int y = height - 1; y >= 0; --y) {
+        raw.push_back(0);
+        auto const* row = &rgbaBottomUp[std::size_t(y) * std::size_t(width) * 4];
+        for (int x = 0; x < width; ++x) raw.insert(raw.end(), row + x * 4, row + x * 4 + 3);
     }
-    log << "world,initial_bytes=" << counters.bytes << ",initial_texture_allocations=" << counters.image_calls
-        << ",workload=" << (islands ? "generated-islands" : "32-cubed-cave-islands")
-        << ",load_radius=" << (islands ? world::LoadRadius : 0)
-        << ",pose=" << opts.pose
-        << ",seed=" << opts.seed << ",volumes=" << volumes.size()
-        << ",generation-and-upload_ms=" << milliseconds(generation_start)
-        << ",lighting=" << opts.world_lighting << '\n';
-    glUseProgram(shader_program);
-    glUniform3fv(glGetUniformLocation(shader_program,"colorPalette"),256,glm::value_ptr(palette[0]));
-    glUniform1i(glGetUniformLocation(shader_program,"world_lighting"),opts.world_lighting);
-    glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),false);
-    glUniform1f(glGetUniformLocation(shader_program,"world_fog_radius"),islands ? world::FogDistance : 1000.0f);
-    GLuint sky_program = 0, sky_vao = 0;
-    if (islands) {
-        sky_program = program("worldsky");
-        glGenVertexArrays(1,&sky_vao);
-        glUseProgram(sky_program);
-        auto inverse = glm::inverse(clip);
-        glUniformMatrix4fv(glGetUniformLocation(sky_program,"clip_to_world"),1,GL_FALSE,glm::value_ptr(inverse));
-        glUniform3fv(glGetUniformLocation(sky_program,"camera_position"),1,glm::value_ptr(camera));
-    }
-    auto draw_scene = [&](bool verify = false, bool sky = true) {
-        if (sky_program && sky) {
-            glDisable(GL_DEPTH_TEST); glDepthMask(GL_FALSE);
-            glUseProgram(sky_program); glBindVertexArray(sky_vao);
-            glDrawArrays(GL_TRIANGLES,0,3);
-            glBindVertexArray(0); glDepthMask(GL_TRUE); glEnable(GL_DEPTH_TEST);
-        }
-        for (auto& volume : volumes) render(*volume,clip,camera,verify);
+    std::vector<std::uint8_t> zlib{0x78, 0x01};
+    std::uint32_t a = 1, b = 0;
+    for (auto v : raw) { a = (a + v) % 65521; b = (b + a) % 65521; }
+    std::size_t offset = 0;
+    do {
+        std::size_t len = std::min<std::size_t>(65535, raw.size() - offset);
+        bool last = offset + len == raw.size();
+        zlib.push_back(last ? 1 : 0);
+        zlib.push_back(std::uint8_t(len & 0xFF)); zlib.push_back(std::uint8_t((len >> 8) & 0xFF));
+        zlib.push_back(std::uint8_t(~len & 0xFF)); zlib.push_back(std::uint8_t((~len >> 8) & 0xFF));
+        zlib.insert(zlib.end(), raw.begin() + std::ptrdiff_t(offset), raw.begin() + std::ptrdiff_t(offset + len));
+        offset += len;
+    } while (offset < raw.size());
+    auto be32 = [](std::vector<std::uint8_t>& v, std::uint32_t x) {
+        for (int shift = 24; shift >= 0; shift -= 8) v.push_back(std::uint8_t((x >> shift) & 0xFF));
     };
-    // Whole generated scene parity is proven before timing, with material bytes
-    // and actual hit depths as well as identical controllable lighting.
-    for (bool material : {true,false}) {
-        glUseProgram(shader_program);
-        glUniform1i(glGetUniformLocation(shader_program,"world_debug_material"),material);
-        Capture reference;
-        for (bool accelerated : {false,true}) {
-            for (auto& volume : volumes) volume->setAcceleration(accelerated);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-            draw_scene(false,!material);
-            auto frame = capture(framebuffer_pixels);
-            auto suffix = std::string(material ? "-material" : "-shaded") + (accelerated ? "-accelerated" : "-reference");
-            saveImage(opts.output + suffix + ".rgba");
-            std::ofstream depth_file(opts.output + suffix + ".depth",std::ios::binary);
-            require(bool(depth_file),"Cannot write world depth capture");
-            depth_file.write(reinterpret_cast<char const*>(frame.depth.data()),std::streamsize(frame.depth.size()*sizeof(float)));
-            if (!accelerated) reference = std::move(frame);
-            else {
-                require(reference.color == frame.color,"Whole-world material/shaded parity failed");
-                require(reference.depth == frame.depth,"Whole-world exact depth parity failed");
+    be32(zlib, (b << 16) | a);
+    std::ofstream out(path, std::ios::binary);
+    require(bool(out), "Cannot write " + path);
+    auto chunk = [&](char const* type, std::vector<std::uint8_t> const& body) {
+        std::vector<std::uint8_t> block(type, type + 4);
+        block.insert(block.end(), body.begin(), body.end());
+        std::vector<std::uint8_t> head;
+        be32(head, std::uint32_t(body.size()));
+        be32(block, crc32(block.data(), block.size()));
+        out.write(reinterpret_cast<char const*>(head.data()), std::streamsize(head.size()));
+        out.write(reinterpret_cast<char const*>(block.data()), std::streamsize(block.size()));
+    };
+    std::uint8_t const signature[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    out.write(reinterpret_cast<char const*>(signature), sizeof(signature));
+    std::vector<std::uint8_t> header;
+    be32(header, std::uint32_t(width));
+    be32(header, std::uint32_t(height));
+    header.insert(header.end(), {8, 2, 0, 0, 0});
+    chunk("IHDR", header);
+    chunk("IDAT", zlib);
+    chunk("IEND", {});
+}
+
+glm::dvec3 metres(world::WorldPosition const& p) {
+    return glm::dvec3(double(p.anchor.x), double(p.anchor.y), double(p.anchor.z)) * double(world::ChunkSpan) + p.offset;
+}
+world::WorldPosition worldAt(glm::dvec3 m) {
+    auto p = world::normalizedPosition(world::ChunkKey{0, 0, 0, 0}, m);
+    require(bool(p), "Pose is not representable");
+    return *p;
+}
+// Nearest lattice column around `center` within `reach` metres whose height passes `accept`.
+template <class Accept>
+std::optional<glm::dvec3> nearestColumn(std::uint64_t seed, glm::dvec2 center, double reach, double step, Accept&& accept) {
+    std::optional<glm::dvec3> best;
+    double bestD2 = reach * reach + 1;
+    for (double dz = -reach; dz <= reach; dz += step)
+        for (double dx = -reach; dx <= reach; dx += step) {
+            double d2 = dx * dx + dz * dz;
+            if (d2 > reach * reach || d2 >= bestD2) continue;
+            double x = center.x + dx, z = center.y + dz;
+            double h = world::terrainHeight(seed, x, z);
+            if (!accept(h)) continue;
+            bestD2 = d2;
+            best = glm::dvec3(x, h, z);
+        }
+    return best;
+}
+// Highest (or lowest) lattice column around `center` within `reach` metres.
+glm::dvec3 extremeColumn(std::uint64_t seed, glm::dvec2 center, double reach, double step, bool highest) {
+    glm::dvec3 best(center.x, highest ? -1e300 : 1e300, center.y);
+    for (double dz = -reach; dz <= reach; dz += step)
+        for (double dx = -reach; dx <= reach; dx += step) {
+            if (dx * dx + dz * dz > reach * reach) continue;
+            double x = center.x + dx, z = center.y + dz;
+            double h = world::terrainHeight(seed, x, z);
+            if (highest ? h > best.y : h < best.y) best = glm::dvec3(x, h, z);
+        }
+    return best;
+}
+struct Pose {
+    world::WorldPosition eye, target;
+};
+Pose mountainPose(std::string const& name, std::uint64_t seed) {
+    using world::SeaLevel;
+    auto height = [seed](double x, double z) { return world::terrainHeight(seed, x, z); };
+    auto spawn = metres(world::spawnPosition(seed));
+    glm::dvec2 spawnXZ(spawn.x, spawn.z);
+    if (name == "spawn") return {worldAt(spawn), worldAt(metres(world::spawnTarget(seed)))};
+    // Pinned XZ from the GeneratorVersion 2 spawn ridge; heights follow the current generator so the
+    // viewpoint stays above ground across relief changes.
+    if (name == "ridge")
+        return {worldAt(glm::dvec3(900, height(900, -1200) + 30, -1200)),
+                worldAt(glm::dvec3(-1450, height(-1450, -1550) + 10, -1550))};
+    if (name == "valley") {
+        auto ridge = nearestColumn(seed, spawnXZ, 3000, 50, [](double h) { return h > 500; });
+        require(bool(ridge), "No ridge above 500 m within 3 km of spawn");
+        glm::dvec2 toSpawn = glm::normalize(spawnXZ - glm::dvec2(ridge->x, ridge->z));
+        std::optional<glm::dvec3> floor;
+        for (double d = 10; d <= 3000 && !floor; d += 10) {
+            double x = ridge->x + toSpawn.x * d, z = ridge->z + toSpawn.y * d;
+            double h = height(x, z);
+            if (h <= ridge->y - 300) floor = glm::dvec3(x, h, z);
+        }
+        require(bool(floor), "No valley floor 300 m below the nearest ridge");
+        // The valley axis runs across the slope gradient; look down-valley.
+        double gx = (height(floor->x + 2, floor->z) - height(floor->x - 2, floor->z)) / 4;
+        double gz = (height(floor->x, floor->z + 2) - height(floor->x, floor->z - 2)) / 4;
+        glm::dvec2 axis(-gz, gx);
+        axis = glm::length(axis) < 1e-6 ? toSpawn : glm::normalize(axis);
+        auto ahead = [&](glm::dvec2 dir) {
+            double sum = 0;
+            for (double d = 50; d <= 300; d += 50) sum += height(floor->x + dir.x * d, floor->z + dir.y * d);
+            return sum / 6;
+        };
+        if (ahead(-axis) < ahead(axis)) axis = -axis;
+        glm::dvec3 eye(floor->x, std::max(floor->y, SeaLevel) + 1.8, floor->z);
+        return {worldAt(eye), worldAt(glm::dvec3(eye.x + axis.x * 300, eye.y - 15, eye.z + axis.y * 300))};
+    }
+    if (name == "underwater") {
+        // Prefer the 400 m ring around spawn; a spawn that sits inland falls back to the nearest seabed within 3 km.
+        auto deep = nearestColumn(seed, spawnXZ, 400, 5, [](double h) { return h < SeaLevel - 7; });
+        if (!deep) deep = nearestColumn(seed, spawnXZ, 3000, 10, [](double h) { return h < SeaLevel - 7; });
+        if (!deep) deep = nearestColumn(seed, spawnXZ, 12000, 25, [](double h) { return h < SeaLevel - 7; });
+        require(bool(deep), "No seabed 7 m below sea level within 12 km of spawn");
+        glm::dvec3 eye(deep->x, SeaLevel - 5, deep->z);
+        glm::dvec2 shore = glm::normalize(spawnXZ - glm::dvec2(eye.x, eye.z));
+        return {worldAt(eye), worldAt(glm::dvec3(eye.x + shore.x * 100, eye.y, eye.z + shore.y * 100))};
+    }
+    require(name == "summit", "Mountains scenario needs --pose spawn|ridge|valley|underwater|summit");
+    auto coarse = extremeColumn(seed, spawnXZ, 3000, 50, true);
+    auto summit = extremeColumn(seed, glm::dvec2(coarse.x, coarse.z), 50, 5, true);
+    auto sea = nearestColumn(seed, glm::dvec2(summit.x, summit.z), 6000, 50, [](double h) { return h < SeaLevel; });
+    require(bool(sea), "No sea within 6 km of the summit");
+    // The 5 m search grid can miss a neighbouring column up to ~5 m higher on alpine slopes. Look
+    // towards the nearest sea but no steeper than 15 degrees down so the horizon stays in frame.
+    glm::dvec3 eye(summit.x, summit.y + 12, summit.z);
+    double run = glm::length(glm::dvec2(sea->x, sea->z) - glm::dvec2(summit.x, summit.z));
+    double targetY = std::max(SeaLevel, eye.y - run * std::tan(glm::radians(15.0)));
+    return {worldAt(eye), worldAt(glm::dvec3(sea->x, targetY, sea->z))};
+}
+
+struct Resident {
+    std::uint8_t uniform = world::Air;
+    std::optional<std::uint16_t> slot;
+};
+struct LevelStats {
+    int keys = 0, bricks = 0, uniformSolid = 0, uniformAir = 0, drawn = 0, drawnBricks = 0, drawnSolid = 0, drawnAir = 0;
+};
+struct FrameTimes {
+    double opaqueGpu, compositeGpu, opaqueSubmit, compositeSubmit, wall;
+    double cpuSubmit() const { return opaqueSubmit + compositeSubmit; }
+};
+struct ColumnStats {
+    double mean, p99;
+};
+ColumnStats columnStats(std::vector<double> values) {
+    std::sort(values.begin(), values.end());
+    double sum = 0;
+    for (auto v : values) sum += v;
+    return {sum / double(values.size()), values[std::size_t(std::ceil(0.99 * double(values.size()))) - 1]};
+}
+
+void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ostream& csv, std::ostream& log) {
+    using namespace world;
+    constexpr int MaxChunkDelta = 1 << 24;
+    std::string const& poseName = opts.pose;
+    int const width = opts.width, height = opts.height;
+    std::size_t const pixels = std::size_t(width) * std::size_t(height);
+
+    auto pose = mountainPose(poseName, opts.seed);
+    auto anchor = pose.eye.anchor;
+    auto targetRelative = relativeOrigin(pose.target.anchor, anchor, MaxChunkDelta);
+    require(bool(targetRelative), "Pose target is too far from the eye");
+    glm::vec3 const eye(pose.eye.offset);
+    glm::vec3 const lookAt = *targetRelative + glm::vec3(pose.target.offset);
+    auto worldToClip = glm::perspective(glm::radians(65.0f), float(width) / float(height), 0.05f, 40000.0f) *
+                       glm::lookAt(eye, lookAt, glm::vec3(0, 1, 0));
+
+    // The composite writes into this target; the renderer keeps its own colour/distance MRT.
+    GLuint target = 0, targetColor = 0;
+    glGenFramebuffers(1, &target);
+    glBindFramebuffer(GL_FRAMEBUFFER, target);
+    glGenTextures(1, &targetColor);
+    glBindTexture(GL_TEXTURE_2D, targetColor);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, targetColor, 0);
+    require(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "Incomplete mountains target");
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    ShaderProgramManager programs;
+    WorldRenderer renderer;
+    renderer.init(programs);
+    auto palette = worldPalette();
+    checkGL("mountains renderer init");
+
+    // Cold start: every residency target is generated and uploaded synchronously, then the
+    // level tables are filled from the drawn set exactly as WorldApp::refreshDrawn does.
+    counters = {};
+    auto coldStart = Clock::now();
+    auto targets = residencyTargets(anchor, ShellRadius);
+    std::map<ChunkKey, Resident> resident;
+    std::array<LevelStats, LevelCount> levels{};
+    std::size_t uploadedBytes = 0;
+    for (auto key : targets) {
+        Resident r;
+        auto& stats = levels[key.level];
+        ++stats.keys;
+        if (auto trivial = trivialUniform(opts.seed, key)) {
+            r.uniform = *trivial;
+        } else {
+            auto data = generateChunk(opts.seed, key);
+            std::uint8_t value = Air;
+            if (isUniform(data, value)) {
+                r.uniform = value;
+            } else {
+                auto slot = renderer.bricks().allocate();
+                require(bool(slot), "Brick pool exhausted after " + std::to_string(renderer.bricks().used()) + " bricks");
+                uploadedBytes += renderer.bricks().upload(*slot, data);
+                r.slot = slot;
             }
         }
+        if (r.slot) ++stats.bricks;
+        else if (r.uniform == Air) ++stats.uniformAir;
+        else ++stats.uniformSolid;
+        resident.emplace(key, r);
     }
-    log << "world,whole-scene-material-and-shaded-parity=byte-exact,depth=bit-exact\n";
-    GLuint timer;
-    glGenQueries(1,&timer);
-    for (int pair=0; pair<opts.pairs; ++pair) {
-        std::array<std::vector<double>,2> gpu_times, cpu_times;
-        for (int frame=-opts.warmup; frame<opts.frames; ++frame) {
+    double const generateUploadMs = milliseconds(coldStart);
+    auto entryOf = [](Resident const& r) -> std::uint16_t {
+        if (r.slot) return std::uint16_t(256 + *r.slot);
+        return r.uniform == Air ? 0 : r.uniform;
+    };
+    auto drawn = drawnSet(anchor, ShellRadius, [&](ChunkKey k) { return resident.contains(k); });
+    std::set<ChunkKey> drawnKeys(drawn.begin(), drawn.end());
+    std::array<int, LevelCount> topRow;
+    topRow.fill(-1);
+    for (int level = 0; level < LevelCount; ++level) {
+        auto r = region(anchor, level, ShellRadius);
+        require(bool(r), "Level region is not representable");
+        r->each([&](ChunkKey k) {
+            std::uint16_t entry = 0;
+            if (drawnKeys.contains(k)) {
+                auto const& res = resident.at(k);
+                entry = entryOf(res);
+                auto& stats = levels[level];
+                ++stats.drawn;
+                if (res.slot) ++stats.drawnBricks;
+                else if (res.uniform == Air) ++stats.drawnAir;
+                else ++stats.drawnSolid;
+            }
+            if (entry != 0) topRow[level] = std::max(topRow[level], int(k.y - r->lo.y));
+            renderer.table(level).set(k, entry);
+        });
+    }
+    std::array<bool, LevelCount> holeValid;
+    holeValid.fill(true);
+    holeValid[0] = false;
+    for (auto key : drawn) {
+        if (key.level == 0) continue;
+        auto finer = region(anchor, key.level - 1, ShellRadius);
+        auto first = childOf(key, 0), last = childOf(key, 7);
+        if (!finer || !first || !last) continue;
+        if (finer->contains(*first) && finer->contains(*last)) holeValid[key.level] = false;
+    }
+    glFinish();
+    double const coldStartMs = milliseconds(coldStart);
+    auto const coldCounters = counters;
+    checkGL("mountains cold start");
+
+    std::array<std::optional<LevelUniforms>, LevelCount> uniforms;
+    for (int level = 0; level < LevelCount; ++level) {
+        auto r = region(anchor, level, ShellRadius);
+        if (!r) continue;
+        auto origin = relativeOrigin(r->lo, anchor, MaxChunkDelta);
+        if (!origin) continue;
+        LevelUniforms u{
+            .level = level,
+            .regionOrigin = *origin,
+            .chunkSpan = spanAt(level),
+            .regionSize = glm::ivec3(int(r->hi.x - r->lo.x + 1), int(r->hi.y - r->lo.y + 1), int(r->hi.z - r->lo.z + 1)),
+            .pageOrigin = LevelTable::texel(r->lo),
+            .holeLo = glm::ivec3(0),
+            .holeHi = glm::ivec3(0),
+            .topRow = topRow[level],
+        };
+        if (holeValid[level]) {
+            auto finer = *region(anchor, level - 1, ShellRadius);
+            u.holeLo = glm::ivec3(int(finer.lo.x / 2 - r->lo.x), int(finer.lo.y / 2 - r->lo.y), int(finer.lo.z / 2 - r->lo.z));
+            u.holeHi = glm::ivec3(int((finer.hi.x + 1) / 2 - r->lo.x), int((finer.hi.y + 1) / 2 - r->lo.y), int((finer.hi.z + 1) / 2 - r->lo.z));
+        }
+        uniforms[level] = u;
+    }
+
+    FrameUniforms frame{
+        .worldToClip = worldToClip,
+        .clipToWorld = glm::inverse(worldToClip),
+        .cameraPosition = eye,
+        .seaLevel = float(SeaLevel - double(anchor.y) * double(ChunkSpan)),
+        .sunDirection = glm::normalize(glm::vec3(0.35f, 0.8f, 0.45f)),
+        .acceleration = true,
+        .palette = &palette,
+        .width = width,
+        .height = height,
+    };
+    auto drawOpaque = [&](bool accelerated) {
+        frame.acceleration = accelerated;
+        glBindFramebuffer(GL_FRAMEBUFFER, target);
+        renderer.beginFrame(frame);
+        for (int level = 0; level < LevelCount; ++level)
+            if (uniforms[level]) renderer.drawLevel(*uniforms[level]);
+        renderer.march();
+    };
+
+    // Parity: opaque colour bytes, linear distance bits and the composite, acceleration off vs on.
+    struct Readback {
+        std::vector<GLubyte> color, composite;
+        std::vector<float> distance;
+    };
+    auto readback = [&](bool accelerated) {
+        Readback result;
+        result.color.resize(pixels * 3);
+        result.distance.resize(pixels);
+        result.composite.resize(pixels * 4);
+        drawOpaque(accelerated);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, result.color.data());
+        glReadBuffer(GL_COLOR_ATTACHMENT1);
+        glReadPixels(0, 0, width, height, GL_RED, GL_FLOAT, result.distance.data());
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        if (opts.water) {
+            renderer.composite();
+            glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, result.composite.data());
+        } else {
+            for (std::size_t i = 0; i < pixels; ++i) {
+                std::memcpy(&result.composite[i * 4], &result.color[i * 3], 3);
+                result.composite[i * 4 + 3] = 255;
+            }
+        }
+        glFinish();
+        return result;
+    };
+    auto reference = readback(false);
+    auto accelerated = readback(true);
+    std::size_t colorDiffering = 0, distanceDiffering = 0, compositeDiffering = 0, nonBlack = 0;
+    for (std::size_t i = 0; i < pixels; ++i) {
+        if (std::memcmp(&reference.color[i * 3], &accelerated.color[i * 3], 3) != 0) ++colorDiffering;
+        if (std::memcmp(&reference.distance[i], &accelerated.distance[i], sizeof(float)) != 0) ++distanceDiffering;
+        if (std::memcmp(&reference.composite[i * 4], &accelerated.composite[i * 4], 4) != 0) ++compositeDiffering;
+        if (accelerated.composite[i * 4] | accelerated.composite[i * 4 + 1] | accelerated.composite[i * 4 + 2]) ++nonBlack;
+    }
+    std::string const png = prefix + ".png";
+    writePng(png, width, height, accelerated.composite);
+    checkGL("mountains parity");
+    // Target visibility: hit pixels within 3 degrees of the view centre, plus the centre-row distance profile.
+    constexpr float NoHit = 1e30f;
+    auto const clipToView = glm::inverse(glm::perspective(glm::radians(65.0f), float(width) / float(height), 0.05f, 40000.0f));
+    std::size_t coneHits = 0, conePixels = 0, rowHits = 0;
+    float rowMin = NoHit, rowMax = 0, rowSum = 0, coneMin = NoHit, coneMax = 0;
+    double const coneCos = std::cos(glm::radians(3.0));
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            glm::vec4 view = clipToView * glm::vec4((float(x) + 0.5f) / float(width) * 2 - 1, (float(y) + 0.5f) / float(height) * 2 - 1, 1, 1);
+            glm::vec3 dir = glm::normalize(glm::vec3(view) / view.w);
+            float d = accelerated.distance[std::size_t(y) * std::size_t(width) + std::size_t(x)];
+            bool hit = d < NoHit;
+            if (-dir.z >= coneCos) {
+                ++conePixels;
+                if (hit) { ++coneHits; coneMin = std::min(coneMin, d); coneMax = std::max(coneMax, d); }
+            }
+            if (y == height / 2 && hit) { ++rowHits; rowMin = std::min(rowMin, d); rowMax = std::max(rowMax, d); rowSum += d; }
+        }
+
+    GLuint queries[2];
+    glGenQueries(2, queries);
+    auto renderFrame = [&](bool accelerated) {
+        glBindFramebuffer(GL_FRAMEBUFFER, target);
+        glFinish();
+        counters = {};
+        auto start = Clock::now();
+        glBeginQuery(GL_TIME_ELAPSED, queries[0]);
+        drawOpaque(accelerated);
+        glEndQuery(GL_TIME_ELAPSED);
+        double opaqueSubmit = milliseconds(start);
+        double compositeSubmit = 0;
+        if (opts.water) {
+            auto compositeStart = Clock::now();
+            glBeginQuery(GL_TIME_ELAPSED, queries[1]);
+            renderer.composite();
+            glEndQuery(GL_TIME_ELAPSED);
+            compositeSubmit = milliseconds(compositeStart);
+        }
+        glFinish();
+        double wall = milliseconds(start);
+        GLuint64 opaqueNs = 0, compositeNs = 0;
+        glGetQueryObjectui64v(queries[0], GL_QUERY_RESULT, &opaqueNs);
+        if (opts.water) glGetQueryObjectui64v(queries[1], GL_QUERY_RESULT, &compositeNs);
+        require(counters.bytes == 0, "Mountains frame uploaded voxels");
+        return FrameTimes{double(opaqueNs) / 1e6, double(compositeNs) / 1e6, opaqueSubmit, compositeSubmit, wall};
+    };
+
+    csv << "pair,frame,accelerated,opaque_gpu_ms,composite_gpu_ms,opaque_submit_ms,composite_submit_ms,cpu_submit_ms,wall_ms\n";
+    std::ostringstream pairsJson;
+    pairsJson << std::setprecision(9);
+    std::array<std::vector<FrameTimes>, 2> overall;
+    auto statsJson = [&](std::vector<FrameTimes> const& samples) {
+        auto column = [&](auto&& pick) {
+            std::vector<double> values;
+            values.reserve(samples.size());
+            for (auto const& s : samples) values.push_back(pick(s));
+            return columnStats(std::move(values));
+        };
+        auto opaque = column([](FrameTimes const& t) { return t.opaqueGpu; });
+        auto composite = column([](FrameTimes const& t) { return t.compositeGpu; });
+        auto submit = column([](FrameTimes const& t) { return t.cpuSubmit(); });
+        auto wall = column([](FrameTimes const& t) { return t.wall; });
+        std::ostringstream s;
+        s << std::setprecision(9)
+          << "{\"frames\":" << samples.size()
+          << ",\"opaque_gpu_ms\":{\"mean\":" << opaque.mean << ",\"p99\":" << opaque.p99 << "}"
+          << ",\"composite_gpu_ms\":{\"mean\":" << composite.mean << ",\"p99\":" << composite.p99 << "}"
+          << ",\"cpu_submit_ms\":{\"mean\":" << submit.mean << ",\"p99\":" << submit.p99 << "}"
+          << ",\"wall_ms\":{\"mean\":" << wall.mean << ",\"p99\":" << wall.p99 << "}}";
+        return s.str();
+    };
+    for (int pair = 0; pair < opts.pairs; ++pair) {
+        std::array<std::vector<FrameTimes>, 2> samples;
+        for (int index = -opts.warmup; index < opts.frames; ++index) {
             // Alternate order each paired frame to avoid a consistently warm path.
-            for (int order=0; order<2; ++order) {
-                int accelerated = (order + frame + opts.warmup + pair) % 2;
-                for (auto& volume : volumes) volume->setAcceleration(accelerated != 0);
-                glFinish();
-                counters = {};
-                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-                auto start = Clock::now();
-                glBeginQuery(GL_TIME_ELAPSED,timer);
-                draw_scene();
-                glEndQuery(GL_TIME_ELAPSED);
-                double submit_ms = milliseconds(start);
-                glFinish();
-                double finish_ms = milliseconds(start);
-                GLuint64 nanoseconds = 0;
-                glGetQueryObjectui64v(timer,GL_QUERY_RESULT,&nanoseconds);
-                double gpu_ms = double(nanoseconds) / 1e6;
-                require(counters.bytes == 0, "Unchanged world benchmark uploaded voxels");
-                if (frame>=0) {
-                    gpu_times[accelerated].push_back(gpu_ms);
-                    cpu_times[accelerated].push_back(finish_ms);
-                    csv << pair << ',' << frame << ',' << accelerated << ',' << opts.world_lighting << ','
-                        << volumes.size() << ',' << gpu_ms << ',' << submit_ms << ',' << finish_ms << ',' << counters.bytes << '\n';
-                }
+            for (int order = 0; order < 2; ++order) {
+                int accelerated = (order + index + opts.warmup + pair) % 2;
+                auto t = renderFrame(accelerated != 0);
+                if (index < 0) continue;
+                samples[accelerated].push_back(t);
+                overall[accelerated].push_back(t);
+                csv << pair << ',' << index << ',' << accelerated << ',' << t.opaqueGpu << ',' << t.compositeGpu << ','
+                    << t.opaqueSubmit << ',' << t.compositeSubmit << ',' << t.cpuSubmit() << ',' << t.wall << '\n';
             }
         }
-        for (int accelerated=0; accelerated<2; ++accelerated) {
-            auto& gpu = gpu_times[accelerated];
-            auto& cpu = cpu_times[accelerated];
-            std::sort(gpu.begin(),gpu.end()); std::sort(cpu.begin(),cpu.end());
-            auto percentile = [](auto const& samples, double p) { return samples[std::size_t(std::ceil(samples.size()*p))-1]; };
-            log << "world,pair=" << pair << ",accelerated=" << accelerated
-                << ",gpu_p50_ms=" << percentile(gpu,.5) << ",gpu_p95_ms=" << percentile(gpu,.95)
-                << ",cpu_finish_p50_ms=" << percentile(cpu,.5) << ",cpu_finish_p95_ms=" << percentile(cpu,.95) << '\n';
+        for (int accelerated = 0; accelerated < 2; ++accelerated) {
+            auto json = statsJson(samples[accelerated]);
+            pairsJson << (pair == 0 && accelerated == 0 ? "" : ",")
+                      << "{\"pair\":" << pair << ",\"accelerated\":" << accelerated << ",\"stats\":" << json << "}";
+            log << "mountains,pose=" << poseName << ",pair=" << pair << ",accelerated=" << accelerated << ",stats=" << json << '\n';
         }
     }
-    glDeleteQueries(1,&timer);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    draw_scene(true);
-    log << "world,image_hash=" << saveImage(opts.output + "-world.rgba") << '\n';
-    checkGL("world paired benchmark");
-    if (sky_program) { glDeleteVertexArrays(1,&sky_vao); glDeleteProgram(sky_program); }
+    glDeleteQueries(2, queries);
+    checkGL("mountains paired benchmark");
+
+    int drawnTotal = 0, bricksTotal = 0;
+    for (auto const& stats : levels) { drawnTotal += stats.drawn; bricksTotal += stats.bricks; }
+    auto eyeMetres = metres(pose.eye), targetMetres = metres(pose.target);
+    std::ofstream json(prefix + ".json");
+    require(bool(json), "Cannot open mountains JSON");
+    json << std::setprecision(9) << "{\n"
+         << "  \"label\": \"" << opts.label << "\",\n"
+         << "  \"scenario\": \"mountains\",\n"
+         << "  \"pose\": \"" << poseName << "\",\n"
+         << "  \"seed\": " << opts.seed << ",\n"
+         << "  \"renderer\": \"" << glGetString(GL_RENDERER) << "\",\n"
+         << "  \"version\": \"" << glGetString(GL_VERSION) << "\",\n"
+         << "  \"width\": " << width << ", \"height\": " << height << ",\n"
+         << "  \"frames\": " << opts.frames << ", \"warmup\": " << opts.warmup << ", \"pairs\": " << opts.pairs << ",\n"
+         << "  \"water\": " << (opts.water ? "true" : "false") << ",\n"
+         << "  \"eye_metres\": [" << eyeMetres.x << ", " << eyeMetres.y << ", " << eyeMetres.z << "],\n"
+         << "  \"target_metres\": [" << targetMetres.x << ", " << targetMetres.y << ", " << targetMetres.z << "],\n"
+         << "  \"anchor\": [" << anchor.x << ", " << anchor.y << ", " << anchor.z << "],\n"
+         << "  \"cold_start\": {\"generate_upload_ms\": " << generateUploadMs << ", \"total_ms\": " << coldStartMs
+         << ", \"targets\": " << targets.size() << ", \"uploaded_bytes\": " << uploadedBytes
+         << ", \"gl_counted_texels\": " << coldCounters.bytes << ", \"subimage_calls\": " << coldCounters.subimage_calls
+         << ", \"bricks_used\": " << renderer.bricks().used() << ", \"brick_capacity\": " << BrickCapacity << "},\n"
+         << "  \"drawn_total\": " << drawnTotal << ", \"bricks_total\": " << bricksTotal << ",\n"
+         << "  \"levels\": [\n";
+    for (int level = 0; level < LevelCount; ++level) {
+        auto const& s = levels[level];
+        json << "    {\"level\": " << level << ", \"keys\": " << s.keys << ", \"bricks\": " << s.bricks
+             << ", \"uniform_solid\": " << s.uniformSolid << ", \"uniform_air\": " << s.uniformAir
+             << ", \"drawn\": " << s.drawn << ", \"drawn_bricks\": " << s.drawnBricks
+             << ", \"drawn_solid\": " << s.drawnSolid << ", \"drawn_air\": " << s.drawnAir
+             << ", \"hole\": " << (holeValid[level] ? "true" : "false") << "}" << (level + 1 < LevelCount ? ",\n" : "\n");
+    }
+    json << "  ],\n"
+         << "  \"parity\": {\"color_differing\": " << colorDiffering << ", \"distance_differing\": " << distanceDiffering
+         << ", \"composite_differing\": " << compositeDiffering << ", \"pixels\": " << pixels << "},\n"
+         << "  \"non_black_pixels\": " << nonBlack << ",\n"
+         << "  \"centre_cone_3deg\": {\"pixels\": " << conePixels << ", \"hits\": " << coneHits
+         << ", \"min_m\": " << (coneHits ? coneMin : 0) << ", \"max_m\": " << (coneHits ? coneMax : 0) << "},\n"
+         << "  \"centre_row\": {\"pixels\": " << width << ", \"hits\": " << rowHits << ", \"min_m\": " << (rowHits ? rowMin : 0)
+         << ", \"max_m\": " << (rowHits ? rowMax : 0) << ", \"mean_m\": " << (rowHits ? rowSum / float(rowHits) : 0) << "},\n"
+         << "  \"png\": \"" << png << "\",\n"
+         << "  \"pairs_stats\": [" << pairsJson.str() << "],\n"
+         << "  \"overall\": {\"reference\": " << statsJson(overall[0]) << ", \"accelerated\": " << statsJson(overall[1]) << "}\n"
+         << "}\n";
+    log << "mountains,pose=" << poseName << ",eye=" << eyeMetres.x << '/' << eyeMetres.y << '/' << eyeMetres.z
+        << ",targets=" << targets.size() << ",drawn=" << drawnTotal << ",bricks=" << bricksTotal
+        << ",uploaded_bytes=" << uploadedBytes << ",generate_upload_ms=" << generateUploadMs << ",cold_start_ms=" << coldStartMs
+        << ",color_differing=" << colorDiffering << ",distance_differing=" << distanceDiffering
+        << ",composite_differing=" << compositeDiffering << ",non_black=" << nonBlack << '/' << pixels
+        << ",cone_hits=" << coneHits << '/' << conePixels << ",row_hits=" << rowHits << '/' << width
+        << ",png=" << png << '\n';
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteTextures(1, &targetColor);
+    glDeleteFramebuffers(1, &target);
 }
 
 void benchmark(std::string const& scenario, Options const& opts, GLuint shader_program, std::ostream& csv, std::ostream& log) {
@@ -790,20 +974,28 @@ void benchmark(std::string const& scenario, Options const& opts, GLuint shader_p
 int main(int argc,char** argv) {
     try {
         auto opts=options(argc,argv);
-        std::ofstream csv(opts.output+".csv"), log(opts.output+".txt");
+        bool const mountains = opts.scenario=="mountains";
+        // Mountains accepts --output DIR; every legacy scenario keeps the prefix convention.
+        std::string const prefix = mountains && std::filesystem::is_directory(opts.output)
+            ? (std::filesystem::path(opts.output) / ("mountains-" + opts.pose)).string()
+            : mountains ? opts.output + "-mountains-" + opts.pose : opts.output;
+        std::ofstream csv(mountains ? prefix+"-frames.csv" : prefix+".csv"), log(prefix+".txt");
         require(bool(csv)&&bool(log),"Cannot open benchmark output prefix");
         csv << std::fixed << std::setprecision(6);
-        csv << "label,scenario,volumes,width,height,depth,frame,uploaded_bytes,image_calls,subimage_calls,upload_cpu_ms,upload_drained_ms,mutation_ms,render_finish_ms,whole_frame_ms,isolate_uploads\n";
+        if(!mountains) csv << "label,scenario,volumes,width,height,depth,frame,uploaded_bytes,image_calls,subimage_calls,upload_cpu_ms,upload_drained_ms,mutation_ms,render_finish_ms,whole_frame_ms,isolate_uploads\n";
         Surface surface;
         for(auto item:{GL_VENDOR,GL_RENDERER,GL_VERSION,GL_SHADING_LANGUAGE_VERSION}) log << item << '=' << glGetString(item) << '\n';
         log << "label=" << opts.label << ",warmup=" << opts.warmup << ",frames=" << opts.frames << ",framebuffer=" << framebuffer_pixels << 'x' << framebuffer_pixels << ",scenario=" << opts.scenario << ",isolate_uploads=" << isolate_uploads << '\n';
+        if(mountains) {
+            mountainsBenchmark(opts,prefix,csv,log);
+            checkGL("shutdown");
+            std::cout << "PASS " << prefix << " (.json, -frames.csv, .png, .txt)\n";
+            return 0;
+        }
         auto shader_program=program();
         smoke(shader_program,opts.strict,log,opts.output);
         raycastSmoke(opts.strict,log);
-        worldSmoke(shader_program,log);
-        skySmoke(shader_program,log);
         if(opts.scenario!="smoke") for(auto const* scenario:{"static","local","scattered","full"}) if(opts.scenario=="all"||opts.scenario==scenario) benchmark(scenario,opts,shader_program,csv,log);
-        if(opts.scenario=="all" || opts.scenario=="world" || opts.scenario=="islands") worldBenchmark(opts,shader_program,log);
         glDeleteProgram(shader_program); checkGL("shutdown");
         std::cout << "PASS " << opts.output << " (.csv, .txt, .rgba)\n";
         return 0;

@@ -202,7 +202,7 @@ void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
         glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         // RENDER
-        if (worldApp) worldApp->render(show_basis, basis_length_scale, basis_thickness_scale, dt);
+        if (worldApp) worldApp->render(dt);
         else demoApp->render(show_basis, basis_length_scale, basis_thickness_scale, dt);
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -240,7 +240,7 @@ int main(int argc, char** argv) {
             std::string_view arg = argv[i];
             if (arg == "--help") {
                 std::cout << "EDAN35_Project [--world PATH] [--seed INTEGER] [--demo]\n"
-                             "Floating islands: WASD fly, Shift sprint, Space carve, X build, Esc menu.\n"
+                             "Mountains: WASD fly, Shift sprint, Space carve, X build, Esc menu.\n"
                              "Edits are saved before becoming visible. --demo opens the original scenes.\n";
                 return 0;
             }
@@ -261,16 +261,16 @@ int main(int argc, char** argv) {
 #if defined(_WIN32)
             auto root = std::getenv("LOCALAPPDATA");
             if (!root) throw std::runtime_error("LOCALAPPDATA unavailable; pass --world PATH");
-            worldPath = std::filesystem::path(root) / "ParallaxVoxel" / "worlds" / "islands";
+            worldPath = std::filesystem::path(root) / "ParallaxVoxel" / "worlds" / "mountains";
 #else
             auto home = std::getenv("HOME");
             if (!home) throw std::runtime_error("HOME unavailable; pass --world PATH");
 #if defined(__APPLE__)
-            worldPath = std::filesystem::path(home) / "Library" / "Application Support" / "ParallaxVoxel" / "worlds" / "islands";
+            worldPath = std::filesystem::path(home) / "Library" / "Application Support" / "ParallaxVoxel" / "worlds" / "mountains";
 #else
             auto data = std::getenv("XDG_DATA_HOME");
             worldPath = (data && *data ? std::filesystem::path(data) : std::filesystem::path(home) / ".local" / "share")
-                        / "parallax-voxel" / "worlds" / "islands";
+                        / "parallax-voxel" / "worlds" / "mountains";
 #endif
 #endif
         }

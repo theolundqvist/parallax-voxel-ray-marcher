@@ -12,13 +12,13 @@ Paper:
   <img src="https://github.com/theolundqvist/parallax-voxel-ray-marcher/assets/31588188/90c3f8b3-3802-4cdf-89db-8212d5adde82" width=40% height=50%>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="https://github.com/theolundqvist/parallax-voxel-ray-marcher/assets/31588188/b4da6f9a-168f-4347-a2c9-c26bf00fe66e" width=40% height=50%>
 </p>
 
-### Explore floating islands
+### Explore the mountains
 
 Build `EDAN35_Project` with the configuration below, then run:
 
 ```sh
 cmake --build build --target EDAN35_Project --parallel 1
-build/src/EDAN35/EDAN35_Project --world ./island-save --seed 20260905
+build/src/EDAN35/EDAN35_Project --world ./mountain-save --seed 20260905
 ```
 
 WASD flies, Q/E moves down/up, Shift sprints, Space/left-click carves,
@@ -26,15 +26,30 @@ X/right-click builds stone, and Escape opens the menu.
 The menu adjusts brush size, toggles empty-space skipping, and returns to spawn.
 Press R to reload shaders. `--demo` opens the original demonstration scenes.
 
-The seeded world contains grass-topped islands, stone arches, caves, and emissive
-crystals. The world shader writes actual voxel-hit depth and skips empty 8³-voxel
-cells without changing visible geometry. Sunlight, hemisphere lighting, and a
-shared sky/fog model add depth without approximate cross-chunk shadows.
+The seeded landscape is continuous procedural terrain: connected ridges and
+valleys with relief at every scale, snow above the tree line, rock on steep
+slopes, sand at the shore, caves in the rock, and a transparent sea at height 0
+with the seabed visible through depth-tinted water. Spawn is a deterministic
+valley-floor viewpoint facing a ridge. Terrain heights are hashed on integer
+lattices, so the same seed produces bit-identical chunks on macOS and Linux.
+
+Nearby terrain is stored as 32³ chunks of 0.25 m voxels; distant terrain uses ten
+levels of coarser chunks (each level doubles the voxel size) generated from the
+same height rule, so mountains stay visible to the horizon without loading
+full-resolution chunks. Each level covers a 9³ toroidal page around the camera;
+finer levels replace the coarser ones near the camera and a coarser chunk is
+drawn only where its finer children are not all resident. One full-screen pass
+marches all levels through the page tables, skips the hole covered by finer
+levels, hits uniform chunks at their entry face, and steps through 8³ occupancy
+cells and individual voxels only inside non-uniform bricks. A composite pass adds
+sky, distance fog, and water. Depth is the actual voxel hit, so edits and
+coarse terrain never draw through each other.
 
 **Saved worlds currently require macOS or Linux.** Without `--world`, saves go
-under `~/Library/Application Support/ParallaxVoxel/worlds/islands` on macOS, or
-`$XDG_DATA_HOME/parallax-voxel/worlds/islands` on Linux (default `~/.local/share`).
-An existing world's seed and generator version cannot silently change.
+under `~/Library/Application Support/ParallaxVoxel/worlds/mountains` on macOS, or
+`$XDG_DATA_HOME/parallax-voxel/worlds/mountains` on Linux (default
+`~/.local/share`). An existing world's seed and generator version cannot silently
+change; island saves from the previous format are rejected before any mutation.
 
 Brush edits become visible only after a durable save. A redo journal makes a
 cross-chunk brush recoverable as one operation; startup finishes an interrupted
@@ -42,23 +57,17 @@ checkpoint before loading chunks. Corrupt files and storage failures stop edits
 rather than regenerate saved terrain. Retry recovery from the menu, or explicitly
 close while retaining the recovery files. An unacknowledged interrupted brush may
 complete when reopening. Only one process may open a save directory at a time.
+Only full-resolution chunks are saved; the three next-coarser levels overlay
+saved chunks when they are generated, so a carved hillside stays carved when the
+camera moves away.
 
-Residency is based on distance, not which way the camera points. The load radius
-is five chunks with a six-chunk retention preference and a hard limit of 640
-resident keys; frustum culling only suppresses draws. Each chunk is 32³ voxels at
-0.25 world units per voxel. One background worker, eight queued requests, two
-reply slots, and four normal chunk ingests per frame bound streaming work.
-Brushes stay atomic: one frame can ingest up to eight edited chunks after at most
-three normal replies, for eleven chunk ingests total.
-
-A 64 MiB/2,048-entry RAM refill cache uses uniform, run-length, or raw encoding,
-whichever is smallest, and can overlap resident chunks. Edited chunks remain on
-disk; unedited evicted chunks
-regenerate from the seed. The resident material payload is at most 20 MiB each on
-CPU and GPU, plus occupancy, meshes, bounded transaction buffers, and driver
-overhead. Cache limits count allocated encoded payload capacity, not just lengths.
-Horizontal coordinates are bounded to ±131,072 world units; vertical bounds are
-−32 to 48. This is a bounded-memory world, not an infinite-precision world.
+Residency is based on distance per level, not which way the camera points, with
+one-chunk hysteresis before eviction; frustum culling only suppresses draws.
+Chunk keys are 64-bit integers with a camera-relative render origin, so there is
+no map edge during normal exploration. Vertical travel is bounded to −128 to
+2048 m. One background worker, bounded request/reply queues, a 1 MiB per-frame
+upload budget, and a 5,120-brick GPU pool (every targeted chunk can hold a brick)
+bound streaming work. Brushes stay atomic across at most eight chunks.
 
 ### Persistent voxel storage
 
@@ -103,24 +112,31 @@ software rasterization is not hardware GPU performance.
 For the generated world and its storage/worker contracts:
 
 ```sh
-cmake --build build --target voxel_benchmark world_storage_smoke world_stream_smoke --parallel 1
+cmake --build build --target voxel_benchmark world_storage_smoke world_stream_smoke \
+  world_generate_test world_frontier_test --parallel 1
+build/src/EDAN35/world_generate_test
+build/src/EDAN35/world_frontier_test
 build/src/EDAN35/world_storage_smoke
 build/src/EDAN35/world_stream_smoke ./new-smoke-save
-build/src/EDAN35/voxel_benchmark --scenario islands --frames 100 --warmup 10 --pairs 3 --output build/islands
+build/src/EDAN35/voxel_benchmark --scenario mountains --pose ridge --frames 100 --warmup 10 --pairs 3 --output build/mountains
 ```
 
-The stream smoke requires a new scratch directory and never deletes an existing
-world. It exercises stale camera requests, edits surviving teleport and shutdown,
-and 1,000-chunk travel. The storage smoke checks encoding/cache bounds, negative
-cross-chunk edits, restart, exclusive access, corruption, and journal recovery
-using real filesystem failures.
+The generator test pins the cross-platform terrain fingerprint, level consistency,
+overlay superset, spawn determinism, and the cave cutoff per level. The frontier
+test checks that 1,000 random anchors with random residency draw every point
+exactly once, finest level first. The stream smoke requires a new scratch
+directory and never deletes an existing world. It exercises stale camera requests,
+edits surviving teleport and shutdown, level overlays, and 1,000-chunk travel. The
+storage smoke checks encoding/cache bounds, 64-bit key boundaries, restart,
+exclusive access, corruption, and journal recovery using real filesystem failures.
 
-The islands benchmark renders the actual generator and compares the same scene
+The mountains benchmark streams the actual generator around a fixed pose
+(`spawn`, `ridge`, `valley`, `underwater`, or `summit`) and compares the same view
 with empty-space skipping disabled and enabled. It checks material, shaded color,
-and depth equivalence before timing; CSV GPU timer results and GPU-completed CPU
-wall time remain separate. `--scenario world` adds focused traversal cases;
-`--world-lighting 0` measures the lighting-disabled path. Native offscreen results
-do not include window presentation, UI, VSync, or ongoing streaming.
+and depth equivalence before timing; opaque and composite GPU timer results and
+GPU-completed CPU wall time remain separate. `--water 0` skips the composite pass.
+Native offscreen results do not include window presentation, UI, VSync, or ongoing
+streaming.
 
 \
 \

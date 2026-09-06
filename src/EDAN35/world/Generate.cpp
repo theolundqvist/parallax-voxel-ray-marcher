@@ -1,649 +1,440 @@
 #include "Generate.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
-#include <cstdlib>
-#include <cstring>
-#include <memory>
-#include <vector>
-
-// Recipe (world units; voxel 0.25, chunk 8, y in [-32,48)):
-//  * Islands live on three seeded jittered grids (Major 48, Minor 20,
-//    Boulder 10). Major cell (0,0) is the forced spawn island (centre (0,4,0),
-//    R 14, arch straddling x=8, cave entrance at azimuth 200 deg); its four
-//    neighbour cells always exist with R >= 12.
-//  * Island body: dens = smin(yTop-y, y-yBot, R-dxz) + detail, warped outline,
-//    rolling meadow with rim dip, sqrt teardrop underside with jagged noise and
-//    stalactite spikes. Boulders are noisy spheres. World dens = smooth max.
-//  * Major islands may carry a stone torus arch; every Major island has a
-//    forced entrance tunnel ending in a grotto plus noise tubes/chambers carved
-//    only where the body is thick (dxz < 0.9R), so nothing is severed.
-//  * Materials: crystal on cave wall shells, grass on open top faces, sand on
-//    the rim, soil under the meadow, stone elsewhere with soil pockets.
-//  * Costs: analytic geometry per voxel, noise on world-aligned lattices
-//    (stride 1 for low frequencies, stride 0.5 for detail), chunk-level island
-//    bbox rejection so most chunks return without touching a lattice.
+#include <cstdint>
+#include <mutex>
 
 namespace world {
 namespace {
 
+// World coordinates are int64 eighth-metres: exact for every representable chunk, and the
+// voxel centres of every level lie on that grid.
+constexpr std::int64_t Q = 8;
+constexpr std::int64_t ChunkUnits = std::int64_t(ChunkSize) * 2;
+
+inline std::int64_t toUnits(double metres) {
+    return std::llround(std::clamp(metres * double(Q), -9.2e18, 9.2e18));
+}
+inline double toMetres(std::int64_t units) { return double(units) / double(Q); }
+inline std::int64_t wrapAdd(std::int64_t a, std::int64_t b) {
+    return std::int64_t(std::uint64_t(a) + std::uint64_t(b));
+}
+
 // ---------------------------------------------------------------- hashing --
-inline std::uint32_t h32(std::uint64_t seed, std::int32_t ix, std::int32_t iy, std::int32_t iz,
-                         std::uint32_t salt) {
-    std::uint32_t x = std::uint32_t(ix) * 0x8DA6B343u ^ std::uint32_t(iy) * 0xD8163841u ^
-                      std::uint32_t(iz) * 0xCB1AB31Fu ^ salt ^ std::uint32_t(seed) ^
-                      std::uint32_t(seed >> 32) * 0x9E3779B9u;
-    x ^= x >> 16;
-    x *= 0x7FEB352Du;
-    x ^= x >> 15;
-    x *= 0x846CA68Bu;
-    x ^= x >> 16;
+inline std::uint64_t mix(std::uint64_t x) {
+    x ^= x >> 30;
+    x *= 0xBF58476D1CE4E5B9ull;
+    x ^= x >> 27;
+    x *= 0x94D049BB133111EBull;
+    x ^= x >> 31;
     return x;
 }
-inline float unit(std::uint32_t h) { return float(h >> 8) * (1.0f / 16777216.0f); }
-inline std::int32_t ifloor(float v) {
-    int i = int(v);
-    return v < float(i) ? i - 1 : i;
+inline std::uint64_t hash(std::uint64_t seed, std::uint64_t a, std::uint64_t b, std::uint64_t c,
+                          std::uint32_t salt) {
+    std::uint64_t x = mix(seed ^ (a * 0x9E3779B97F4A7C15ull) ^ salt);
+    x = mix(x ^ (b * 0xC2B2AE3D27D4EB4Full));
+    return mix(x ^ (c * 0x165667B19E3779F9ull));
 }
-inline float fade(float t) { return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f); }
-inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
-inline float smoothstep(float e0, float e1, float x) {
-    float t = std::clamp((x - e0) / (e1 - e0), 0.0f, 1.0f);
-    return t * t * (3.0f - 2.0f * t);
+inline double signedUnit(std::uint64_t h) {
+    return double(h >> 11) * (1.0 / 4503599627370496.0) - 1.0;
 }
-inline float smin(float a, float b, float k) {
-    float h = std::max(k - std::fabs(a - b), 0.0f) / k;
-    return std::min(a, b) - h * h * k * 0.25f;
+inline double lerp(double a, double b, double t) { return a + (b - a) * t; }
+inline double smooth(double t) { return t * t * (3.0 - 2.0 * t); }
+inline double smoothstep(double e0, double e1, double x) {
+    return smooth(std::clamp((x - e0) / (e1 - e0), 0.0, 1.0));
 }
-inline float smax(float a, float b, float k) {
-    float h = std::max(k - std::fabs(a - b), 0.0f) / k;
-    return std::max(a, b) + h * h * k * 0.25f;
+
+struct Cell {
+    std::int64_t index;
+    double t;
+};
+inline Cell cellOf(std::int64_t v, std::int64_t period) {
+    std::int64_t q = v / period, r = v % period;
+    if (r < 0) {
+        q -= 1;
+        r += period;
+    }
+    return {q, double(r) / double(period)};
 }
+inline std::int64_t floorDiv(std::int64_t v, std::int64_t d) { return cellOf(v, d).index; }
+
+enum Salt : std::uint32_t {
+    SaltContinent = 0x434F4E54,
+    SaltWarpX = 0x57415250,
+    SaltWarpZ = 0x57415251,
+    SaltRidge = 0x52494447,
+    SaltDetail = 0x44455441,
+    SaltMicro = 0x4D494352,
+    SaltTint = 0x54494E54,
+    SaltCaveA = 0x43415641,
+    SaltCaveB = 0x43415642,
+    SaltCaveR = 0x43415652,
+};
 
 // ------------------------------------------------------------------ noise --
-constexpr float Grad3[16][3] = {{1, 1, 0},  {-1, 1, 0}, {1, -1, 0}, {-1, -1, 0}, {1, 0, 1},  {-1, 0, 1},
-                                {1, 0, -1}, {-1, 0, -1}, {0, 1, 1}, {0, -1, 1},  {0, 1, -1}, {0, -1, -1},
-                                {1, 1, 0},  {-1, 1, 0}, {0, -1, 1}, {0, -1, -1}};
-constexpr float Grad2[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7071068f, 0.7071068f},
-                               {-0.7071068f, 0.7071068f}, {0.7071068f, -0.7071068f}, {-0.7071068f, -0.7071068f}};
+// Pythagorean rotations keep the lattice integer-exact while breaking axis alignment
+// between octaves; the period is scaled by the hypotenuse to compensate.
+struct Rotation {
+    std::int64_t a, b, scale;
+};
+constexpr Rotation Rotations[4] = {{1, 0, 1}, {4, 3, 5}, {12, 5, 13}, {15, 8, 17}};
 
-float noise3(std::uint64_t seed, glm::vec3 p, std::uint32_t salt) {
-    std::int32_t ix = ifloor(p.x), iy = ifloor(p.y), iz = ifloor(p.z);
-    float fx = p.x - float(ix), fy = p.y - float(iy), fz = p.z - float(iz);
-    auto g = [&](int dx, int dy, int dz) {
-        auto const& v = Grad3[h32(seed, ix + dx, iy + dy, iz + dz, salt) & 15];
-        return v[0] * (fx - float(dx)) + v[1] * (fy - float(dy)) + v[2] * (fz - float(dz));
-    };
-    float u = fade(fx), v = fade(fy), w = fade(fz);
-    float x00 = lerp(g(0, 0, 0), g(1, 0, 0), u), x10 = lerp(g(0, 1, 0), g(1, 1, 0), u);
-    float x01 = lerp(g(0, 0, 1), g(1, 0, 1), u), x11 = lerp(g(0, 1, 1), g(1, 1, 1), u);
-    return lerp(lerp(x00, x10, v), lerp(x01, x11, v), w);
+inline double value2(std::uint64_t seed, std::int64_t x, std::int64_t z, std::int64_t period,
+                     std::uint32_t salt, int octave = 0) {
+    Rotation const& rot = Rotations[octave & 3];
+    std::uint64_t ux = std::uint64_t(x), uz = std::uint64_t(z), a = std::uint64_t(rot.a), b = std::uint64_t(rot.b);
+    std::int64_t px = std::int64_t(a * ux + b * uz), pz = std::int64_t(a * uz - b * ux);
+    Cell cx = cellOf(px, period * rot.scale), cz = cellOf(pz, period * rot.scale);
+    std::uint64_t ix = std::uint64_t(cx.index), iz = std::uint64_t(cz.index);
+    double v00 = signedUnit(hash(seed, ix, iz, 0, salt));
+    double v10 = signedUnit(hash(seed, ix + 1, iz, 0, salt));
+    double v01 = signedUnit(hash(seed, ix, iz + 1, 0, salt));
+    double v11 = signedUnit(hash(seed, ix + 1, iz + 1, 0, salt));
+    double tx = smooth(cx.t), tz = smooth(cz.t);
+    return lerp(lerp(v00, v10, tx), lerp(v01, v11, tx), tz);
 }
-float noise2(std::uint64_t seed, glm::vec2 p, std::uint32_t salt) {
-    std::int32_t ix = ifloor(p.x), iz = ifloor(p.y);
-    float fx = p.x - float(ix), fz = p.y - float(iz);
-    auto g = [&](int dx, int dz) {
-        auto const& v = Grad2[h32(seed, ix + dx, 0x2D2D, iz + dz, salt) & 7];
-        return v[0] * (fx - float(dx)) + v[1] * (fz - float(dz));
-    };
-    float u = fade(fx), w = fade(fz);
-    return 1.4142136f * lerp(lerp(g(0, 0), g(1, 0), u), lerp(g(0, 1), g(1, 1), u), w);
-}
-float fbm3(std::uint64_t seed, glm::vec3 p, int octaves, std::uint32_t salt) {
-    float sum = 0, amp = 1, norm = 0;
+
+inline double fbm2(std::uint64_t seed, std::int64_t x, std::int64_t z, std::int64_t period,
+                   int octaves, std::uint32_t salt) {
+    double sum = 0, amp = 1, norm = 0;
     for (int i = 0; i < octaves; ++i) {
-        sum += amp * noise3(seed, p, salt + std::uint32_t(i) * 0x9E3779B9u);
+        sum += amp * value2(seed, x, z, period, salt + std::uint32_t(i), i);
         norm += amp;
-        amp *= 0.5f;
-        p *= 2.0f;
-    }
-    return sum / norm;
-}
-float fbm2(std::uint64_t seed, glm::vec2 p, int octaves, std::uint32_t salt) {
-    float sum = 0, amp = 1, norm = 0;
-    for (int i = 0; i < octaves; ++i) {
-        sum += amp * noise2(seed, p, salt + std::uint32_t(i) * 0x9E3779B9u);
-        norm += amp;
-        amp *= 0.5f;
-        p *= 2.0f;
+        amp *= 0.5;
+        period /= 2;
     }
     return sum / norm;
 }
 
-// Salts: one per field so every field is independent.
-enum Salt : std::uint32_t {
-    SaltMajor = 0x4D414A01, SaltMinor = 0x4D494E02, SaltBoulder = 0x424F5503,
-    SaltWarp = 0x57415250, SaltTop1 = 0x544F5031, SaltTop2 = 0x544F5032, SaltSoil = 0x534F494C,
-    SaltBot1 = 0x424F5431, SaltBot2 = 0x424F5432, SaltDetail = 0x44455441, SaltPocket = 0x504F434B,
-    SaltArch = 0x41524348, SaltBoulderN = 0x424F554E, SaltCaveA = 0x43415641, SaltCaveB = 0x43415642,
-    SaltChamber = 0x4348414D, SaltCrystal = 0x43525953, SaltVoxel = 0x564F5845,
-};
-
-// --------------------------------------------------------------- lattices --
-// Voxel v (0..32; 32 = first row of the chunk above, for the "open above"
-// test) is sampled at its centre (v+0.5)*0.25 in chunk-local units.
-struct Axis {
-    int i0;
-    float f;
-};
-// Voxels -1..32 are evaluated (one voxel of padding on every side) so the
-// isolated-voxel filter sees true neighbours across chunk faces. Lattices
-// therefore start one cell before the chunk origin.
-constexpr int Pad = 1;
-constexpr int Fine = 19;   // stride 0.5 -> covers [-0.5, 8.5]
-constexpr int Coarse = 11; // stride 1   -> covers [-1, 9]
-inline Axis fineAxis(int v) { return {((v + 2) >> 1), (v & 1) ? 0.75f : 0.25f}; }
-inline Axis coarseAxis(int v) { return {((v + 4) >> 2), 0.125f + float(v & 3) * 0.25f}; }
-
-template <int N> struct Lattice3 {
-    float v[N * N * N];
-    float& at(int x, int y, int z) { return v[x + N * (y + N * z)]; }
-    float sample(Axis ax, Axis ay, Axis az) const {
-        float const* b = v + ax.i0 + N * (ay.i0 + N * az.i0);
-        float x00 = lerp(b[0], b[1], ax.f), x10 = lerp(b[N], b[N + 1], ax.f);
-        float x01 = lerp(b[N * N], b[N * N + 1], ax.f), x11 = lerp(b[N * N + N], b[N * N + N + 1], ax.f);
-        return lerp(lerp(x00, x10, ay.f), lerp(x01, x11, ay.f), az.f);
-    }
-};
-template <int N> struct Lattice2 {
-    float v[N * N];
-    float& at(int x, int z) { return v[x + N * z]; }
-    float sample(Axis ax, Axis az) const {
-        float const* b = v + ax.i0 + N * az.i0;
-        return lerp(lerp(b[0], b[1], ax.f), lerp(b[N], b[N + 1], ax.f), az.f);
-    }
-};
-
-template <int N>
-void fill3(Lattice3<N>& L, std::uint64_t seed, glm::vec3 origin, float stride, float scale, int octaves,
-           std::uint32_t salt) {
-    origin -= stride; // one padding cell before the chunk
-    for (int z = 0; z < N; ++z)
-        for (int y = 0; y < N; ++y)
-            for (int x = 0; x < N; ++x)
-                L.at(x, y, z) = fbm3(seed, (origin + glm::vec3(x, y, z) * stride) * scale, octaves, salt);
-}
-template <int N>
-void fill2(Lattice2<N>& L, std::uint64_t seed, glm::vec2 origin, float stride, float scale, int octaves,
-           std::uint32_t salt) {
-    origin -= stride;
-    for (int z = 0; z < N; ++z)
-        for (int x = 0; x < N; ++x) L.at(x, z) = fbm2(seed, (origin + glm::vec2(x, z) * stride) * scale, octaves, salt);
-}
-
-// ---------------------------------------------------------------- islands --
-enum class Kind : std::uint8_t { Major, Minor, Boulder };
-struct Island {
-    Kind kind;
-    glm::vec3 c;
-    float R, D;
-    std::uint32_t id;
-    glm::vec3 lo, hi; // conservative solid bounds (body + arch + noise)
-    // Arch (Major only)
-    bool arch = false;
-    glm::vec3 archC;  // ring centre
-    glm::vec2 archT;  // ring plane tangent (xz)
-    glm::vec2 archN;  // ring plane normal (xz)
-    float archA = 0, archTube = 0;
-    glm::vec3 archLo, archHi;
-    // Forced entrance tunnel (polyline along the body's mid-thickness) + grotto
-    // at the last point (Major only).
-    static constexpr int TunnelPoints = 6;
-    glm::vec3 tunnel[TunnelPoints];
-    float tunnelR = 0, grottoR = 0;
-};
-constexpr float ShellWidth = 0.7f;
-// Slack added to every analytic bound: detail noise 0.4 + smooth-max bump 0.25.
-constexpr float DensSlack = 1.0f;
-// Camera 6 units above the meadow and 5.5 units outside the rim, pitched
-// -12 deg and yawed ~10 deg right: the rim edge enters at the bottom of a
-// 45 deg frame, the arch (ring centre (4.4, ~5, 7.6), crown ~y12) fills the
-// right third with sky above, and the forced cave mouth (rim azimuth 90 deg,
-// facing the camera, near (0, ~0.5, 14.7)) lies straight below the pose.
-constexpr float SpawnPos[3] = {0.0f, 10.0f, 22.0f};
-constexpr float SpawnLook[3] = {4.0f, 5.5f, 0.0f};
-
-struct Layer {
-    float S, P, Rmin, Rmax, yMin, yMax;
+// One 3D lattice field with a one-cell memo: a chunk spans far less than a cave cell, so
+// nearly every voxel reuses the eight hashed corners.
+struct Lattice3 {
+    std::uint64_t seed;
+    std::int64_t period;
     std::uint32_t salt;
-};
-constexpr Layer MajorLayer{48, 0.75f, 10, 16, -4, 8, SaltMajor};
-constexpr Layer MinorLayer{20, 0.5f, 3.5f, 7, -14, 18, SaltMinor};
-constexpr Layer BoulderLayer{10, 0.25f, 1, 2.2f, -24, 30, SaltBoulder};
+    std::int64_t cx = 0, cy = 0, cz = 0;
+    bool valid = false;
+    double corner[8] = {};
 
-inline Layer const& layerOf(Kind k) {
-    return k == Kind::Major ? MajorLayer : k == Kind::Minor ? MinorLayer : BoulderLayer;
-}
-
-// Warped horizontal distance and meadow height at an arbitrary world point
-// (used for the arch ring centre; the chunk path uses lattices of the same
-// fields so the two agree up to interpolation).
-float warpAt(std::uint64_t seed, Island const& I, glm::vec2 xz) {
-    return fbm2(seed, xz * (2.0f / I.R), 3, SaltWarp ^ I.id);
-}
-float yTopOf(Island const& I, float dxz, float top1, float top2) {
-    return I.c.y + 1.2f * top1 + 0.5f * top2 - 2.0f * smoothstep(0.55f, 1.0f, dxz / I.R);
-}
-
-inline std::int32_t cellOf(float v, float S) { return ifloor(v / S + 0.5f); }
-
-// Decides whether the island for grid cell (cx,cz) of a layer exists and
-// fills it in. Forced spawn geometry is seed independent.
-bool placeIsland(std::uint64_t seed, Kind kind, std::int32_t cx, std::int32_t cz, Island& I) {
-    Layer const& L = layerOf(kind);
-    auto draw = [&](int k) { return unit(h32(seed, cx, k, cz, L.salt)); };
-    bool forcedSpawn = kind == Kind::Major && cx == 0 && cz == 0;
-    bool forcedNeighbour = kind == Kind::Major && std::abs(cx) + std::abs(cz) == 1;
-    if (!forcedSpawn && !forcedNeighbour && draw(0) >= L.P) return false;
-
-    I.kind = kind;
-    I.id = h32(seed, cx, 0x1D, cz, L.salt);
-    // Cells are centred on multiples of S (cell (0,0) is centred on the
-    // origin), so the spawn island sits mid-cell and its neighbours are a
-    // full cell away in every direction.
-    float jitter = L.S * 0.5f - L.Rmax;
-    glm::vec2 centre = glm::vec2(cx, cz) * L.S + (glm::vec2(draw(1), draw(2)) * 2.0f - 1.0f) * jitter;
-    I.R = L.Rmin + (L.Rmax - L.Rmin) * draw(3);
-    float y = L.yMin + (L.yMax - L.yMin) * draw(4);
-    if (forcedSpawn) {
-        centre = glm::vec2(0);
-        I.R = 14;
-        y = 4;
-    } else if (forcedNeighbour) {
-        I.R = 12 + 4 * draw(3);
+    double at(std::int64_t x, std::int64_t y, std::int64_t z) {
+        Cell ax = cellOf(x, period), ay = cellOf(y, period), az = cellOf(z, period);
+        if (!valid || ax.index != cx || ay.index != cy || az.index != cz) {
+            cx = ax.index;
+            cy = ay.index;
+            cz = az.index;
+            valid = true;
+            for (int i = 0; i < 8; ++i)
+                corner[i] = signedUnit(hash(seed, std::uint64_t(cx) + (i & 1),
+                                            std::uint64_t(cy) + ((i >> 1) & 1),
+                                            std::uint64_t(cz) + (i >> 2), salt));
+        }
+        double tx = smooth(ax.t), ty = smooth(ay.t), tz = smooth(az.t);
+        double x00 = lerp(corner[0], corner[1], tx), x10 = lerp(corner[2], corner[3], tx);
+        double x01 = lerp(corner[4], corner[5], tx), x11 = lerp(corner[6], corner[7], tx);
+        return lerp(lerp(x00, x10, ty), lerp(x01, x11, ty), tz);
     }
-    I.c = glm::vec3(centre.x, y, centre.y);
-    I.D = 0.9f * I.R;
+};
 
-    if (kind == Kind::Boulder) {
-        float e = I.R + 0.25f + DensSlack;
-        I.lo = I.c - e;
-        I.hi = I.c + e;
+// ---------------------------------------------------------------- terrain --
+constexpr double SnowLine = 1100.0;
+constexpr double RockSlope = 0.83909963117728;
+constexpr double SandSlope = 0.21255656167002;
+constexpr double CaveRadiusMin = 1.0, CaveRadiusMax = 2.9;
+constexpr double CaveFloor = TerrainFloor + 8.0;
+
+// Range skeleton: ridges are the zero contours of warped value noise (connected curves),
+// valleys its extremes. Every octave is additive on its own amplitude so side ridges and
+// valleys exist everywhere on land, not only on the flanks of main crests.
+// Bound: 180 + 1000 + 400 + 220 + 140 + 30 + 1 = 1971 < TerrainCeiling.
+double heightAt(std::uint64_t seed, std::int64_t x, std::int64_t z) {
+    double continent = fbm2(seed, x, z, 6000 * Q, 3, SaltContinent);
+    double base = 30.0 + 150.0 * continent;
+    double warpX = 900.0 * fbm2(seed, x, z, 3000 * Q, 4, SaltWarpX);
+    double warpZ = 900.0 * fbm2(seed, x, z, 3000 * Q, 4, SaltWarpZ);
+    std::int64_t rx = wrapAdd(x, toUnits(warpX)), rz = wrapAdd(z, toUnits(warpZ));
+    double crest[4];
+    std::int64_t period = 5000 * Q;
+    for (int i = 0; i < 4; ++i) {
+        double n = std::fabs(value2(seed, rx, rz, period, SaltRidge + std::uint32_t(i), i + 1));
+        crest[i] = 1.0 - std::min(n * 1.2, 1.0);
+        period /= 2;
+    }
+    double ridge = 1000.0 * crest[0] * std::sqrt(crest[0]) + 400.0 * crest[1] + 220.0 * crest[2] + 140.0 * crest[3];
+    double mask = smoothstep(-0.2, 0.05, continent);
+    double detail = 30.0 * fbm2(seed, x, z, 150 * Q, 2, SaltDetail);
+    double micro = value2(seed, x, z, 8 * Q, SaltMicro);
+    double h = base + mask * ridge + detail + micro;
+    assert(h < TerrainCeiling);
+    return std::max(h, TerrainFloor);
+}
+
+float slopeAt(std::uint64_t seed, std::int64_t x, std::int64_t z) {
+    constexpr std::int64_t step = 2 * Q;
+    double dx = (heightAt(seed, wrapAdd(x, step), z) - heightAt(seed, wrapAdd(x, -step), z)) / 4.0;
+    double dz = (heightAt(seed, x, wrapAdd(z, step)) - heightAt(seed, x, wrapAdd(z, -step))) / 4.0;
+    return float(std::sqrt(dx * dx + dz * dz));
+}
+
+inline std::uint8_t tintAt(std::uint64_t seed, std::int64_t x, std::int64_t z) {
+    return std::uint8_t(hash(seed, std::uint64_t(floorDiv(x, 2 * Q)), std::uint64_t(floorDiv(z, 2 * Q)),
+                             0, SaltTint) & 15);
+}
+
+inline std::uint8_t materialAt(double height, double top, float slope, std::uint8_t tint) {
+    if (top <= TerrainFloor) return Bedrock;
+    double depth = height - top;
+    std::uint8_t id;
+    if (depth >= 2.0) id = Stone;
+    else if (depth >= 0.5) id = Soil;
+    else if (height > SnowLine) id = Snow;
+    else if (slope > RockSlope) id = Rock;
+    else if (height < SeaLevel + 2.0) id = Sand;
+    else id = Grass;
+    return std::uint8_t(id | (tint << 4));
+}
+
+struct Caves {
+    Lattice3 a, b, radius;
+    explicit Caves(std::uint64_t seed)
+        : a{seed, 96 * Q, SaltCaveA}, b{seed, 96 * Q, SaltCaveB}, radius{seed, 400 * Q, SaltCaveR} {}
+
+    bool open(std::int64_t x, std::int64_t y, std::int64_t z, double voxelSize) {
+        if (toMetres(y) <= CaveFloor) return false;
+        double r = CaveRadiusMin + (CaveRadiusMax - CaveRadiusMin) * (0.5 + 0.5 * radius.at(x, y, z));
+        if (r < 1.5 * voxelSize) return false;
+        double av = a.at(x, y, z), bv = b.at(x, y, z);
+        double limit = r * 0.04;
+        return av * av + bv * bv < limit * limit;
+    }
+};
+constexpr double CaveLevelLimit = CaveRadiusMax / 1.5;
+
+// ------------------------------------------------------------------ spawn --
+struct Spawn {
+    glm::dvec3 eye, target;
+};
+
+// Eye on a low shoulder (100..320 m) looking up at least 1000 m to a summit >= 1500 m at
+// 2..3.5 km over a clear sight line, with water or a second summit in the look cone for
+// depth; among valid summits the steepest look angle wins.
+Spawn searchSpawn(std::uint64_t seed) {
+    constexpr double eyeHeight = 1.8;
+    constexpr double SummitMin = 1500.0, RiseMin = 1000.0, SecondSummit = 1400.0;
+    constexpr double MinSlope = 0.32491969623290634;
+    auto ground = [&](double x, double z) { return heightAt(seed, toUnits(x), toUnits(z)); };
+    auto clear = [&](glm::dvec3 eye, glm::dvec3 target) {
+        constexpr double step = 25.0, clearance = 5.0;
+        double dist = std::hypot(target.x - eye.x, target.z - eye.z);
+        for (double s = step; s < dist; s += step) {
+            double t = s / dist;
+            double line = eye.y + (target.y - eye.y) * t;
+            if (ground(eye.x + (target.x - eye.x) * t, eye.z + (target.z - eye.z) * t) > line - clearance)
+                return false;
+        }
         return true;
-    }
-    // Body extent: outline warp 0.18R; top noise 1.7; underside noise 1.5 + spikes 3.
-    float e = 1.18f * I.R + DensSlack;
-    I.lo = glm::vec3(I.c.x - e, I.c.y - I.D - 1.5f - 3.0f - DensSlack, I.c.z - e);
-    I.hi = glm::vec3(I.c.x + e, I.c.y + 1.2f + 0.5f + DensSlack, I.c.z + e);
-    if (kind == Kind::Minor) return true;
-
-    // Arch: ring of radius A in the vertical plane spanned by the rim tangent,
-    // centred 0.75A inside the rim so both legs land inside the warped outline.
-    I.arch = forcedSpawn || draw(5) < 0.6f;
-    if (I.arch) {
-        float A = std::clamp(0.5f * I.R, 4.0f, 8.0f);
-        float inset = I.R - 0.75f * A;
-        // Spawn arch: plane normal at 60 deg so the ring (centre x 4.4, half
-        // span 6.1) straddles the x=8 chunk seam and faces the spawn camera
-        // obliquely instead of edge-on.
-        float az = forcedSpawn ? 1.0471976f : draw(6) * 6.2831853f;
-        glm::vec2 dir(std::cos(az), std::sin(az));
-        glm::vec2 r0 = glm::vec2(I.c.x, I.c.z) + inset * dir;
-        float dxz = inset + 0.18f * I.R * warpAt(seed, I, r0);
-        float top1 = fbm2(seed, r0 / 9.0f, 3, SaltTop1), top2 = fbm2(seed, r0 / 2.5f, 2, SaltTop2);
-        I.archC = glm::vec3(r0.x, yTopOf(I, dxz, top1, top2), r0.y);
-        I.archT = glm::vec2(-dir.y, dir.x);
-        I.archN = dir;
-        I.archA = A;
-        I.archTube = 1.2f + 0.6f * draw(7);
-        float reach = A + I.archTube + 0.3f + 0.25f; // ring + tube + tube noise + margin
-        I.archLo = glm::vec3(r0.x - reach, I.archC.y - 1.5f - I.archTube - 0.55f, r0.y - reach);
-        I.archHi = glm::vec3(r0.x + reach, I.archC.y + reach, r0.y + reach);
-        I.lo = glm::min(I.lo, I.archLo);
-        I.hi = glm::max(I.hi, I.archHi);
-    }
-    // Forced cave entrance: a tunnel from just outside the rim that follows
-    // the noise-free mid-thickness of the body inward to a grotto at 0.35R.
-    // The rim lip is thinner than the tube, so it starts as a notch/gorge and
-    // becomes a roofed tunnel once the body is thick; being radial it can
-    // never sever the island.
-    float ez = forcedSpawn ? 90.0f * 0.017453292f : draw(8) * 6.2831853f;
-    glm::vec2 edir(std::cos(ez), std::sin(ez));
-    constexpr float Radii[Island::TunnelPoints] = {1.05f, 0.95f, 0.85f, 0.75f, 0.6f, 0.35f};
-    for (int k = 0; k < Island::TunnelPoints; ++k) {
-        float r = Radii[k];
-        float top = I.c.y - 2.0f * smoothstep(0.55f, 1.0f, r);
-        float bottom = I.c.y - I.D * std::sqrt(std::max(0.0f, 1.0f - r * r));
-        I.tunnel[k] = glm::vec3(I.c.x + r * I.R * edir.x, 0.5f * (top + bottom), I.c.z + r * I.R * edir.y);
-    }
-    I.tunnelR = std::clamp(0.1f * I.R, 1.0f, 1.3f);
-    I.grottoR = std::clamp(0.18f * I.R, 1.6f, 3.0f);
-    return true;
-}
-
-// Minor/Boulder islands are suppressed near Major islands and the spawn pose.
-bool nearMajor(std::uint64_t seed, glm::vec3 c, float margin) {
-    std::int32_t cx = cellOf(c.x, MajorLayer.S), cz = cellOf(c.z, MajorLayer.S);
-    for (std::int32_t z = cz - 1; z <= cz + 1; ++z)
-        for (std::int32_t x = cx - 1; x <= cx + 1; ++x) {
-            Island M;
-            if (!placeIsland(seed, Kind::Major, x, z, M)) continue;
-            glm::vec2 d(c.x - M.c.x, c.z - M.c.z);
-            if (glm::dot(d, d) < (M.R + margin) * (M.R + margin)) return true;
+    };
+    // Water within 3 km or another summit >= 1400 m within 4 km on one of five bearings
+    // spanning -30..30 degrees around the look direction.
+    auto depth = [&](glm::dvec3 eye, glm::dvec3 target) {
+        constexpr double step = 100.0, waterReach = 3000.0, summitReach = 4000.0, apart = 300.0;
+        constexpr double cosine[5] = {0.8660254037844387, 0.9659258262890683, 1.0, 0.9659258262890683,
+                                      0.8660254037844387};
+        constexpr double sine[5] = {-0.5, -0.25881904510252074, 0.0, 0.25881904510252074, 0.5};
+        double dist = std::hypot(target.x - eye.x, target.z - eye.z);
+        double dx = (target.x - eye.x) / dist, dz = (target.z - eye.z) / dist;
+        for (int bearing = 0; bearing < 5; ++bearing) {
+            double bx = dx * cosine[bearing] - dz * sine[bearing], bz = dx * sine[bearing] + dz * cosine[bearing];
+            for (double s = step; s <= summitReach; s += step) {
+                double x = eye.x + bx * s, z = eye.z + bz * s, h = ground(x, z);
+                if (s <= waterReach && h < SeaLevel) return true;
+                if (h >= SecondSummit && std::hypot(x - target.x, z - target.z) >= apart) return true;
+            }
         }
-    return false;
-}
-bool nearSpawn(glm::vec3 c) {
-    glm::vec3 d = c - glm::vec3(SpawnPos[0], SpawnPos[1], SpawnPos[2]);
-    return glm::dot(d, d) < 12.0f * 12.0f;
-}
-
-// Every island whose bounds can touch the chunk. The cell range is derived
-// from the chunk AABB grown by the layer's maximum reach, so no island that
-// could contribute is ever skipped.
-void collect(std::uint64_t seed, Kind kind, glm::vec3 lo, glm::vec3 hi, std::vector<Island>& out) {
-    Layer const& L = layerOf(kind);
-    float reach = 1.18f * L.Rmax + 8.0f; // covers body, arch and noise slack from any centre
-    std::int32_t x0 = cellOf(lo.x - reach, L.S), x1 = cellOf(hi.x + reach, L.S);
-    std::int32_t z0 = cellOf(lo.z - reach, L.S), z1 = cellOf(hi.z + reach, L.S);
-    for (std::int32_t cz = z0; cz <= z1; ++cz)
-        for (std::int32_t cx = x0; cx <= x1; ++cx) {
-            Island I;
-            if (!placeIsland(seed, kind, cx, cz, I)) continue;
-            if (glm::any(glm::lessThan(I.hi, lo)) || glm::any(glm::greaterThan(I.lo, hi))) continue;
-            if (kind != Kind::Major && nearSpawn(I.c)) continue;
-            if (kind == Kind::Minor && nearMajor(seed, I.c, 1.18f * I.R + 3.0f)) continue;
-            out.push_back(I);
+        return false;
+    };
+    Caves caves(seed);
+    // Summits are rare, eyes are common: walk summits outward from the origin and, for each,
+    // pick the eye in the 2..3.5 km annulus with the steepest valid look angle.
+    auto eyeFor = [&](glm::dvec3 peak, Spawn& out, double& bestSlope) {
+        constexpr std::int64_t reach = 3500 * Q, near = 2000 * Q, step = 100 * Q;
+        std::int64_t x = toUnits(peak.x), z = toUnits(peak.z);
+        bool found = false;
+        for (std::int64_t dz = -reach; dz <= reach; dz += step)
+            for (std::int64_t dx = -reach; dx <= reach; dx += step) {
+                std::int64_t d2 = dx * dx + dz * dz;
+                if (d2 > reach * reach || d2 < near * near) continue;
+                std::int64_t px = wrapAdd(x, dx), pz = wrapAdd(z, dz);
+                double h = heightAt(seed, px, pz);
+                if (h < 100.0 || h > 320.0) continue;
+                double eyeY = h + eyeHeight;
+                if (peak.y - eyeY < RiseMin) continue;
+                double slope = (peak.y - eyeY) * double(Q) / std::sqrt(double(d2));
+                if (slope <= bestSlope) continue;
+                if (caves.open(px, toUnits(eyeY), pz, VoxelScale)) continue;
+                glm::dvec3 eye(toMetres(px), eyeY, toMetres(pz));
+                if (!clear(eye, peak) || !depth(eye, peak)) continue;
+                bestSlope = slope;
+                out = {eye, peak};
+                found = true;
+            }
+        return found;
+    };
+    auto summit = [&](std::int64_t x, std::int64_t z, Spawn& out, double& bestSlope) {
+        double h = heightAt(seed, x, z);
+        if (h < SummitMin) return false;
+        return eyeFor(glm::dvec3(toMetres(x), h, toMetres(z)), out, bestSlope);
+    };
+    constexpr std::int64_t step = 50 * Q;
+    Spawn spawn{};
+    for (std::int64_t ring = 0;; ring += step) {
+        double bestSlope = MinSlope;
+        for (std::int64_t v = -ring; v <= ring; v += step) {
+            summit(ring, v, spawn, bestSlope);
+            summit(-ring, v, spawn, bestSlope);
+            summit(v, ring, spawn, bestSlope);
+            summit(v, -ring, spawn, bestSlope);
         }
+        if (bestSlope > MinSlope) return spawn;
+    }
 }
 
-// ---------------------------------------------------------------- scratch --
-// Per (island, column): the body is a height-field slab [yBot, yTop] cut at
-// the warped outline, so every column is a single vertical interval and
-// neighbouring intervals always overlap (connectivity by construction).
-struct Column {
-    float dxz, yTop, yBot, detailAmp;
-    bool live;
-};
-enum Flag : std::uint8_t { Solid = 1, Body = 2, Arch = 4, Shell = 8, Grotto = 16, Boulder = 32 };
-struct Voxel {
-    std::uint8_t flags;
-    std::int8_t owner;
-};
-constexpr int Span = ChunkSize + 2 * Pad; // evaluated voxels per axis (-1..32)
-
-struct Scratch {
-    Lattice3<Coarse> caveA, caveB, chamber, crystal;
-    Lattice3<Fine> detail, pocket, archNoise, boulderNoise;
-    Lattice2<Fine> top1, top2, bot1, bot2, soil;
-    std::vector<Lattice2<Fine>> warp;
-    std::vector<Column> columns; // islands * Span * Span
-    Voxel voxels[Span * Span * Span];
-    Voxel& at(int x, int y, int z) { return voxels[(x + Pad) + Span * ((y + Pad) + Span * (z + Pad))]; }
-    static size_t column(int island, int x, int z) { return size_t(island) * Span * Span + (x + Pad) + Span * (z + Pad); }
-};
-
-inline float segmentDistance(glm::vec3 p, glm::vec3 a, glm::vec3 b) {
-    glm::vec3 ab = b - a;
-    float t = std::clamp(glm::dot(p - a, ab) / glm::dot(ab, ab), 0.0f, 1.0f);
-    return glm::length(p - (a + ab * t));
+Spawn findSpawn(std::uint64_t seed) {
+    static std::mutex mutex;
+    static std::optional<std::pair<std::uint64_t, Spawn>> cached;
+    std::lock_guard lock(mutex);
+    if (!cached || cached->first != seed) cached = {seed, searchSpawn(seed)};
+    return cached->second;
 }
 
-std::uint8_t tinted(Material m, std::uint32_t tint) { return std::uint8_t(m | (tint << 4)); }
+WorldPosition worldPosition(glm::dvec3 metres) {
+    return *normalizedPosition(ChunkKey{0, 0, 0, 0}, metres);
+}
 
 } // namespace
 
+double terrainHeight(std::uint64_t seed, double x, double z) {
+    return heightAt(seed, toUnits(x), toUnits(z));
+}
+
+float terrainSlope(std::uint64_t seed, double x, double z) {
+    return slopeAt(seed, toUnits(x), toUnits(z));
+}
+
+std::uint8_t surfaceMaterial(std::uint64_t seed, double x, double z, double height, double depthBelow,
+                             float slope) {
+    return materialAt(height, height - depthBelow, slope, tintAt(seed, toUnits(x), toUnits(z)));
+}
+
+bool caveAt(std::uint64_t seed, double x, double y, double z, float voxelSize) {
+    Caves caves(seed);
+    return caves.open(toUnits(x), toUnits(y), toUnits(z), voxelSize);
+}
+
+std::optional<std::uint8_t> trivialUniform(std::uint64_t, ChunkKey key) {
+    double span = double(ChunkSpan) * double(std::int64_t{1} << key.level);
+    double bottom = double(key.y) * span;
+    if (bottom >= TerrainCeiling) return Air;
+    if (bottom + span <= TerrainFloor) return Bedrock;
+    return std::nullopt;
+}
+
 ChunkData generateChunk(std::uint64_t seed, ChunkKey key) {
     ChunkData data{};
-    glm::vec3 origin = world::origin(key);
-    glm::vec3 chunkLo = origin, chunkHi = origin + ChunkSpan;
-    // Voxels -1..32 are evaluated (padding for the isolated-voxel filter and
-    // the open-above test), so the island query box is grown by one voxel.
-    glm::vec3 probeLo = chunkLo - VoxelScale, probeHi = chunkHi + VoxelScale;
-
-    std::vector<Island> islands;
-    collect(seed, Kind::Major, probeLo, probeHi, islands);
-    collect(seed, Kind::Minor, probeLo, probeHi, islands);
-    collect(seed, Kind::Boulder, probeLo, probeHi, islands);
-    if (islands.empty()) return data;
-
-    bool anyMajor = false, anyArch = false, anyBoulder = false, anyBody = false;
-    for (auto const& I : islands) {
-        anyMajor |= I.kind == Kind::Major;
-        anyArch |= I.arch;
-        anyBoulder |= I.kind == Kind::Boulder;
-        anyBody |= I.kind != Kind::Boulder;
+    std::int64_t const voxel = 2 << key.level, span = ChunkUnits << key.level;
+    auto corner = levelZeroCorner(key);
+    auto x0 = corner ? checkedShiftLeft(corner->x, 6) : std::nullopt;
+    auto y0 = corner ? checkedShiftLeft(corner->y, 6) : std::nullopt;
+    auto z0 = corner ? checkedShiftLeft(corner->z, 6) : std::nullopt;
+    if (!x0 || !y0 || !z0 || !checkedAdd(*x0, span) || !checkedAdd(*y0, span) || !checkedAdd(*z0, span)) {
+        data.fill(key.y < 0 ? Bedrock : Air);
+        return data;
     }
-
-    auto S = std::make_unique<Scratch>();
-    glm::vec2 originXZ(origin.x, origin.z);
-    if (anyBody) {
-        fill2(S->bot1, seed, originXZ, 0.5f, 1.0f / 4.0f, 2, SaltBot1);
-        fill2(S->bot2, seed, originXZ, 0.5f, 1.0f / 3.0f, 2, SaltBot2);
-        fill3(S->detail, seed, origin, 0.5f, 1.0f / 1.5f, 2, SaltDetail);
-        fill2(S->top1, seed, originXZ, 0.5f, 1.0f / 9.0f, 3, SaltTop1);
-        fill2(S->top2, seed, originXZ, 0.5f, 1.0f / 2.5f, 2, SaltTop2);
-        fill2(S->soil, seed, originXZ, 0.5f, 1.0f / 3.0f, 1, SaltSoil);
-    }
-    fill3(S->pocket, seed, origin, 0.5f, 1.0f / 2.0f, 2, SaltPocket);
-    if (anyMajor) {
-        fill3(S->caveA, seed, origin, 1.0f, 1.0f / 6.0f, 3, SaltCaveA);
-        fill3(S->caveB, seed, origin, 1.0f, 1.0f / 6.0f, 3, SaltCaveB);
-        fill3(S->chamber, seed, origin, 1.0f, 1.0f / 5.0f, 2, SaltChamber);
-        fill3(S->crystal, seed, origin, 1.0f, 1.0f / 7.0f, 1, SaltCrystal);
-    }
-    if (anyArch) fill3(S->archNoise, seed, origin, 0.5f, 1.0f / 2.0f, 2, SaltArch);
-    if (anyBoulder) fill3(S->boulderNoise, seed, origin, 0.5f, 2.0f, 1, SaltBoulderN);
-
-    // Per-island outline warp and per-column geometry.
-    int n = int(islands.size());
-    S->warp.resize(n);
-    S->columns.resize(size_t(n) * Span * Span);
-    for (int i = 0; i < n; ++i) {
-        Island const& I = islands[i];
-        if (I.kind != Kind::Boulder) fill2(S->warp[i], seed, originXZ, 0.5f, 2.0f / I.R, 3, SaltWarp ^ I.id);
-        for (int vz = -Pad; vz < ChunkSize + Pad; ++vz)
-            for (int vx = -Pad; vx < ChunkSize + Pad; ++vx) {
-                Column& col = S->columns[Scratch::column(i, vx, vz)];
-                glm::vec2 xz = originXZ + (glm::vec2(vx, vz) + 0.5f) * VoxelScale;
-                glm::vec2 d = xz - glm::vec2(I.c.x, I.c.z);
-                float dist = glm::length(d);
-                if (I.kind == Kind::Boulder) {
-                    col = {dist, 0, 0, 0, dist < I.R + 0.25f + DensSlack};
-                    continue;
-                }
-                Axis ax = fineAxis(vx), az = fineAxis(vz);
-                float dxz = dist + 0.18f * I.R * S->warp[i].sample(ax, az);
-                col.dxz = dxz;
-                col.live = I.R - dxz > -DensSlack;
-                if (!col.live) continue;
-                col.yTop = yTopOf(I, dxz, S->top1.sample(ax, az), S->top2.sample(ax, az));
-                float r = dxz / I.R;
-                // Teardrop underside, jagged (bot1) with hanging stalactite
-                // curtains (ridge of bot2); all terms extend downward only and
-                // the slab keeps a minimum thickness so the rim never thins to
-                // a wedge that voxelizes into crumbs.
-                float ridge = 1.0f - std::fabs(S->bot2.sample(ax, az));
-                float spike = 3.0f * std::clamp((ridge - 0.6f) * 5.0f, 0.0f, 1.0f);
-                float yBot = I.c.y - I.D * std::sqrt(std::max(0.0f, 1.0f - r * r)) - 1.5f * S->bot1.sample(ax, az) - spike;
-                col.yBot = std::min(yBot, col.yTop - 1.0f);
-                col.detailAmp = 0.4f * smoothstep(1.0f, 2.5f, col.yTop - col.yBot);
-            }
-    }
-
-    // Pass 1: occupancy, ownership and cave flags for voxels -1..32.
-    for (int vz = -Pad; vz < ChunkSize + Pad; ++vz) {
-        Axis fz = fineAxis(vz), cz = coarseAxis(vz);
-        for (int vx = -Pad; vx < ChunkSize + Pad; ++vx) {
-            Axis fx = fineAxis(vx), cx = coarseAxis(vx);
-            float px = origin.x + (vx + 0.5f) * VoxelScale, pz = origin.z + (vz + 0.5f) * VoxelScale;
-            for (int vy = -Pad; vy < ChunkSize + Pad; ++vy) {
-                Voxel& V = S->at(vx, vy, vz);
-                V = {0, -1};
-                Axis fy = fineAxis(vy), cy = coarseAxis(vy);
-                float py = origin.y + (vy + 0.5f) * VoxelScale;
-                glm::vec3 p(px, py, pz);
-
-                float best = 0;
-                int owner = -1;
-                bool haveDetail = false;
-                float detail = 0;
-                for (int i = 0; i < n; ++i) {
-                    Column const& col = S->columns[Scratch::column(i, vx, vz)];
-                    if (!col.live) continue;
-                    Island const& I = islands[i];
-                    float d;
-                    if (I.kind == Kind::Boulder) {
-                        if (py < I.lo.y || py > I.hi.y) continue;
-                        d = I.R - glm::length(p - I.c) - 0.25f * S->boulderNoise.sample(fx, fy, fz);
-                    } else {
-                        if (py > col.yTop + DensSlack || py < col.yBot - DensSlack) continue;
-                        if (!haveDetail) {
-                            detail = S->detail.sample(fx, fy, fz);
-                            haveDetail = true;
-                        }
-                        d = std::min(smin(col.yTop - py, py - col.yBot, 1.5f), I.R - col.dxz) + col.detailAmp * detail;
-                    }
-                    if (owner < 0) {
-                        best = d;
-                        owner = i;
-                    } else {
-                        if (d > best) owner = i;
-                        best = smax(best, d, 1.0f);
-                    }
-                }
-
-                // Stone arches are combined after the body and never carved.
-                bool archSolid = false;
-                for (int i = 0; i < n; ++i) {
-                    Island const& I = islands[i];
-                    if (!I.arch || glm::any(glm::lessThan(p, I.archLo)) || glm::any(glm::greaterThan(p, I.archHi)))
-                        continue;
-                    glm::vec3 q = p - I.archC;
-                    if (q.y < -1.5f) continue;
-                    float qu = q.x * I.archT.x + q.z * I.archT.y, qn = q.x * I.archN.x + q.z * I.archN.y;
-                    float ring = std::sqrt(qu * qu + q.y * q.y) - I.archA;
-                    float ad = I.archTube + 0.3f * S->archNoise.sample(fx, fy, fz) - std::sqrt(ring * ring + qn * qn);
-                    if (ad > 0) {
-                        archSolid = true;
-                        if (owner < 0 || ad > best) {
-                            best = ad;
-                            owner = i;
-                        }
-                    }
-                }
-                if (owner < 0 || !(best > 0)) continue;
-
-                Island const& I = islands[owner];
-                std::uint8_t flags = Solid;
-                if (archSolid) {
-                    flags |= Arch;
-                } else if (I.kind == Kind::Boulder) {
-                    flags |= Boulder;
-                } else {
-                    flags |= Body;
-                    if (I.kind == Kind::Major) {
-                        Column const& col = S->columns[Scratch::column(owner, vx, vz)];
-                        // Forced entrance tunnel + grotto (wall noise from the pocket field).
-                        float grotto = glm::length(p - I.tunnel[Island::TunnelPoints - 1]) - I.grottoR;
-                        float tunnel = grotto;
-                        for (int k = 0; k + 1 < Island::TunnelPoints; ++k)
-                            tunnel = std::min(tunnel, segmentDistance(p, I.tunnel[k], I.tunnel[k + 1]) - I.tunnelR);
-                        float wall = 0.3f * S->pocket.sample(fx, fy, fz);
-                        if (tunnel - wall < 0) {
-                            flags &= ~Solid;
-                        } else if (grotto - wall < ShellWidth) {
-                            flags |= Shell | Grotto; // crystals only deep in the grotto, not at the mouth
-                        }
-                        // Noise tubes/chambers only where the body is thick and above
-                        // the underside, so they breach the meadow (entrances) but
-                        // never the belly.
-                        if (col.dxz < 0.9f * I.R && py > col.yBot + 1.5f) {
-                            float a = S->caveA.sample(cx, cy, cz), b = S->caveB.sample(cx, cy, cz);
-                            float ab = a * a + b * b;
-                            float ch = S->chamber.sample(cx, cy, cz);
-                            bool deep = best > 2.5f;
-                            if (ab < 0.012f || (deep && ch > 0.62f)) flags &= ~Solid;
-                            else if (ab < 0.035f || (deep && ch > 0.55f)) flags |= Shell;
-                        }
-                    }
-                }
-                V.flags = flags;
-                V.owner = std::int8_t(owner);
-            }
-        }
-    }
-
-    // Pass 2: materials for solid voxels of rows 0..31.
+    double const voxelMetres = toMetres(voxel);
+    double const chunkBottom = toMetres(*y0), chunkTop = toMetres(*y0 + span);
+    bool const carve = voxelMetres < CaveLevelLimit && chunkTop > CaveFloor;
+    Caves caves(seed);
     for (int vz = 0; vz < ChunkSize; ++vz) {
-        Axis fz = fineAxis(vz), cz = coarseAxis(vz);
+        std::int64_t z = *z0 + vz * voxel + voxel / 2;
         for (int vx = 0; vx < ChunkSize; ++vx) {
-            Axis fx = fineAxis(vx), cx = coarseAxis(vx);
+            std::int64_t x = *x0 + vx * voxel + voxel / 2;
+            double h = heightAt(seed, x, z);
+            if (chunkBottom >= h) continue;
+            float slope = 0;
+            if (chunkTop > h - 0.5 && h <= SnowLine && h > TerrainFloor) slope = slopeAt(seed, x, z);
+            std::uint8_t tint = tintAt(seed, x, z);
             for (int vy = 0; vy < ChunkSize; ++vy) {
-                Voxel const& V = S->at(vx, vy, vz);
-                if (!(V.flags & Solid)) continue;
-                // Isolated voxels (no solid face neighbour) are the only
-                // voxelization crumbs the continuous fields can leave; drop
-                // them. Neighbours come from the padded evaluation, so both
-                // chunks sharing a face make the same decision.
-                if (!((S->at(vx - 1, vy, vz).flags | S->at(vx + 1, vy, vz).flags | S->at(vx, vy - 1, vz).flags |
-                       S->at(vx, vy + 1, vz).flags | S->at(vx, vy, vz - 1).flags | S->at(vx, vy, vz + 1).flags) & Solid))
-                    continue;
-                Axis fy = fineAxis(vy), cy = coarseAxis(vy);
-                Island const& I = islands[V.owner];
-                std::int32_t gx = key.x * ChunkSize + vx, gy = key.y * ChunkSize + vy, gz = key.z * ChunkSize + vz;
-                std::uint32_t h = h32(seed, gx, gy, gz, SaltVoxel);
-                std::uint32_t tint = h & 3;
-                float py = origin.y + (vy + 0.5f) * VoxelScale;
-                std::uint8_t& out = data[index(vx, vy, vz)];
-
-                bool openAbove = !(S->at(vx, vy + 1, vz).flags & (Body | Arch | Boulder));
-                if (V.flags & Boulder) {
-                    out = S->pocket.sample(fx, fy, fz) > 0.5f ? tinted(Soil, tint) : tinted(Stone, tint);
-                    continue;
-                }
-                Column const& col = S->columns[Scratch::column(V.owner, vx, vz)];
-                // Arch voxels may sit over a dead column; they only grow grass on open tops.
-                float dTop = (V.flags & Arch) ? -100.0f : col.yTop - py;
-                if (V.flags & Shell) {
-                    float c = S->crystal.sample(cx, cy, cz);
-                    if (c > ((V.flags & Grotto) ? 0.0f : 0.45f) && (h & 0xFF) < 90) {
-                        std::uint32_t hue = c > 0.6f ? 0 : S->chamber.sample(cx, cy, cz) > 0 ? 1 : 2;
-                        out = tinted(Crystal, hue);
-                        continue;
-                    }
-                }
-                bool archTop = !(V.flags & Arch) || py > I.archC.y + 0.7f * I.archA;
-                if (dTop < 0.35f && openAbove && archTop) {
-                    out = tinted(Grass, tint);
-                } else if (!(V.flags & Arch) && col.dxz > 0.8f * I.R && dTop < 0.75f) {
-                    out = tinted(Sand, tint);
-                } else if (!(V.flags & Arch) && dTop < 1.5f + 0.7f * S->soil.sample(fx, fz)) {
-                    out = tinted(Soil, tint);
-                } else if (S->pocket.sample(fx, fy, fz) > 0.5f) {
-                    out = tinted(Soil, tint);
-                } else {
-                    bool underside = !(V.flags & Arch) && dTop > 3.0f;
-                    out = tinted(Stone, underside ? 8 + tint : tint);
-                }
+                std::int64_t bottom = *y0 + vy * voxel;
+                double bottomMetres = toMetres(bottom);
+                if (bottomMetres >= h) break;
+                if (carve && caves.open(x, bottom + voxel / 2, z, voxelMetres)) continue;
+                data[size_t(index(vx, vy, vz))] = materialAt(h, bottomMetres + voxelMetres, slope, tint);
             }
         }
     }
     return data;
 }
 
-glm::vec3 spawnPosition(std::uint64_t) { return glm::vec3(SpawnPos[0], SpawnPos[1], SpawnPos[2]); }
-glm::vec3 spawnTarget(std::uint64_t) { return glm::vec3(SpawnLook[0], SpawnLook[1], SpawnLook[2]); }
+bool isUniform(ChunkData const& data, std::uint8_t& value) {
+    value = data[0];
+    return std::all_of(data.begin(), data.end(), [&](std::uint8_t v) { return v == value; });
+}
+
+void overlaySaved(ChunkData& coarse, ChunkKey coarseKey, ChunkKey savedKey, ChunkData const& savedL0) {
+    assert(coarseKey.level >= 1 && coarseKey.level <= OverlayLevels && savedKey.level == 0);
+    int const level = coarseKey.level, block = 1 << level;
+    auto corner = levelZeroCorner(coarseKey);
+    assert(corner);
+    std::int64_t ox = (savedKey.x - corner->x) * ChunkSize, oy = (savedKey.y - corner->y) * ChunkSize,
+                 oz = (savedKey.z - corner->z) * ChunkSize;
+    assert(ox >= 0 && oy >= 0 && oz >= 0 && ox < ChunkSize * block && oy < ChunkSize * block &&
+           oz < ChunkSize * block);
+    int const coarseX = int(ox >> level), coarseY = int(oy >> level), coarseZ = int(oz >> level);
+    int const count = ChunkSize >> level;
+    for (int cz = 0; cz < count; ++cz)
+        for (int cy = 0; cy < count; ++cy)
+            for (int cx = 0; cx < count; ++cx) {
+                std::uint8_t material = Air;
+                for (int fy = (cy + 1) * block - 1; fy >= cy * block && material == Air; --fy)
+                    for (int fz = cz * block; fz < (cz + 1) * block && material == Air; ++fz)
+                        for (int fx = cx * block; fx < (cx + 1) * block; ++fx) {
+                            std::uint8_t v = savedL0[size_t(index(fx, fy, fz))];
+                            if (v != Air) {
+                                material = v;
+                                break;
+                            }
+                        }
+                coarse[size_t(index(coarseX + cx, coarseY + cy, coarseZ + cz))] = material;
+            }
+}
+
+WorldPosition spawnPosition(std::uint64_t seed) { return worldPosition(findSpawn(seed).eye); }
+WorldPosition spawnTarget(std::uint64_t seed) { return worldPosition(findSpawn(seed).target); }
 
 std::array<glm::vec3, 256> worldPalette() {
     auto rgb = [](std::uint32_t hex) {
         return glm::vec3((hex >> 16) & 255, (hex >> 8) & 255, hex & 255) / 255.0f;
     };
-    glm::vec3 const grass = rgb(0x5FA53E), soil = rgb(0x7A5230), stoneWarm = rgb(0x8A8C8E),
-                    stoneCool = rgb(0x7E858C), sand = rgb(0xD9C68A);
+    glm::vec3 const grass = rgb(0x5B9A3A), soil = rgb(0x7A5230), stone = rgb(0x8A8C8E), sand = rgb(0xD9C68A),
+                    snow = rgb(0xF2F6FA), rock = rgb(0x6B6864), bedrock = rgb(0x2E2E30);
     glm::vec3 const crystal[3] = {rgb(0x7FE6FF), rgb(0xC77DFF), rgb(0xFFB3E6)};
     std::array<glm::vec3, 256> palette{};
     for (int tint = 0; tint < 16; ++tint) {
         float value = 1.0f + 0.06f * (float(tint & 3) - 1.5f) / 1.5f;
+        float hue = 0.04f * (float(tint >> 2) - 1.5f) / 1.5f;
         for (int id = 0; id < 16; ++id) {
             glm::vec3 c(0.5f);
             switch (id) {
             case Air: c = glm::vec3(0); break;
-            case Grass: c = grass * value; break;
+            case Grass: c = (grass + glm::vec3(hue, 0, -hue)) * value; break;
             case Soil: c = soil * value; break;
-            case Stone: c = (tint >= 8 ? stoneCool : stoneWarm) * value; break;
+            case Stone: c = stone * value; break;
             case Sand: c = sand * value; break;
             case Crystal: c = crystal[tint % 3]; break;
+            case Snow: c = snow * (1.0f + 0.02f * (value - 1.0f)); break;
+            case Rock: c = rock * value; break;
+            case Bedrock: c = bedrock; break;
             default: break;
             }
             palette[size_t(id | (tint << 4))] = c;
