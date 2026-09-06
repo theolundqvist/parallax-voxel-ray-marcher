@@ -3,6 +3,34 @@ Revision history for CG_Labs
 Unreleased
 ==========
 
+* Replace the floating islands with a continuous mountain landscape: connected
+  ridges and valleys, caves, a transparent sea with a visible seabed, and a
+  deterministic valley-floor spawn. Terrain is hashed on integer lattices so a seed
+  generates identical chunks on macOS and Linux.
+* Render distant terrain from ten levels of coarser chunks in one full-screen
+  hierarchical march over per-level page tables; coarse levels overlay saved edits.
+  Chunk keys are 64-bit with a camera-relative origin, so exploration has no map edge.
+  Keep the original scenes available through ``--demo``.
+* Render editable transparent water voxels, including multiple water/air
+  intervals and submerged viewpoints; replace the analytical sea plane.
+* Upgrade generator-4 mountain saves recoverably without discarding terrain
+  edits; preserve intentionally carved water in generator-5 saves.
+* Show average/p99 frame, CPU/driver, presentation and asynchronous GPU times,
+  framebuffer resolution and every key binding on the HUD.
+* Increase default flight speed to 48 m/s with wheel/menu adjustment; preserve
+  elapsed-time movement through slow frames.
+* Upload only changed page-table entries and bound zero-byte streaming replies
+  as well as voxel bytes per frame.
+* Stage voxel, occupancy, and page-table updates through replaceable pixel-unpack
+  buffers to reduce driver stalls during terrain edits.
+  Read material and occupancy bytes directly from integer textures.
+* Keep still-needed streamed loads across camera movement and complete near-camera
+  refinement chains before bulk terrain. Bound residency and compressed-cache work.
+* Reserve a request slot for brushes and remove the artificial edit cooldown.
+  Save edits before display, with atomic brush recovery on Linux/macOS.
+* Skip empty voxel cells incrementally, write actual hit depth, and add palette,
+  sunlight, sky, and fog shading. Compare reference/accelerated color and depth
+  using native OpenGL benchmarks; exercise saves and streaming with real files.
 * Keep voxel textures resident on the GPU and upload only edited slice regions.
   Unchanged frames and no-op edits perform no voxel transfers.
 * Reject out-of-range voxel coordinates on each axis and release volume-owned

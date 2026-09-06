@@ -26,7 +26,7 @@ void main()
     vec3 world_pos = (model_to_world * vec4(vertex, 1)).xyz;
     vec3 V = world_pos - camera_position;
 
-    vec3 world_normal = normalize(vec3(transpose(inverse(model_to_world)) * vec4(normal, 0.0)));
+    vec3 world_normal = normalize(vec3(normal_model_to_world * vec4(normal, 0.0)));
     face_dot_v = dot(world_normal, V);
 
     fV = (world_to_model * vec4(V, 0)).xyz;

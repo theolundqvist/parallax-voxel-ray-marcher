@@ -12,12 +12,98 @@ Paper:
   <img src="https://github.com/theolundqvist/parallax-voxel-ray-marcher/assets/31588188/90c3f8b3-3802-4cdf-89db-8212d5adde82" width=40% height=50%>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="https://github.com/theolundqvist/parallax-voxel-ray-marcher/assets/31588188/b4da6f9a-168f-4347-a2c9-c26bf00fe66e" width=40% height=50%>
 </p>
 
+### Explore the mountains
+
+Build `EDAN35_Project` with the configuration below, then run:
+
+```sh
+cmake --build build --target EDAN35_Project --parallel 1
+build/src/EDAN35/EDAN35_Project --world ./mountain-save --seed 20260905
+```
+
+The HUD lists every key. Mouse looks; WASD flies; Q/E moves down/up.
+Flight starts at 48 m/s, Left Shift multiplies it by four, and Left Ctrl by 0.25.
+The wheel scales flight speed from 1 to 500 m/s; the Escape menu also has a slider.
+Space/left-click carves, X/right-click builds stone, and the menu adjusts brush
+size, toggles empty-space skipping, returns to spawn, and closes the world.
+R reloads shaders; F2 toggles the HUD, F3 logs, F11 fullscreen, B axes, M wireframe.
+`--demo` opens the original demonstration scenes.
+
+The HUD reports average/p99 milliseconds over 120 samples: full frame, CPU plus
+driver time excluding presentation, presentation wait, and asynchronous GPU world
+time. GPU results are read only when ready and pending queries are never
+overwritten. CPU includes driver waits and overlaps GPU execution; do not add
+those numbers. Update/submission breakdowns and framebuffer pixel dimensions help
+separate streaming, rendering, and high-resolution display costs.
+
+The seeded landscape is continuous procedural terrain: connected ridges and
+valleys with relief at every scale, snow above the tree line, rock on steep
+slopes, sand at the shore, caves in the rock, and transparent water voxels below
+height 0, including submerged caves. Water has editable top and side faces, not
+an analytical sea plane. The renderer accumulates water thickness through every
+water/air interval up to the first opaque hit, tinting the visible seabed.
+Spawn is a deterministic valley-floor viewpoint facing a ridge. Terrain heights are hashed on integer
+lattices, so the same seed produces bit-identical chunks on macOS and Linux.
+
+Nearby terrain is stored as 32³ chunks of 0.25 m voxels; distant terrain uses ten
+levels of coarser chunks (each level doubles the voxel size) generated from the
+same height rule, so mountains stay visible to the horizon without loading
+full-resolution chunks. Each level covers a 9³ toroidal page around the camera;
+finer levels replace the coarser ones near the camera and a coarser chunk is
+drawn only where its finer children are not all resident. One full-screen pass
+merges intersected chunks from all levels in ray-distance order, including during
+partial streaming. It skips regions covered by finer levels and homogeneous air
+or water occupancy cells; mixed cells traverse individual voxels. A composite pass
+adds sky, distance fog, and water absorption/reflection from actual voxel
+boundaries. The opaque depth is the first solid voxel hit.
+
+**Saved worlds currently require macOS or Linux.** Without `--world`, saves go
+under `~/Library/Application Support/ParallaxVoxel/worlds/mountains` on macOS, or
+`$XDG_DATA_HOME/parallax-voxel/worlds/mountains` on Linux (default
+`~/.local/share`). A saved seed never silently changes. Generator-4 mountain saves
+upgrade automatically to generator 5 under the exclusive world lock: recover the
+old journal, atomically upgrade snapshots one at a time, then replace the manifest
+last. An interruption resumes safely. Solid edits and carved terrain remain;
+old air that was naturally below sea level gains water. Generator-5 carved water
+stays air on reopening. Earlier island formats remain unsupported.
+
+Held brushes run one durable edit at a time, without an extra cooldown; a terrain
+load queue cannot consume the brush's reserved slot. Edits become visible only
+after a durable save. A redo journal makes a cross-chunk brush recoverable as one
+operation; startup finishes an interrupted
+checkpoint before loading chunks. Corrupt files and storage failures stop edits
+rather than regenerate saved terrain. Retry recovery from the menu, or explicitly
+close while retaining the recovery files. An unacknowledged interrupted brush may
+complete when reopening. Only one process may open a save directory at a time.
+Only full-resolution chunks are saved; the three next-coarser levels overlay
+saved chunks when they are generated, so a carved hillside stays carved when the
+camera moves away.
+
+Residency is based on distance per level, not which way the camera points, with
+one-chunk hysteresis before eviction. Camera movement keeps still-needed loads
+and replies. Requests complete the camera's ancestor sibling groups first, so
+missing intermediate chunks cannot hide ready nearby detail behind a coarse
+ancestor; remaining work interleaves levels by distance.
+Chunk keys are 64-bit integers with a camera-relative render origin, so there is
+no map edge during normal exploration. Vertical travel is bounded to −128 to
+2048 m. One background worker, bounded queues, at most 64 replies and a 1 MiB
+voxel-upload budget per frame, and a 5,120-brick GPU pool bound streaming work.
+Uniform chunks share the reply limit but consume no voxel-upload bytes. Brushes
+stay atomic across at most eight chunks.
+
+World textures remain resident; only changed bricks and page entries are
+transferred. Separate pixel-unpack buffers stage voxel, occupancy, and page data.
+Replacing each staging store lets the driver queue updates behind pending draws
+without reusing upload storage that the GPU still needs.
+Voxels and occupancy masks use integer-byte textures (`GL_R8UI`), so the shader
+reads exact material and presence bits without normalized-float decoding.
+
 ### Persistent voxel storage
 
-Each volume retains one `GL_R8` 3D texture. The first render uploads the volume;
+Original demo volumes each retain one `GL_R8` 3D texture. The first render uploads the volume;
 unchanged frames upload nothing. Edits track an XY rectangle per Z slice and merge
 matching adjacent slices into `glTexSubImage3D` updates. This uses OpenGL 4.1 APIs,
-including on macOS, without staging copies or changes to the ray-marching shader.
+including on macOS, without staging copies.
 An update can include unchanged voxels inside its rectangle; it does not upload
 untouched slices. Volume destruction releases the texture and bounding-box buffers.
 Bulk generation visits X-contiguous storage order to keep CPU writes cache-local.
@@ -45,12 +131,47 @@ The terrain is a deterministic sinusoidal heightfield, not the paper's original 
 CSV output separates uploaded bytes/calls, CPU upload time, CPU mutation time, and
 GPU-completed frame time. Texture readbacks are checked and raw RGBA images are saved
 outside timing; `--scenario smoke --strict` checks mutations, no-op updates, bounds, unpack
-state, and texture lifetime. `--isolate-uploads` adds GPU waits around uploads for
+state, queued world updates, initially empty page tables, and resource lifetime. `--isolate-uploads` adds GPU waits around uploads for
 diagnosis only: do not treat those serialized frames as normal frame-rate results.
 For before/after comparisons, use the same harness, dependencies, scene, resolution,
 and arguments on both revisions; omit `--strict` only on the old implementation,
 which does not satisfy the new persistence contract. Report the actual GL renderer:
 software rasterization is not hardware GPU performance.
+
+For the generated world and its storage/worker contracts:
+
+```sh
+cmake --build build --target voxel_benchmark world_storage_smoke world_stream_smoke \
+  world_generate_test world_frontier_test --parallel 1
+build/src/EDAN35/world_generate_test
+build/src/EDAN35/world_frontier_test
+build/src/EDAN35/world_storage_smoke
+build/src/EDAN35/world_stream_smoke ./new-smoke-save
+build/src/EDAN35/voxel_benchmark --scenario mountains --pose ridge --frames 100 --warmup 10 --pairs 3 --output build/mountains
+```
+
+The generator test pins the cross-platform terrain fingerprint, level consistency,
+overlay superset, spawn determinism, and the cave cutoff per level. The frontier
+test checks that 1,000 random anchors with random residency draw every reachable
+point exactly once, and that near-camera detail becomes visible within 128 loads
+even with an existing coarse ancestor. The stream smoke requires a new scratch
+directory and never deletes an existing world. It exercises retained and obsolete
+camera loads, brush priority behind a full terrain queue, durable edits surviving
+teleport and shutdown, level overlays, and 1,000-chunk travel. The
+storage smoke checks encoding/cache bounds, 64-bit key boundaries, restart,
+exclusive access, corruption, journal recovery, and interrupted generator-4 water
+migration using real filesystem failures.
+
+The mountains benchmark streams the actual generator around a fixed pose
+(`spawn`, `ridge`, `valley`, `underwater`, or `summit`) and compares the same view
+with empty-space skipping disabled and enabled. It checks shaded color, opaque
+depth, accumulated water intervals, and final composite equivalence before timing.
+Focused GPU cases cover water pockets, underwater exits, solid occlusion, and
+interleaved LOD chunks. World-march/composite GPU times and GPU-completed CPU wall
+time remain separate. `--water 0` skips the entire composite, including sky/fog;
+it is an opaque-only benchmark, not a second production water implementation.
+Native offscreen results do not include window presentation, UI, VSync, or ongoing
+streaming.
 
 \
 \

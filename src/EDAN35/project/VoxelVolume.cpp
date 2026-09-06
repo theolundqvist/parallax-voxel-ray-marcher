@@ -7,12 +7,23 @@
 #include "../util/colorPalette.hpp"
 #include <algorithm>
 #include <vector>
+#include <span>
+#include <cstdint>
+#include <stdexcept>
 
 
 class VoxelVolume {
 private:
     GLubyte *texels;
     GLuint texture{};
+    GLuint occupancy_texture{};
+    glm::ivec3 coarse_size{};
+    std::vector<uint16_t> occupancy_counts;
+    std::vector<GLubyte> occupancy;
+    std::vector<bool> occupancy_dirty;
+    std::size_t solid_count = 0;
+    bool acceleration = true;
+    bool coarse_dirty = false;
     struct DirtySlice {
         int min_x, min_y, max_x, max_y;
         bool operator==(DirtySlice const &) const = default;
@@ -21,10 +32,22 @@ private:
     bool dirty = false;
     bonobo::mesh_data bounding_box;
     IntersectionTests::box_t local_space_AABB = {.min=glm::vec3(0.0), .max=glm::vec3(1.0)};
-    std::vector<glm::vec3> colorPalette = colorPalette::generateCAColorPalette(colorPalette::CAColorsBlue2Pink, glm::ivec2(0, 255));
+    static std::vector<glm::vec3> const &defaultPalette() {
+        static auto const palette = [] {
+            auto colors = colorPalette::CAColorsBlue2Pink;
+            return colorPalette::generateCAColorPalette(colors, glm::ivec2(0, 255));
+        }();
+        return palette;
+    }
+    std::vector<glm::vec3> colorPalette;
 
     GLuint program{};
     shader_setting_t shader_setting = fixed_step_material;
+    struct Uniforms {
+        GLint volume, occupancy, shader, acceleration, voxel_size, lod;
+        GLint model_to_world, world_to_model, normal_to_world, world_to_clip;
+        GLint camera, light, palette;
+    } uniforms{};
 
 public:
     Transform transform;
@@ -37,6 +60,13 @@ public:
     VoxelVolume(const int WIDTH, const int HEIGHT, const int DEPTH, Transform tf)
         : W(WIDTH), H(HEIGHT), D(DEPTH) {
         this->transform = tf;
+        if (W <= 0 || H <= 0 || D <= 0)
+            throw std::invalid_argument("VoxelVolume dimensions must be positive");
+        coarse_size = (glm::ivec3(W, H, D) + 7) / 8;
+        auto cells = std::size_t(coarse_size.x) * coarse_size.y * coarse_size.z;
+        occupancy_counts.resize(cells);
+        occupancy.resize(cells);
+        occupancy_dirty.resize(cells);
         dirty_slices.resize(D, {W, H, 0, 0});
 
         voxel_size = 1.0f / (float) W;
@@ -55,6 +85,7 @@ public:
 
     ~VoxelVolume() {
         glDeleteTextures(1, &texture);
+        glDeleteTextures(1, &occupancy_texture);
         glDeleteVertexArrays(1, &bounding_box.vao);
         glDeleteBuffers(1, &bounding_box.bo);
         glDeleteBuffers(1, &bounding_box.ibo);
@@ -70,7 +101,46 @@ public:
     }
 
 
-    void setProgram(GLuint shaderProgram) { this->program = shaderProgram; }
+    void setProgram(GLuint shaderProgram) {
+        program = shaderProgram;
+        auto location = [&](char const *name) { return glGetUniformLocation(program, name); };
+        uniforms = {location("volume"), location("coarse_occupancy"),
+            location("Shader_manager"), location("world_acceleration"),
+            location("voxel_size"), location("lod"),
+            location("model_to_world"), location("world_to_model"),
+            location("normal_model_to_world"), location("vertex_world_to_clip"),
+            location("camera_position"), location("light_direction"), location("colorPalette")};
+    }
+
+    bool empty() const { return solid_count == 0; }
+    void setAcceleration(bool enabled) { acceleration = enabled; }
+
+    void setPalette(std::span<const glm::vec3> palette) {
+        if (palette.size() != 256)
+            throw std::invalid_argument("VoxelVolume palette must contain 256 colors");
+        colorPalette.assign(palette.begin(), palette.end());
+    }
+
+    void setData(std::span<const uint8_t> data) {
+        if (data.size() != std::size_t(W) * H * D)
+            throw std::invalid_argument("VoxelVolume data size does not match dimensions");
+        for (int z = 0; z < D; ++z)
+            for (int y = 0; y < H; ++y)
+                for (int x = 0; x < W; ++x)
+                    setVoxel(x, y, z, data[x + W * (y + H * z)]);
+    }
+
+    std::size_t upload() {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_3D, texture);
+        auto bytes = uploadTexture();
+        bytes += uploadOccupancy();
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_3D, occupancy_texture);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_3D, texture);
+        return bytes;
+    }
 
     int getVoxel(int x, int y, int z) const {
         if (x < 0 || x >= W || y < 0 || y >= H || z < 0 || z >= D) return -1;
@@ -85,6 +155,18 @@ public:
         if (x < 0 || x >= W || y < 0 || y >= H || z < 0 || z >= D) return false;
         auto i = x + y * W + z * W * H;
         if (texels[i] != value) {
+            if ((texels[i] == 0) != (value == 0)) {
+                auto cell = x / 8 + coarse_size.x * (y / 8 + coarse_size.y * (z / 8));
+                auto &count = occupancy_counts[cell];
+                bool was_empty = count == 0;
+                if (value != 0) { ++count; ++solid_count; }
+                else { --count; --solid_count; }
+                if (was_empty != (count == 0)) {
+                    occupancy[cell] = count == 0 ? 0 : 255;
+                    occupancy_dirty[cell] = true;
+                    coarse_dirty = true;
+                }
+            }
             texels[i] = value;
             markDirty(x, y, z);
         }
@@ -115,10 +197,7 @@ public:
                 for (int x = 0; x < W; x++) {
                     auto i = x + y * W + z * W * H;
                     auto value = get_material(x, y, z, texels[i]);
-                    if (texels[i] != value) {
-                        texels[i] = value;
-                        markDirty(x, y, z);
-                    }
+                    setVoxel(x, y, z, value);
                 }
             }
         }
@@ -254,14 +333,9 @@ public:
         // load shader program
         glUseProgram(program);
 
-        // Set texture unit for sampler
-        glUniform1i(glGetUniformLocation(program, "volume"), 0);
-        // Active texture unit before use
-        glActiveTexture(GL_TEXTURE0);
-        // Bind 3D texture
-        glBindTexture(GL_TEXTURE_3D, texture);
-
-        uploadTexture();
+        glUniform1i(uniforms.volume, 0);
+        glUniform1i(uniforms.occupancy, 1);
+        upload();
 
 
         // uniforms
@@ -276,6 +350,9 @@ public:
 
         // Unbind texture and shader program
         glBindTexture(GL_TEXTURE_3D, 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_3D, 0);
+        glActiveTexture(GL_TEXTURE0);
         glUseProgram(0u);
 
         // render basis
@@ -298,8 +375,55 @@ private:
         dirty = true;
     }
 
-    void uploadTexture() {
-        if (texture != 0 && !dirty) return;
+    std::size_t uploadOccupancy() {
+        if (occupancy_texture != 0 && !coarse_dirty) return 0;
+        std::size_t bytes = 0;
+        constexpr GLenum settings[] = {GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH,
+            GL_UNPACK_IMAGE_HEIGHT, GL_UNPACK_SKIP_PIXELS, GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_IMAGES};
+        GLint previous[6], buffer;
+        for (int i = 0; i < 6; ++i) {
+            glGetIntegerv(settings[i], &previous[i]);
+            glPixelStorei(settings[i], i == 0 ? 1 : 0);
+        }
+        glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &buffer);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+        glActiveTexture(GL_TEXTURE1);
+        if (occupancy_texture == 0) {
+            glGenTextures(1, &occupancy_texture);
+            glBindTexture(GL_TEXTURE_3D, occupancy_texture);
+            glTexImage3D(GL_TEXTURE_3D, 0, GL_R8, coarse_size.x, coarse_size.y,
+                         coarse_size.z, 0, GL_RED, GL_UNSIGNED_BYTE, occupancy.data());
+            bytes = occupancy.size();
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        } else {
+            glBindTexture(GL_TEXTURE_3D, occupancy_texture);
+            for (int z = 0; z < coarse_size.z; ++z)
+                for (int y = 0; y < coarse_size.y; ++y)
+                    for (int x = 0; x < coarse_size.x;) {
+                        int i = x + coarse_size.x * (y + coarse_size.y * z);
+                        if (!occupancy_dirty[i]) { ++x; continue; }
+                        int end = x + 1;
+                        while (end < coarse_size.x && occupancy_dirty[i + end - x]) ++end;
+                        glTexSubImage3D(GL_TEXTURE_3D, 0, x, y, z, end - x, 1, 1,
+                                        GL_RED, GL_UNSIGNED_BYTE, occupancy.data() + i);
+                        bytes += end - x;
+                        x = end;
+                    }
+        }
+        std::fill(occupancy_dirty.begin(), occupancy_dirty.end(), false);
+        coarse_dirty = false;
+        for (int i = 0; i < 6; ++i) glPixelStorei(settings[i], previous[i]);
+        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer);
+        return bytes;
+    }
+
+    std::size_t uploadTexture() {
+        if (texture != 0 && !dirty) return 0;
+        std::size_t bytes = 0;
 
         constexpr GLenum unpack_settings[] = {
             GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH, GL_UNPACK_IMAGE_HEIGHT,
@@ -319,6 +443,7 @@ private:
             glBindTexture(GL_TEXTURE_3D, texture);
             glTexImage3D(GL_TEXTURE_3D, 0, GL_R8, W, H, D, 0, GL_RED,
                          GL_UNSIGNED_BYTE, texels);
+            bytes = std::size_t(W) * H * D;
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -340,6 +465,8 @@ private:
                                 region.max_x - region.min_x, region.max_y - region.min_y,
                                 end_z - z, GL_RED, GL_UNSIGNED_BYTE,
                                 texels + region.min_x + region.min_y * W + z * W * H);
+                bytes += std::size_t(region.max_x - region.min_x) *
+                         (region.max_y - region.min_y) * (end_z - z);
                 std::fill(dirty_slices.begin() + z, dirty_slices.begin() + end_z,
                           DirtySlice{W, H, 0, 0});
                 z = end_z;
@@ -348,51 +475,27 @@ private:
         dirty = false;
         for (int i = 0; i < 6; ++i) glPixelStorei(unpack_settings[i], previous[i]);
         glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer);
+        return bytes;
     }
 
     void setUniforms(glm::mat4 const &tf,
-                     glm::mat4 world_to_clip, glm::vec3 cam_pos) const {
-        // shader manager
-        glUniform1i(glGetUniformLocation(program, "Shader_manager"), shader_setting);
-        // voxel size
-        glUniform1f(glGetUniformLocation(program, "voxel_size"), voxel_size);
-        glUniform1f(glGetUniformLocation(program, "lod"), LOD);
-        // grid size
-        glUniform3iv(glGetUniformLocation(program, "grid_size"), 1,
-                     glm::value_ptr(glm::ivec3(W, H, D)));
-
-        // vertex model to world
-        glUniformMatrix4fv(glGetUniformLocation(program, "model_to_world"),
-                           1, GL_FALSE, glm::value_ptr(tf));
-
+                     glm::mat4 world_to_clip, glm::vec3 cam_pos) {
+        glUniform1i(uniforms.shader, shader_setting);
+        glUniform1i(uniforms.acceleration, acceleration);
+        glUniform1f(uniforms.voxel_size, voxel_size);
+        glUniform1f(uniforms.lod, LOD);
+        glUniformMatrix4fv(uniforms.model_to_world, 1, GL_FALSE, glm::value_ptr(tf));
         auto inverse = glm::inverse(tf);
-        // world to model
-        glUniformMatrix4fv(
-                glGetUniformLocation(program, "world_to_model"), 1, GL_FALSE,
-                glm::value_ptr(inverse));
-        // normal model -> world
-        // done on gpu instead, did not get it to work
-/*
-        glUniformMatrix3fv(glGetUniformLocation(program, "normal_model_to_world"),
-                           1, GL_FALSE, glm::value_ptr(glm::transpose(glm::inverse(tf))));
-*/
-        // color palette
-        // set color palette here
-        glUniform3fv(glGetUniformLocation(program, "colorPalette"), colorPalette.size(), 
-                     glm::value_ptr(colorPalette[0]));
-
-        // vertex to clip
-        glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"),
-                           1, GL_FALSE, glm::value_ptr(world_to_clip));
-
-        //cam pos
-        glUniform3fv(glGetUniformLocation(program, "camera_position"), 1,
-                     glm::value_ptr(cam_pos));
-
-        // light direction
-        glUniform3fv(glGetUniformLocation(program, "light_direction"), 1,
+        glUniformMatrix4fv(uniforms.world_to_model, 1, GL_FALSE, glm::value_ptr(inverse));
+        auto normal = glm::transpose(inverse);
+        glUniformMatrix4fv(uniforms.normal_to_world, 1, GL_FALSE, glm::value_ptr(normal));
+        auto const &palette = colorPalette.empty() ? defaultPalette() : colorPalette;
+        glUniform3fv(uniforms.palette, static_cast<GLsizei>(palette.size()),
+                     glm::value_ptr(palette[0]));
+        glUniformMatrix4fv(uniforms.world_to_clip, 1, GL_FALSE, glm::value_ptr(world_to_clip));
+        glUniform3fv(uniforms.camera, 1, glm::value_ptr(cam_pos));
+        glUniform3fv(uniforms.light, 1,
                      glm::value_ptr(glm::vec3(tf * glm::vec4(-0.2f, 0.2f, 0.2f, 0))));
-
     }
 
     void renderMesh(const bonobo::mesh_data &shape) const {

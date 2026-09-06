@@ -4,6 +4,9 @@
 #include "core/InputHandler.h"
 #include "core/FPSCamera.h"
 #include "core/WindowManager.hpp"
+#include <filesystem>
+#include <optional>
+#include <cstdint>
 
 
 class Window;
@@ -28,7 +31,8 @@ namespace edan35
 
 		//! \brief Contains the logic of the assignment, along with the
 		//! render loop.
-		void run();
+		void run(bool demo, std::filesystem::path const& worldPath,
+		         std::optional<std::uint64_t> seed);
 
 	private:
 		FPSCameraf     mCamera;

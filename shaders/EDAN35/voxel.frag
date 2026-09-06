@@ -6,8 +6,10 @@ uniform vec3 camera_position;
 uniform sampler3D volume;
 uniform float voxel_size;
 uniform float lod;
-uniform ivec3 grid_size;
 uniform vec3 light_direction;
+uniform mat4 model_to_world;
+uniform mat4 normal_model_to_world;
+uniform mat4 vertex_world_to_clip;
 
 // color palette
 uniform vec3 colorPalette[256];
@@ -308,7 +310,6 @@ float ao(hit_t hit){
 
 void main()
 {
-    // custom front face culling to do it based on cam pos
     if (face_dot_v < 0.0) discard;
 
     hit_t hit;
