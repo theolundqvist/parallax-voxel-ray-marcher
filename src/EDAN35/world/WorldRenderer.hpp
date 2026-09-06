@@ -24,6 +24,8 @@ struct LevelUniforms {
     glm::ivec3 regionSize;
     glm::ivec3 pageOrigin;
     glm::ivec3 holeLo, holeHi;
+    // Highest region-local row with a non-zero table entry; -1 draws nothing at this level.
+    int topRow;
 };
 
 // beginFrame resets the recorded levels, drawLevel records one, march walks every recorded level
@@ -47,7 +49,7 @@ public:
     LevelTable& table(int level) { return tables[level]; }
 
 private:
-    // std140 mirror of world.frag's level_t.
+    // std140 mirror of world.frag's level_t: sizeDrawn.w is the drawn flag, pageOrigin.w the top row.
     struct LevelBlock {
         glm::vec4 originSpan;
         glm::ivec4 sizeDrawn;

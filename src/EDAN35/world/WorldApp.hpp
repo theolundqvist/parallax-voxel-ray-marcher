@@ -146,6 +146,7 @@ public:
                 .pageOrigin = glm::ivec3(texel(r->lo.x), texel(r->lo.y), texel(r->lo.z)),
                 .holeLo = glm::ivec3(0),
                 .holeHi = glm::ivec3(0),
+                .topRow = topRow[level],
             };
             if (holeValid[level]) {
                 auto finer = *region(position.anchor, level - 1, ShellRadius);
@@ -217,6 +218,7 @@ private:
     std::vector<ChunkKey> targets, drawn;
     std::set<ChunkKey> targetSet, pending, deferred, drawnSet;
     std::array<bool, LevelCount> holeValid{};
+    std::array<int, LevelCount> topRow{};
     std::optional<ChunkKey> center;
     std::uint64_t epoch = 0;
     int viewWidth = 0, viewHeight = 0;
@@ -311,7 +313,14 @@ private:
         std::set<ChunkKey> next(drawn.begin(), drawn.end());
         for (auto key : drawnSet)
             if (!next.contains(key)) renderer.table(key.level).set(key, 0);
-        for (auto key : drawn) renderer.table(key.level).set(key, entryOf(resident.at(key)));
+        topRow.fill(-1);
+        for (auto key : drawn) {
+            auto entry = entryOf(resident.at(key));
+            renderer.table(key.level).set(key, entry);
+            if (entry == 0) continue;
+            auto r = region(position.anchor, key.level, ShellRadius);
+            topRow[key.level] = std::max(topRow[key.level], int(key.y - r->lo.y));
+        }
         drawnSet = std::move(next);
         holeValid.fill(true);
         holeValid[0] = false;

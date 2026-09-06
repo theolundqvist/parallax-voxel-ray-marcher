@@ -87,8 +87,8 @@ void WorldRenderer::beginFrame(FrameUniforms const& frame) {
 }
 
 void WorldRenderer::drawLevel(LevelUniforms const& level) {
-    levels[level.level] = {glm::vec4(level.regionOrigin, level.chunkSpan), glm::ivec4(level.regionSize, 1),
-                           glm::ivec4(level.pageOrigin, 0), glm::ivec4(level.holeLo, 0), glm::ivec4(level.holeHi, 0)};
+    levels[level.level] = {glm::vec4(level.regionOrigin, level.chunkSpan), glm::ivec4(level.regionSize, level.topRow >= 0 ? 1 : 0),
+                           glm::ivec4(level.pageOrigin, level.topRow), glm::ivec4(level.holeLo, 0), glm::ivec4(level.holeHi, 0)};
 }
 
 void WorldRenderer::march() {

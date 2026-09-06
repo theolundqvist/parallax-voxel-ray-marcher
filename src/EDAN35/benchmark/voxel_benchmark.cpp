@@ -647,6 +647,8 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
     };
     auto drawn = drawnSet(anchor, ShellRadius, [&](ChunkKey k) { return resident.contains(k); });
     std::set<ChunkKey> drawnKeys(drawn.begin(), drawn.end());
+    std::array<int, LevelCount> topRow;
+    topRow.fill(-1);
     for (int level = 0; level < LevelCount; ++level) {
         auto r = region(anchor, level, ShellRadius);
         require(bool(r), "Level region is not representable");
@@ -661,6 +663,7 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
                 else if (res.uniform == Air) ++stats.drawnAir;
                 else ++stats.drawnSolid;
             }
+            if (entry != 0) topRow[level] = std::max(topRow[level], int(k.y - r->lo.y));
             renderer.table(level).set(k, entry);
         });
     }
@@ -693,6 +696,7 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
             .pageOrigin = LevelTable::texel(r->lo),
             .holeLo = glm::ivec3(0),
             .holeHi = glm::ivec3(0),
+            .topRow = topRow[level],
         };
         if (holeValid[level]) {
             auto finer = *region(anchor, level - 1, ShellRadius);

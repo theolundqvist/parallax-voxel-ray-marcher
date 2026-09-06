@@ -19,7 +19,7 @@ const float NoHit = 1e30;
 struct level_t {
     vec4 origin_span;
     ivec4 size_drawn;
-    ivec4 page_origin;
+    ivec4 page_origin_top;
     ivec4 hole_lo;
     ivec4 hole_hi;
 };
@@ -131,7 +131,9 @@ void levelHit(int level, vec3 rd, inout hit_t best) {
     ivec3 hole_hi = L.hole_hi.xyz;
     vec3 ro = (camera_position - L.origin_span.xyz) / span;
     ivec3 step_dir = ivec3(sign(rd));
-    float exit = nearest(boundaryTimes(ro, rd, ivec3(0), ivec3(0), region_size * 32));
+    // Rows above the highest drawn non-air chunk are air, so the walk ends at that row's top.
+    ivec3 extent = ivec3(region_size.x, L.page_origin_top.w + 1, region_size.z);
+    float exit = nearest(boundaryTimes(ro, rd, ivec3(0), ivec3(0), extent * 32));
     float t = 0.0;
     vec3 normal = -rd;
     bool hole = all(lessThan(hole_lo, hole_hi));
@@ -142,7 +144,7 @@ void levelHit(int level, vec3 rd, inout hit_t best) {
     }
     if (t >= exit || t * span >= best.distance) return;
     ivec3 chunk = voxelAt(ro, rd, ivec3(0), t, ivec3(0), region_size * 32) / 32;
-    ivec3 texel = (L.page_origin.xyz + chunk) % PageSize;
+    ivec3 texel = (L.page_origin_top.xyz + chunk) % PageSize;
     int slab = level * PageSize;
     for (int step = 0; step < 3 * PageSize; ++step) {
         vec3 times = boundaryTimes(ro, rd, chunk, ivec3(0), ivec3(32));
