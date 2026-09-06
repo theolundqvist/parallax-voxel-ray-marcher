@@ -91,12 +91,19 @@ voxel-upload budget per frame, and a 5,120-brick GPU pool bound streaming work.
 Uniform chunks share the reply limit but consume no voxel-upload bytes. Brushes
 stay atomic across at most eight chunks.
 
+World textures remain resident; only changed bricks and page entries are
+transferred. Separate pixel-unpack buffers stage voxel, occupancy, and page data.
+Replacing each staging store lets the driver queue updates behind pending draws
+without reusing upload storage that the GPU still needs.
+Voxels and occupancy masks use integer-byte textures (`GL_R8UI`), so the shader
+reads exact material and presence bits without normalized-float decoding.
+
 ### Persistent voxel storage
 
-Each volume retains one `GL_R8` 3D texture. The first render uploads the volume;
+Original demo volumes each retain one `GL_R8` 3D texture. The first render uploads the volume;
 unchanged frames upload nothing. Edits track an XY rectangle per Z slice and merge
 matching adjacent slices into `glTexSubImage3D` updates. This uses OpenGL 4.1 APIs,
-including on macOS, without staging copies. The original demo modes remain available.
+including on macOS, without staging copies.
 An update can include unchanged voxels inside its rectangle; it does not upload
 untouched slices. Volume destruction releases the texture and bounding-box buffers.
 Bulk generation visits X-contiguous storage order to keep CPU writes cache-local.
@@ -124,7 +131,7 @@ The terrain is a deterministic sinusoidal heightfield, not the paper's original 
 CSV output separates uploaded bytes/calls, CPU upload time, CPU mutation time, and
 GPU-completed frame time. Texture readbacks are checked and raw RGBA images are saved
 outside timing; `--scenario smoke --strict` checks mutations, no-op updates, bounds, unpack
-state, initially empty world page tables, and texture lifetime. `--isolate-uploads` adds GPU waits around uploads for
+state, queued world updates, initially empty page tables, and resource lifetime. `--isolate-uploads` adds GPU waits around uploads for
 diagnosis only: do not treat those serialized frames as normal frame-rate results.
 For before/after comparisons, use the same harness, dependencies, scene, resolution,
 and arguments on both revisions; omit `--strict` only on the old implementation,

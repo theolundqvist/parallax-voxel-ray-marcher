@@ -1,8 +1,8 @@
 #version 410
 // Merge non-overlapping drawn chunks from all LODs in ray-distance order. Partial streaming
 // may interleave levels; marching each entire level in turn is not a valid transparency order.
-uniform sampler3D volume;
-uniform sampler3D coarse_occupancy;
+uniform usampler3D volume;
+uniform usampler3D coarse_occupancy;
 uniform usampler3D page_tables;
 uniform bool world_acceleration = true;
 uniform mat4 clip_to_world;
@@ -112,7 +112,7 @@ void brickHit(vec3 ro, vec3 rd, ivec3 step_dir, cursor_t c, ivec3 brick, float s
         float cell_exit = nearest(cell_times);
         // Presence bits: opaque=1, water=2, air=4. Only homogeneous transparent cells
         // may bypass fine traversal; mixed water/air must preserve every transition.
-        int occupancy = world_acceleration ? int(round(texelFetch(coarse_occupancy, brick * 4 + cell, 0).r * 255.0)) : 7;
+        int occupancy = world_acceleration ? int(texelFetch(coarse_occupancy, brick * 4 + cell, 0).r) : 7;
         if (occupancy == 2 || occupancy == 4) {
             medium(m, occupancy == 2, cell_entry * span, normal);
         } else {
@@ -120,7 +120,7 @@ void brickHit(vec3 ro, vec3 rd, ivec3 step_dir, cursor_t c, ivec3 brick, float s
             float t = cell_entry;
             vec3 face_normal = normal;
             for (int fine_step = 0; fine_step < 24; ++fine_step) {
-                int material = int(round(texelFetch(volume, brick * 32 + voxel, 0).r * 255.0));
+                int material = int(texelFetch(volume, brick * 32 + voxel, 0).r);
                 bool water = (material & 15) == Water;
                 if (material != 0 && !water) {
                     solid(m, material, t * span, face_normal);

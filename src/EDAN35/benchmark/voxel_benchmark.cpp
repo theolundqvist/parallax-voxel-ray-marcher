@@ -252,6 +252,88 @@ void atlasSmoke(std::ostream& log) {
     log << "smoke,page-atlas-initialization=pass\n";
 }
 
+void worldUploadSmoke(std::ostream& log) {
+    using namespace world;
+    BrickPool pool;
+    LevelAtlas atlas;
+    pool.init(); atlas.init();
+    std::array<LevelTable, LevelCount> tables;
+    for (int level = 0; level < LevelCount; ++level) tables[level].init(atlas, level);
+    auto first = pool.allocate(), second = pool.allocate();
+    require(first && second, "World upload smoke needs two brick slots");
+    std::array<std::uint16_t, 2> slots{*first, *second};
+    std::array<ChunkData, 2> data;
+    std::vector<GLushort> expectedPages(PageSize * PageSize * PageSize * LevelCount), pages(expectedPages.size());
+    constexpr GLenum unpackSettings[] = {GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH, GL_UNPACK_IMAGE_HEIGHT,
+        GL_UNPACK_SKIP_PIXELS, GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_IMAGES};
+    constexpr GLint hostile[] = {8, 43, 47, 3, 2, 1};
+    GLint previous[6], previousBuffer, previousFramebuffer, previousPack;
+    for (int i = 0; i < 6; ++i) glGetIntegerv(unpackSettings[i], &previous[i]);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previousBuffer);
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &previousPack);
+    GLuint foreign = 0, framebuffer = 0;
+    glGenBuffers(1, &foreign); glBindBuffer(GL_PIXEL_UNPACK_BUFFER, foreign);
+    std::array<GLubyte, 64> foreignData{}, foreignRead{}; foreignData.fill(0xA5);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, foreignData.size(), foreignData.data(), GL_STATIC_DRAW);
+    for (int i = 0; i < 6; ++i) glPixelStorei(unpackSettings[i], hostile[i]);
+    // Reuse transfer storage without a readback/fence between revisions. Transparent-cell
+    // masks change as well as material bytes, so stale occupancy cannot pass this check.
+    for (int revision = 0; revision < 2 * LevelCount; ++revision) {
+        int which = revision % 2;
+        for (int z = 0; z < ChunkSize; ++z) for (int y = 0; y < ChunkSize; ++y) for (int x = 0; x < ChunkSize; ++x) {
+            int zone = (x / 8 + revision) % 4;
+            data[which][index(x, y, z)] = zone == 0 ? Air : zone == 1 ? Water : zone == 2 ? Stone :
+                std::uint8_t((x * 17 + y * 31 + z * 7 + revision * 13) & 255);
+        }
+        pool.upload(slots[which], data[which]);
+        int level = revision % LevelCount;
+        ChunkKey key{-3, 4, -5, std::uint8_t(level)};
+        GLushort entry = GLushort(257 * revision);
+        tables[level].set(key, entry);
+        expectedPages[PageSize - 3 + PageSize * (4 + PageSize * (PageSize - 5 + PageSize * level))] = entry;
+        GLint binding = 0; glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &binding);
+        require(GLuint(binding) == foreign, "World upload changed caller unpack buffer");
+        for (int i = 0; i < 6; ++i) { GLint value = 0; glGetIntegerv(unpackSettings[i], &value);
+            require(value == hostile[i], "World upload changed caller unpack state"); }
+    }
+    glGenFramebuffers(1, &framebuffer); glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glReadBuffer(GL_COLOR_ATTACHMENT0); glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    for (int which = 0; which < 2; ++which) {
+        int slot = slots[which];
+        glm::ivec3 brick(slot % PoolBricks.x, (slot / PoolBricks.x) % PoolBricks.y, slot / (PoolBricks.x * PoolBricks.y));
+        std::array<GLubyte, ChunkSize * ChunkSize> pixels{};
+        std::array<GLubyte, 64> cells{};
+        for (int z = 0; z < ChunkSize; ++z) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, pool.texture(), 0, brick.z * ChunkSize + z);
+            require(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "World brick readback framebuffer");
+            glReadPixels(brick.x * ChunkSize, brick.y * ChunkSize, ChunkSize, ChunkSize, GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels.data());
+            for (int y = 0; y < ChunkSize; ++y) for (int x = 0; x < ChunkSize; ++x) {
+                auto value = data[which][index(x, y, z)];
+                require(pixels[x + ChunkSize * y] == value, "Queued world upload lost material bytes");
+                cells[x / 8 + 4 * (y / 8 + 4 * (z / 8))] |= value == Air ? 4 : opaque(value) ? 1 : 2;
+            }
+        }
+        for (int z = 0; z < 4; ++z) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, pool.occupancyTexture(), 0, brick.z * 4 + z);
+            glReadPixels(brick.x * 4, brick.y * 4, 4, 4, GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels.data());
+            require(std::equal(pixels.begin(), pixels.begin() + 16, cells.begin() + z * 16), "Queued world upload lost occupancy masks");
+        }
+        pool.release(slots[which]);
+    }
+    glBindTexture(GL_TEXTURE_3D, atlas.texture());
+    glGetTexImage(GL_TEXTURE_3D, 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, pages.data());
+    require(pages == expectedPages, "Queued atlas uploads lost entries or changed untouched pages");
+    glGetBufferSubData(GL_PIXEL_UNPACK_BUFFER, 0, foreignRead.size(), foreignRead.data());
+    require(foreignRead == foreignData, "World upload overwrote caller unpack buffer");
+    glBindFramebuffer(GL_FRAMEBUFFER, GLuint(previousFramebuffer)); glDeleteFramebuffers(1, &framebuffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, GLuint(previousBuffer)); glDeleteBuffers(1, &foreign);
+    for (int i = 0; i < 6; ++i) glPixelStorei(unpackSettings[i], previous[i]);
+    glPixelStorei(GL_PACK_ALIGNMENT, previousPack);
+    checkGL("queued world uploads");
+    log << "smoke,queued-world-material-occupancy-atlas=pass\n";
+}
+
 void smoke(GLuint shader_program, bool strict, std::ostream& log, std::string const& prefix) {
     glm::vec3 camera(2, 1.7f, 2.5f);
     auto clip = glm::perspective(glm::radians(40.0f), 1.0f, 0.1f, 20.0f) * glm::lookAt(camera, glm::vec3(0.5f), glm::vec3(0,1,0));
@@ -1157,6 +1239,7 @@ int main(int argc,char** argv) {
         for(auto item:{GL_VENDOR,GL_RENDERER,GL_VERSION,GL_SHADING_LANGUAGE_VERSION}) log << item << '=' << glGetString(item) << '\n';
         log << "label=" << opts.label << ",warmup=" << opts.warmup << ",frames=" << opts.frames << ",framebuffer=" << framebuffer_pixels << 'x' << framebuffer_pixels << ",scenario=" << opts.scenario << ",isolate_uploads=" << isolate_uploads << '\n';
         atlasSmoke(log);
+        worldUploadSmoke(log);
         if(mountains) {
             mountainsBenchmark(opts,prefix,csv,log);
             checkGL("shutdown");

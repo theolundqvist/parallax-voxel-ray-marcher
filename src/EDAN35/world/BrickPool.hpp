@@ -11,7 +11,7 @@ namespace world {
 inline constexpr glm::ivec3 PoolBricks{16, 20, 16};
 static_assert(PoolBricks.x * PoolBricks.y * PoolBricks.z == BrickCapacity);
 
-// R8 pool of ChunkSize^3 bricks; R8 8^3-cell presence masks: opaque=1, water=2, air=4.
+// R8UI pool of ChunkSize^3 bricks; R8UI 8^3-cell presence masks: opaque=1, water=2, air=4.
 class BrickPool {
 public:
     static constexpr int capacity = BrickCapacity;
@@ -30,6 +30,7 @@ public:
 
 private:
     GLuint pool = 0, occupancy = 0;
+    GLuint uploadBuffers[2]{};
     std::vector<std::uint16_t> free;
 };
 
@@ -47,7 +48,8 @@ public:
     GLuint texture() const { return atlas; }
 
 private:
-    GLuint atlas = 0;
+    friend class LevelTable;
+    GLuint atlas = 0, uploadBuffer = 0;
 };
 
 class LevelTable {
@@ -57,7 +59,7 @@ public:
     static glm::ivec3 texel(ChunkKey key);
 
 private:
-    GLuint atlas = 0;
+    GLuint atlas = 0, uploadBuffer = 0;
     int slab = 0;
 };
 }

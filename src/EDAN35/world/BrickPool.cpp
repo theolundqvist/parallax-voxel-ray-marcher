@@ -45,11 +45,13 @@ glm::ivec3 brickOf(std::uint16_t slot) {
 BrickPool::~BrickPool() {
     glDeleteTextures(1, &pool);
     glDeleteTextures(1, &occupancy);
+    glDeleteBuffers(2, uploadBuffers);
 }
 
 void BrickPool::init() {
-    pool = texture3D(GL_R8, PoolBricks * ChunkSize, GL_RED, GL_UNSIGNED_BYTE);
-    occupancy = texture3D(GL_R8, PoolBricks * OccupancyCells, GL_RED, GL_UNSIGNED_BYTE);
+    pool = texture3D(GL_R8UI, PoolBricks * ChunkSize, GL_RED_INTEGER, GL_UNSIGNED_BYTE);
+    occupancy = texture3D(GL_R8UI, PoolBricks * OccupancyCells, GL_RED_INTEGER, GL_UNSIGNED_BYTE);
+    glGenBuffers(2, uploadBuffers);
     free.resize(capacity);
     for (int i = 0; i < capacity; ++i) free[i] = std::uint16_t(capacity - 1 - i);
 }
@@ -79,28 +81,38 @@ std::size_t BrickPool::upload(std::uint16_t slot, ChunkData const& data) {
             }
     auto brick = brickOf(slot);
     UnpackState unpack;
+    // Supplying initial data avoids the native-driver wait from orphan-then-subdata uploads.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, uploadBuffers[0]);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, GLsizeiptr(data.size()), data.data(), GL_STREAM_DRAW);
     auto voxel = brick * ChunkSize;
     glBindTexture(GL_TEXTURE_3D, pool);
     glTexSubImage3D(GL_TEXTURE_3D, 0, voxel.x, voxel.y, voxel.z, ChunkSize, ChunkSize, ChunkSize,
-                    GL_RED, GL_UNSIGNED_BYTE, data.data());
+                    GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
     auto cell = brick * OccupancyCells;
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, uploadBuffers[1]);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(cells), cells, GL_STREAM_DRAW);
     glBindTexture(GL_TEXTURE_3D, occupancy);
     glTexSubImage3D(GL_TEXTURE_3D, 0, cell.x, cell.y, cell.z, OccupancyCells, OccupancyCells, OccupancyCells,
-                    GL_RED, GL_UNSIGNED_BYTE, cells);
+                    GL_RED_INTEGER, GL_UNSIGNED_BYTE, nullptr);
     return data.size() + sizeof(cells);
 }
 
-LevelAtlas::~LevelAtlas() { glDeleteTextures(1, &atlas); }
+LevelAtlas::~LevelAtlas() {
+    glDeleteTextures(1, &atlas);
+    glDeleteBuffers(1, &uploadBuffer);
+}
 
 void LevelAtlas::init() {
     std::uint16_t empty[PageSize * PageSize * PageSize * LevelCount] = {};
     UnpackState unpack;
     atlas = texture3D(GL_R16UI, glm::ivec3(PageSize, PageSize, PageSize * LevelCount), GL_RED_INTEGER,
                       GL_UNSIGNED_SHORT, empty);
+    glGenBuffers(1, &uploadBuffer);
 }
 
 void LevelTable::init(LevelAtlas const& levels, int level) {
     atlas = levels.texture();
+    uploadBuffer = levels.uploadBuffer;
     slab = level * PageSize;
 }
 
@@ -112,7 +124,9 @@ glm::ivec3 LevelTable::texel(ChunkKey key) {
 void LevelTable::set(ChunkKey key, std::uint16_t entry) {
     auto at = texel(key);
     UnpackState unpack;
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, uploadBuffer);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, sizeof(entry), &entry, GL_STREAM_DRAW);
     glBindTexture(GL_TEXTURE_3D, atlas);
-    glTexSubImage3D(GL_TEXTURE_3D, 0, at.x, at.y, slab + at.z, 1, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_SHORT, &entry);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, at.x, at.y, slab + at.z, 1, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_SHORT, nullptr);
 }
 }
