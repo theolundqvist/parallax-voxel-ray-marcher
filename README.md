@@ -66,7 +66,7 @@ one-chunk hysteresis before eviction; frustum culling only suppresses draws.
 Chunk keys are 64-bit integers with a camera-relative render origin, so there is
 no map edge during normal exploration. Vertical travel is bounded to −128 to
 2048 m. One background worker, bounded request/reply queues, a 1 MiB per-frame
-upload budget, and a 5,120-brick GPU pool (every resident chunk can hold a brick)
+upload budget, and a 5,120-brick GPU pool (every targeted chunk can hold a brick)
 bound streaming work. Brushes stay atomic across at most eight chunks.
 
 ### Persistent voxel storage
