@@ -576,6 +576,145 @@ ColumnStats columnStats(std::vector<double> values) {
     return {sum / double(values.size()), values[std::size_t(std::ceil(0.99 * double(values.size()))) - 1]};
 }
 
+// Exact synthetic rays exercise the production renderer, including its MRT/composite contract.
+// Run outside timing, before generated terrain populates the page tables.
+void waterSmoke(world::WorldRenderer& renderer, std::array<glm::vec3, 256> const& palette,
+                GLuint target, int width, int height, std::string const& prefix, std::ostream& log) {
+    using namespace world;
+    constexpr float NoHit = 1e30f;
+    auto slot = renderer.bricks().allocate();
+    require(bool(slot), "No brick for water GPU cases");
+    ChunkData data{};
+    auto slices = [&](int axis, auto material) {
+        for (int z = 0; z < ChunkSize; ++z)
+            for (int y = 0; y < ChunkSize; ++y)
+                for (int x = 0; x < ChunkSize; ++x) {
+                    int coordinate = axis == 0 ? x : axis == 1 ? y : z;
+                    data[index(x, y, z)] = std::uint8_t(material(coordinate));
+                }
+        renderer.bricks().upload(*slot, data);
+    };
+    auto domain = [](int level, float origin, float span) {
+        return LevelUniforms{.level = level, .regionOrigin = glm::vec3(origin, 0, 0), .chunkSpan = span,
+            .regionSize = glm::ivec3(1), .pageOrigin = glm::ivec3(0),
+            .holeLo = glm::ivec3(0), .holeHi = glm::ivec3(0), .topRow = 0};
+    };
+    std::vector<LevelUniforms> domains{domain(0, 0, 32)};
+    renderer.table(0).set({0, 0, 0, 0}, std::uint16_t(256 + *slot));
+    struct Sample {
+        std::array<float, 4> march{};
+        std::array<GLubyte, 3> color{};
+        std::array<GLubyte, 4> composite{};
+    };
+    auto run = [&](char const* name, glm::vec3 eye, glm::vec3 direction, std::array<float, 4> expectedMarch) {
+        std::array<Sample, 2> samples;
+        for (int acceleration = 0; acceleration < 2; ++acceleration) {
+            glm::mat4 clipToWorld(0);
+            clipToWorld[3] = glm::vec4(eye + direction, 1);
+            FrameUniforms frame{.worldToClip = glm::mat4(1), .clipToWorld = clipToWorld,
+                .cameraPosition = eye, .sunDirection = glm::normalize(glm::vec3(0.35f, 0.8f, 0.45f)),
+                .acceleration = acceleration != 0, .palette = &palette, .width = 1, .height = 1};
+            glBindFramebuffer(GL_FRAMEBUFFER, target);
+            renderer.beginFrame(frame);
+            for (auto const& d : domains) renderer.drawLevel(d);
+            renderer.march();
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glReadBuffer(GL_COLOR_ATTACHMENT1);
+            glReadPixels(0, 0, 1, 1, GL_RGBA, GL_FLOAT, samples[acceleration].march.data());
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, samples[acceleration].color.data());
+            renderer.composite();
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glReadPixels(0, 0, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, samples[acceleration].composite.data());
+            checkGL(std::string("water GPU case ") + name);
+            for (int channel = 0; channel < 4; ++channel) {
+                float actual = samples[acceleration].march[channel];
+                float expectedValue = expectedMarch[channel];
+                require(expectedValue == NoHit ? actual >= 1e29f : std::abs(actual - expectedValue) < 0.0001f,
+                    std::string(name) + ": channel " + std::to_string(channel) + " expected " +
+                    std::to_string(expectedValue) + ", got " + std::to_string(actual));
+            }
+        }
+        require(std::memcmp(samples[0].march.data(), samples[1].march.data(), sizeof(samples[0].march)) == 0 &&
+                samples[0].color == samples[1].color && samples[0].composite == samples[1].composite,
+                std::string(name) + ": acceleration changed water, opaque colour/depth or composite");
+        log << "water_gpu," << name << ",opaque_m=" << samples[1].march[0]
+            << ",water_m=" << samples[1].march[1] << ",boundary_m=" << samples[1].march[2]
+            << ",face=" << samples[1].march[3] << ",parity=exact\n";
+        return samples[1];
+    };
+    glm::vec3 eye(0.5f), forward(1, 0, 0);
+    slices(0, [](int x) { return x == 12 ? Stone : Air; });
+    auto dry = run("dry-solid", eye, forward, {11.5f, 0, NoHit, 0});
+    slices(0, [](int x) { return x == 12 ? Stone : ((x >= 2 && x < 4) || (x >= 6 && x < 10)) ? Water : Air; });
+    auto wet = run("separated-water-air-intervals", eye, forward, {11.5f, 6, 1.5f, 2});
+    require(dry.composite != wet.composite, "Water did not change the production composite");
+    run("underwater-exit-reentry", {2.5f, 0.5f, 0.5f}, forward, {9.5f, 5.5f, 1.5f, -2});
+    slices(0, [](int x) { return x == 1 ? Stone : ((x >= 2 && x < 4) || (x >= 6 && x < 10)) ? Water : Air; });
+    run("solid-occludes-all-water", eye, forward, {0.5f, 0, NoHit, 0});
+    run("reverse-side-face", {12.5f, 0.5f, 0.5f}, -forward, {10.5f, 6, 2.5f, 1});
+    slices(0, [](int x) { return x == 8 ? Stone : ((x >= 2 && x < 4) || (x >= 6 && x < 10)) ? Water : Air; });
+    run("solid-clips-second-water-interval", eye, forward, {7.5f, 4, 1.5f, 2});
+    slices(0, [](int x) { return x == 12 ? Stone : x < 8 ? Water : Air; });
+    run("homogeneous-water-cell-exit", eye, forward, {11.5f, 7.5f, 7.5f, -2});
+    slices(0, [](int x) { return x == 3 ? Stone : Water; });
+    run("underwater-solid-no-interface", {2.5f, 0.5f, 0.5f}, forward, {0.5f, 0.5f, NoHit, -7});
+    slices(1, [](int y) { return y == 12 ? Stone : y < 8 ? Water : Air; });
+    run("underwater-upward-exit", eye, {0, 1, 0}, {11.5f, 7.5f, 7.5f, -4});
+    slices(0, [](int) { return Water; });
+    run("frontier-ends-water-not-infinite-ocean", eye, forward, {NoHit, 31.5f, 31.5f, -2});
+    // Coarse water is nearer than the fine brick: level-index order would see its solid first.
+    domains = {domain(0, 64, 32), domain(1, 0, 64)};
+    renderer.table(1).set({0, 0, 0, 1}, Water);
+    slices(0, [](int x) { return x == 24 ? Stone : (x >= 8 && x < 16) ? Water : Air; });
+    run("partial-lod-coarse-before-fine", eye, forward, {87.5f, 71.5f, 63.5f, -2});
+    glm::vec3 oblique = glm::normalize(glm::vec3(1, 0.25f, 0.125f));
+    float metresPerX = 1.0f / oblique.x;
+    run("oblique-partial-lod-order", eye, oblique,
+        {87.5f * metresPerX, 71.5f * metresPerX, 63.5f * metresPerX, -2});
+    slices(0, [](int x) { return x == 24 ? Stone : x < 8 ? Water : Air; });
+    run("water-continuous-across-lod", eye, forward, {87.5f, 71.5f, 71.5f, -2});
+    run("oblique-continuous-lod-water", eye, oblique,
+        {87.5f * metresPerX, 71.5f * metresPerX, 71.5f * metresPerX, -2});
+    domains[0].regionOrigin.x = 96;
+    run("missing-lod-span-is-air", eye, forward, {119.5f, 71.5f, 63.5f, -2});
+    // A finite voxel tank with an editable-looking air tunnel and opaque chequered floor.
+    // These captures expose side faces and an underwater upward view, not a sea-plane proxy.
+    domains = {domain(0, 0, 32)};
+    for (int z = 0; z < ChunkSize; ++z)
+        for (int y = 0; y < ChunkSize; ++y)
+            for (int x = 0; x < ChunkSize; ++x) {
+                bool tank = x >= 4 && x < 28 && z >= 4 && z < 28 && y < 16;
+                bool tunnel = y >= 6 && y < 10 && z >= 12 && z < 20;
+                data[index(x, y, z)] = y == 0 ? ((x / 4 + z / 4) % 2 ? Sand : Stone) :
+                    tank && !tunnel ? Water : Air;
+            }
+    renderer.bricks().upload(*slot, data);
+    auto capture = [&](char const* name, glm::vec3 camera, glm::vec3 look, glm::vec3 up) {
+        auto clip = glm::perspective(glm::radians(65.0f), float(width) / float(height), 0.05f, 200.0f) *
+                    glm::lookAt(camera, look, up);
+        FrameUniforms frame{.worldToClip = clip, .clipToWorld = glm::inverse(clip), .cameraPosition = camera,
+            .sunDirection = glm::normalize(glm::vec3(0.35f, 0.8f, 0.45f)), .acceleration = true,
+            .palette = &palette, .width = width, .height = height};
+        glBindFramebuffer(GL_FRAMEBUFFER, target);
+        renderer.beginFrame(frame);
+        renderer.drawLevel(domains.front());
+        renderer.march();
+        renderer.composite();
+        std::vector<GLubyte> rgba(std::size_t(width) * height * 4);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+        writePng(prefix + "-" + name + ".png", width, height, rgba);
+        checkGL(std::string("water capture ") + name);
+    };
+    capture("water-side-carved", {40, 10, 22}, {16, 8, 16}, {0, 1, 0});
+    capture("water-underwater-up", {16, 12, 16}, {16, 24, 16}, {0, 0, -1});
+    renderer.table(0).set({0, 0, 0, 0}, 0);
+    renderer.table(1).set({0, 0, 0, 1}, 0);
+    renderer.bricks().release(*slot);
+    glBindFramebuffer(GL_FRAMEBUFFER, target);
+}
+
 void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ostream& csv, std::ostream& log) {
     using namespace world;
     constexpr int MaxChunkDelta = 1 << 24;
@@ -608,6 +747,8 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
     renderer.init(programs);
     auto palette = worldPalette();
     checkGL("mountains renderer init");
+    waterSmoke(renderer, palette, target, width, height, prefix, log);
+    log << "mountains,render_mode=" << (opts.water ? "voxel-water-composite" : "opaque-only-no-composite (sky/fog/water shading disabled)") << '\n';
 
     // Cold start: every residency target is generated and uploaded synchronously, then the
     // level tables are filled from the drawn set exactly as WorldApp::refreshDrawn does.
@@ -710,7 +851,6 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
         .worldToClip = worldToClip,
         .clipToWorld = glm::inverse(worldToClip),
         .cameraPosition = eye,
-        .seaLevel = float(SeaLevel - double(anchor.y) * double(ChunkSpan)),
         .sunDirection = glm::normalize(glm::vec3(0.35f, 0.8f, 0.45f)),
         .acceleration = true,
         .palette = &palette,
@@ -726,22 +866,22 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
         renderer.march();
     };
 
-    // Parity: opaque colour bytes, linear distance bits and the composite, acceleration off vs on.
+    // Parity: opaque colour/depth, all water channels and final composite, acceleration off vs on.
     struct Readback {
         std::vector<GLubyte> color, composite;
-        std::vector<float> distance;
+        std::vector<float> march;
     };
     auto readback = [&](bool accelerated) {
         Readback result;
         result.color.resize(pixels * 3);
-        result.distance.resize(pixels);
+        result.march.resize(pixels * 4);
         result.composite.resize(pixels * 4);
         drawOpaque(accelerated);
         glPixelStorei(GL_PACK_ALIGNMENT, 1);
         glReadBuffer(GL_COLOR_ATTACHMENT0);
         glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, result.color.data());
         glReadBuffer(GL_COLOR_ATTACHMENT1);
-        glReadPixels(0, 0, width, height, GL_RED, GL_FLOAT, result.distance.data());
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, result.march.data());
         glReadBuffer(GL_COLOR_ATTACHMENT0);
         if (opts.water) {
             renderer.composite();
@@ -757,16 +897,19 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
     };
     auto reference = readback(false);
     auto accelerated = readback(true);
-    std::size_t colorDiffering = 0, distanceDiffering = 0, compositeDiffering = 0, nonBlack = 0;
+    std::size_t colorDiffering = 0, distanceDiffering = 0, waterDiffering = 0, compositeDiffering = 0, nonBlack = 0;
     for (std::size_t i = 0; i < pixels; ++i) {
         if (std::memcmp(&reference.color[i * 3], &accelerated.color[i * 3], 3) != 0) ++colorDiffering;
-        if (std::memcmp(&reference.distance[i], &accelerated.distance[i], sizeof(float)) != 0) ++distanceDiffering;
+        if (std::memcmp(&reference.march[i * 4], &accelerated.march[i * 4], sizeof(float)) != 0) ++distanceDiffering;
+        if (std::memcmp(&reference.march[i * 4 + 1], &accelerated.march[i * 4 + 1], 3 * sizeof(float)) != 0) ++waterDiffering;
         if (std::memcmp(&reference.composite[i * 4], &accelerated.composite[i * 4], 4) != 0) ++compositeDiffering;
         if (accelerated.composite[i * 4] | accelerated.composite[i * 4 + 1] | accelerated.composite[i * 4 + 2]) ++nonBlack;
     }
     std::string const png = prefix + ".png";
     writePng(png, width, height, accelerated.composite);
     checkGL("mountains parity");
+    require(colorDiffering == 0 && distanceDiffering == 0 && waterDiffering == 0 && compositeDiffering == 0,
+            "Mountains acceleration changed opaque colour/depth, water intervals or composite");
     // Target visibility: hit pixels within 3 degrees of the view centre, plus the centre-row distance profile.
     constexpr float NoHit = 1e30f;
     auto const clipToView = glm::inverse(glm::perspective(glm::radians(65.0f), float(width) / float(height), 0.05f, 40000.0f));
@@ -777,7 +920,7 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
         for (int x = 0; x < width; ++x) {
             glm::vec4 view = clipToView * glm::vec4((float(x) + 0.5f) / float(width) * 2 - 1, (float(y) + 0.5f) / float(height) * 2 - 1, 1, 1);
             glm::vec3 dir = glm::normalize(glm::vec3(view) / view.w);
-            float d = accelerated.distance[std::size_t(y) * std::size_t(width) + std::size_t(x)];
+            float d = accelerated.march[(std::size_t(y) * std::size_t(width) + std::size_t(x)) * 4];
             bool hit = d < NoHit;
             if (-dir.z >= coneCos) {
                 ++conePixels;
@@ -877,6 +1020,7 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
          << "  \"width\": " << width << ", \"height\": " << height << ",\n"
          << "  \"frames\": " << opts.frames << ", \"warmup\": " << opts.warmup << ", \"pairs\": " << opts.pairs << ",\n"
          << "  \"water\": " << (opts.water ? "true" : "false") << ",\n"
+         << "  \"render_mode\": \"" << (opts.water ? "voxel-water-composite" : "opaque-only-no-composite") << "\",\n"
          << "  \"eye_metres\": [" << eyeMetres.x << ", " << eyeMetres.y << ", " << eyeMetres.z << "],\n"
          << "  \"target_metres\": [" << targetMetres.x << ", " << targetMetres.y << ", " << targetMetres.z << "],\n"
          << "  \"anchor\": [" << anchor.x << ", " << anchor.y << ", " << anchor.z << "],\n"
@@ -896,7 +1040,7 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
     }
     json << "  ],\n"
          << "  \"parity\": {\"color_differing\": " << colorDiffering << ", \"distance_differing\": " << distanceDiffering
-         << ", \"composite_differing\": " << compositeDiffering << ", \"pixels\": " << pixels << "},\n"
+         << ", \"water_differing\": " << waterDiffering << ", \"composite_differing\": " << compositeDiffering << ", \"pixels\": " << pixels << "},\n"
          << "  \"non_black_pixels\": " << nonBlack << ",\n"
          << "  \"centre_cone_3deg\": {\"pixels\": " << conePixels << ", \"hits\": " << coneHits
          << ", \"min_m\": " << (coneHits ? coneMin : 0) << ", \"max_m\": " << (coneHits ? coneMax : 0) << "},\n"
@@ -910,6 +1054,7 @@ void mountainsBenchmark(Options const& opts, std::string const& prefix, std::ost
         << ",targets=" << targets.size() << ",drawn=" << drawnTotal << ",bricks=" << bricksTotal
         << ",uploaded_bytes=" << uploadedBytes << ",generate_upload_ms=" << generateUploadMs << ",cold_start_ms=" << coldStartMs
         << ",color_differing=" << colorDiffering << ",distance_differing=" << distanceDiffering
+        << ",water_differing=" << waterDiffering
         << ",composite_differing=" << compositeDiffering << ",non_black=" << nonBlack << '/' << pixels
         << ",cone_hits=" << coneHits << '/' << conePixels << ",row_hits=" << rowHits << '/' << width
         << ",png=" << png << '\n';

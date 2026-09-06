@@ -68,12 +68,15 @@ void BrickPool::release(std::uint16_t slot) {
 
 std::size_t BrickPool::upload(std::uint16_t slot, ChunkData const& data) {
     if (slot >= capacity) throw std::invalid_argument("BrickPool slot out of range");
+    // Presence bits distinguish homogeneous transparent cells from mixed water/air.
     std::uint8_t cells[OccupancyCells * OccupancyCells * OccupancyCells] = {};
     for (int z = 0; z < ChunkSize; ++z)
         for (int y = 0; y < ChunkSize; ++y)
-            for (int x = 0; x < ChunkSize; ++x)
-                if (data[index(x, y, z)] != 0)
-                    cells[(x / 8) + OccupancyCells * ((y / 8) + OccupancyCells * (z / 8))] = 255;
+            for (int x = 0; x < ChunkSize; ++x) {
+                std::uint8_t v = data[index(x, y, z)];
+                cells[(x / 8) + OccupancyCells * ((y / 8) + OccupancyCells * (z / 8))] |=
+                    v == Air ? 4 : opaque(v) ? 1 : 2;
+            }
     auto brick = brickOf(slot);
     UnpackState unpack;
     auto voxel = brick * ChunkSize;

@@ -21,11 +21,13 @@ inline constexpr int OverlayLevels = 3;
 inline constexpr int BrickCapacity = 5120;
 inline constexpr std::size_t FrameUploadBudget = std::size_t{1} << 20;
 inline constexpr int MaxBrushChunks = 8;
-inline constexpr std::uint32_t GeneratorVersion = 4;
+inline constexpr std::uint32_t GeneratorVersion = 5;
 inline constexpr std::uint64_t DefaultSeed = 20260905;
 
-enum Material : std::uint8_t { Air, Grass, Stone, Soil, Sand, Crystal, Snow, Rock, Bedrock };
+// Water is the only transparent material: the march passes through it and composite shades the path length.
+enum Material : std::uint8_t { Air, Grass, Stone, Soil, Sand, Crystal, Snow, Rock, Bedrock, Water };
 inline constexpr std::uint8_t MaterialMask = 0x0F;
+inline bool opaque(std::uint8_t material) { return material != Air && (material & MaterialMask) != Water; }
 
 struct ChunkKey {
     std::int64_t x, y, z;

@@ -21,16 +21,28 @@ cmake --build build --target EDAN35_Project --parallel 1
 build/src/EDAN35/EDAN35_Project --world ./mountain-save --seed 20260905
 ```
 
-WASD flies, Q/E moves down/up, Shift sprints, Space/left-click carves,
-X/right-click builds stone, and Escape opens the menu.
-The menu adjusts brush size, toggles empty-space skipping, and returns to spawn.
-Press R to reload shaders. `--demo` opens the original demonstration scenes.
+The HUD lists every key. Mouse looks; WASD flies; Q/E moves down/up.
+Flight starts at 48 m/s, Left Shift multiplies it by four, and Left Ctrl by 0.25.
+The wheel scales flight speed from 1 to 500 m/s; the Escape menu also has a slider.
+Space/left-click carves, X/right-click builds stone, and the menu adjusts brush
+size, toggles empty-space skipping, returns to spawn, and closes the world.
+R reloads shaders; F2 toggles the HUD, F3 logs, F11 fullscreen, B axes, M wireframe.
+`--demo` opens the original demonstration scenes.
+
+The HUD reports average/p99 milliseconds over 120 samples: full frame, CPU plus
+driver time excluding presentation, presentation wait, and asynchronous GPU world
+time. GPU results are read only when ready and pending queries are never
+overwritten. CPU includes driver waits and overlaps GPU execution; do not add
+those numbers. Update/submission breakdowns and framebuffer pixel dimensions help
+separate streaming, rendering, and high-resolution display costs.
 
 The seeded landscape is continuous procedural terrain: connected ridges and
 valleys with relief at every scale, snow above the tree line, rock on steep
-slopes, sand at the shore, caves in the rock, and a transparent sea at height 0
-with the seabed visible through depth-tinted water. Spawn is a deterministic
-valley-floor viewpoint facing a ridge. Terrain heights are hashed on integer
+slopes, sand at the shore, caves in the rock, and transparent water voxels below
+height 0, including submerged caves. Water has editable top and side faces, not
+an analytical sea plane. The renderer accumulates water thickness through every
+water/air interval up to the first opaque hit, tinting the visible seabed.
+Spawn is a deterministic valley-floor viewpoint facing a ridge. Terrain heights are hashed on integer
 lattices, so the same seed produces bit-identical chunks on macOS and Linux.
 
 Nearby terrain is stored as 32³ chunks of 0.25 m voxels; distant terrain uses ten
@@ -39,17 +51,21 @@ same height rule, so mountains stay visible to the horizon without loading
 full-resolution chunks. Each level covers a 9³ toroidal page around the camera;
 finer levels replace the coarser ones near the camera and a coarser chunk is
 drawn only where its finer children are not all resident. One full-screen pass
-marches all levels through the page tables, skips the hole covered by finer
-levels, hits uniform chunks at their entry face, and steps through 8³ occupancy
-cells and individual voxels only inside non-uniform bricks. A composite pass adds
-sky, distance fog, and water. Depth is the actual voxel hit, so edits and
-coarse terrain never draw through each other.
+merges intersected chunks from all levels in ray-distance order, including during
+partial streaming. It skips regions covered by finer levels and homogeneous air
+or water occupancy cells; mixed cells traverse individual voxels. A composite pass
+adds sky, distance fog, and water absorption/reflection from actual voxel
+boundaries. The opaque depth is the first solid voxel hit.
 
 **Saved worlds currently require macOS or Linux.** Without `--world`, saves go
 under `~/Library/Application Support/ParallaxVoxel/worlds/mountains` on macOS, or
 `$XDG_DATA_HOME/parallax-voxel/worlds/mountains` on Linux (default
-`~/.local/share`). An existing world's seed and generator version cannot silently
-change; island saves from the previous format are rejected before any mutation.
+`~/.local/share`). A saved seed never silently changes. Generator-4 mountain saves
+upgrade automatically to generator 5 under the exclusive world lock: recover the
+old journal, atomically upgrade snapshots one at a time, then replace the manifest
+last. An interruption resumes safely. Solid edits and carved terrain remain;
+old air that was naturally below sea level gains water. Generator-5 carved water
+stays air on reopening. Earlier island formats remain unsupported.
 
 Brush edits become visible only after a durable save. A redo journal makes a
 cross-chunk brush recoverable as one operation; startup finishes an interrupted
@@ -128,13 +144,17 @@ exactly once, finest level first. The stream smoke requires a new scratch
 directory and never deletes an existing world. It exercises stale camera requests,
 edits surviving teleport and shutdown, level overlays, and 1,000-chunk travel. The
 storage smoke checks encoding/cache bounds, 64-bit key boundaries, restart,
-exclusive access, corruption, and journal recovery using real filesystem failures.
+exclusive access, corruption, journal recovery, and interrupted generator-4 water
+migration using real filesystem failures.
 
 The mountains benchmark streams the actual generator around a fixed pose
 (`spawn`, `ridge`, `valley`, `underwater`, or `summit`) and compares the same view
-with empty-space skipping disabled and enabled. It checks material, shaded color,
-and depth equivalence before timing; opaque and composite GPU timer results and
-GPU-completed CPU wall time remain separate. `--water 0` skips the composite pass.
+with empty-space skipping disabled and enabled. It checks shaded color, opaque
+depth, accumulated water intervals, and final composite equivalence before timing.
+Focused GPU cases cover water pockets, underwater exits, solid occlusion, and
+interleaved LOD chunks. World-march/composite GPU times and GPU-completed CPU wall
+time remain separate. `--water 0` skips the entire composite, including sky/fog;
+it is an opaque-only benchmark, not a second production water implementation.
 Native offscreen results do not include window presentation, UI, VSync, or ongoing
 streaming.
 

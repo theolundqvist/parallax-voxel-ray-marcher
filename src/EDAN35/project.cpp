@@ -128,7 +128,7 @@ void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
     glClearColor(0.85f, 0.85f, 0.74f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
-    auto lastTime = std::chrono::high_resolution_clock::now();
+    auto lastTime = std::chrono::steady_clock::now();
 
     bool show_logs = false;
     bool show_gui = true;
@@ -140,7 +140,7 @@ void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
     bool camera_free_view = false;
     bool hideMouse = false;
     while (!glfwWindowShouldClose(window)) {
-        auto const nowTime = std::chrono::high_resolution_clock::now();
+        auto const nowTime = std::chrono::steady_clock::now();
         auto const deltaTimeUs =
                 std::chrono::duration_cast<std::chrono::microseconds>(nowTime -
                                                                       lastTime);
@@ -148,10 +148,10 @@ void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
         lastTime = nowTime;
         elapsed_time_ms += dt;
 
+        glfwPollEvents();
+        mWindowManager.NewImGuiFrame();
         auto &io = ImGui::GetIO();
         inputHandler.SetUICapture(io.WantCaptureMouse, io.WantCaptureKeyboard);
-
-        glfwPollEvents();
         inputHandler.Advance();
         if (worldApp) worldApp->update(deltaTimeUs);
         else demoApp->update(deltaTimeUs);
@@ -197,12 +197,11 @@ void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
             }
         }
 
-        mWindowManager.NewImGuiFrame();
 
         glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
         // RENDER
-        if (worldApp) worldApp->render(dt);
+        if (worldApp) worldApp->render();
         else demoApp->render(show_basis, basis_length_scale, basis_thickness_scale, dt);
 
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -223,10 +222,12 @@ void edan35::Project::run(bool demo, std::filesystem::path const& worldPath,
             ImGui::SetWindowFontScale(1.0f);
         }
         mWindowManager.RenderImGuiFrame(show_gui);
-        //const auto now = std::chrono::high_resolution_clock::now();
+        auto const beforePresent = std::chrono::steady_clock::now();
         glfwSwapBuffers(window);
-        //const auto end = std::chrono::high_resolution_clock::now();
-        //printf("frame time: %f ms\n", std::chrono::duration<float>(end - now).count() * 1000.0f);
+        auto const afterPresent = std::chrono::steady_clock::now();
+        if (worldApp) worldApp->recordFrame(
+            std::chrono::duration<float, std::milli>(beforePresent - nowTime).count(),
+            std::chrono::duration<float, std::milli>(afterPresent - beforePresent).count());
     }
 }
 

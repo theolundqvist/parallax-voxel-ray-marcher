@@ -10,6 +10,9 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <glm/gtx/norm.hpp>
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <map>
 #include <set>
 
@@ -26,17 +29,31 @@ public:
         glfwGetFramebufferSize(window, &width, &height);
         resize(width, height);
         camera->SetProjection(glm::radians(65.0f), float(width) / float(height), 0.05f, 40000.0f);
-        camera->mMovementSpeed = glm::vec3(3.0f);
+        camera->mMovementSpeed = glm::vec3(flightSpeed);
+        glGenQueries(int(gpuQueries.size()), gpuQueries.data());
         teleport(spawnPosition(seed.value_or(DefaultSeed)), spawnTarget(seed.value_or(DefaultSeed)));
     }
     ~WorldApp() {
+        glDeleteQueries(int(gpuQueries.size()), gpuQueries.data());
         stream.reset();
         resident.clear();
     }
 
     void refreshPrograms() { renderer.refreshPrograms(); }
 
+    void recordFrame(float cpuMs, float presentMs) {
+        stats.cpu.add(cpuMs);
+        stats.present.add(presentMs);
+        stats.frame.add(cpuMs + presentMs);
+    }
+
     void update(std::chrono::microseconds delta) {
+        auto start = std::chrono::steady_clock::now();
+        step(delta);
+        stats.update.add(millisecondsSince(start));
+    }
+
+    void step(std::chrono::microseconds delta) {
         auto state = stream->status();
         if (glfwWindowShouldClose(window)) {
             closing = true;
@@ -57,12 +74,18 @@ public:
             teleport(spawnPosition(state.seed), spawnTarget(state.seed));
         }
         if (capture) {
-            camera->Update(std::min(delta, std::chrono::microseconds(100000)), *input, false, false, false);
+            auto& io = ImGui::GetIO();
+            if (io.MouseWheel != 0 && !io.WantCaptureMouse) {
+                flightSpeed = glm::clamp(flightSpeed * std::pow(1.25f, io.MouseWheel), 1.0f, 500.0f);
+                camera->mMovementSpeed = glm::vec3(flightSpeed);
+            }
+            camera->Update(delta, *input, false, false, false);
             move(glm::dvec3(camera->mWorld.GetTranslation()));
         }
         if (initialized && (!center || *center != position.anchor)) retarget();
         uploadedBytes = 0;
-        while (uploadedBytes < FrameUploadBudget) {
+        tableWrites = 0;
+        for (std::size_t replies = 0; replies < Stream::DataRepliesInFlight && uploadedBytes < FrameUploadBudget; ++replies) {
             auto reply = stream->poll();
             if (!reply) break;
             for (auto& chunk : reply->chunks) {
@@ -116,16 +139,30 @@ public:
         camera->SetAspect(float(width) / float(std::max(height, 1)));
     }
 
-    void render(float dt) {
+    void render() {
+        auto start = std::chrono::steady_clock::now();
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         resize(width, height);
+        while (gpuPending != 0) {
+            auto query = gpuQueries[gpuRead];
+            GLint ready = 0;
+            glGetQueryObjectiv(query, GL_QUERY_RESULT_AVAILABLE, &ready);
+            if (!ready) break;
+            GLuint64 nanoseconds = 0;
+            glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
+            stats.gpu.add(float(nanoseconds) * 1e-6f);
+            gpuRead = (gpuRead + 1) % gpuQueries.size();
+            --gpuPending;
+        }
+        bool measureGpu = gpuPending < gpuQueries.size();
+        if (measureGpu)
+            glBeginQuery(GL_TIME_ELAPSED, gpuQueries[(gpuRead + gpuPending) % gpuQueries.size()]);
         auto cameraPosition = camera->mWorld.GetTranslation();
         FrameUniforms frame{
             .worldToClip = camera->GetWorldToClipMatrix(),
             .clipToWorld = camera->GetClipToWorldMatrix(),
             .cameraPosition = cameraPosition,
-            .seaLevel = float(SeaLevel - double(position.anchor.y) * double(ChunkSpan)),
             .sunDirection = glm::normalize(glm::vec3(0.35f, 0.8f, 0.45f)),
             .acceleration = acceleration,
             .palette = &palette,
@@ -157,20 +194,48 @@ public:
         }
         renderer.march();
         renderer.composite();
+        if (measureGpu) {
+            glEndQuery(GL_TIME_ELAPSED);
+            ++gpuPending;
+        }
+        stats.submit.add(millisecondsSince(start));
 
         auto state = stream->status();
         auto worldY = double(position.anchor.y) * double(ChunkSpan) + position.offset.y;
         ImGui::SetNextWindowPos(ImVec2(16, 16), ImGuiCond_Always);
         ImGui::SetNextWindowBgAlpha(0.82f);
-        ImGui::Begin("Mountains", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
-        ImGui::Text("WASD fly | Shift sprint | Space carve | X build | Esc menu");
+        ImGui::SetNextWindowSize(ImVec2(std::min(570.0f, ImGui::GetIO().DisplaySize.x - 32.0f), 0));
+        auto flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
+        if (!paused) flags |= ImGuiWindowFlags_NoInputs;
+        ImGui::Begin("Mountains", nullptr, flags);
+        ImGui::Text("Frame %.1f ms avg / %.1f p99 | %.0f fps | %d x %d pixels",
+            stats.frame.mean(), stats.frame.p99(),
+            stats.frame.mean() > 0 ? 1000.0f / stats.frame.mean() : 0.0f, width, height);
+        ImGui::Text("CPU + driver %.1f / %.1f ms | Present %.1f / %.1f ms",
+            stats.cpu.mean(), stats.cpu.p99(), stats.present.mean(), stats.present.p99());
+        if (stats.gpu.count)
+            ImGui::Text("GPU world %.1f / %.1f ms | %zu queries pending",
+                stats.gpu.mean(), stats.gpu.p99(), gpuPending);
+        else ImGui::TextUnformatted("GPU world: waiting for first completed frame");
+        ImGui::Text("CPU update %.1f ms | World submission %.1f ms",
+            stats.update.mean(), stats.submit.mean());
+        ImGui::TextWrapped("Average / p99 over 120 samples. CPU includes driver waits, excludes present. GPU overlaps CPU; do not add them.");
+        ImGui::Separator();
+        ImGui::Text("Flight %.0f m/s | Shift %.0f m/s | Ctrl %.1f m/s",
+            flightSpeed, flightSpeed * 4, flightSpeed * 0.25f);
+        ImGui::TextWrapped("Mouse: look | WASD: fly | Q/E: descend/ascend");
+        ImGui::TextWrapped("Left Shift: 4x | Left Ctrl: 0.25x | Wheel: change speed");
+        ImGui::TextWrapped("Space / left click: carve | X / right click: build");
+        ImGui::TextWrapped("Esc: menu | R: reload shaders | F2: HUD | F3: logs");
+        ImGui::TextWrapped("F11: fullscreen | B: axes | M: wireframe");
+        ImGui::Separator();
         ImGui::Text("Seed %llu | chunk %lld, %lld, %lld | altitude %.1f m",
             static_cast<unsigned long long>(state.seed), static_cast<long long>(position.anchor.x),
             static_cast<long long>(position.anchor.y), static_cast<long long>(position.anchor.z), worldY);
-        ImGui::Text("%.2f ms/frame | %zu resident | %d/%d bricks | %zu drawn", dt, resident.size(),
-            renderer.bricks().used(), BrickCapacity, drawn.size());
-        ImGui::Text("Load queue %zu | cache %.2f/64 MiB (%zu/2048 chunks) | upload %zu bytes",
-            state.queued, double(state.cachedBytes) / (1024 * 1024), state.cachedChunks, uploadedBytes);
+        ImGui::Text("%zu resident | %d/%d bricks | %zu drawn | %d page-table writes", resident.size(),
+            renderer.bricks().used(), BrickCapacity, drawn.size(), tableWrites);
+        ImGui::Text("Load queue %zu | Cache %.1f/64 MiB | Upload %.1f KiB",
+            state.queued, double(state.cachedBytes) / (1024 * 1024), double(uploadedBytes) / 1024);
         if (!state.ready) ImGui::Text("Opening world...");
         else if (pending.size()) ImGui::Text("Streaming %zu chunks", pending.size());
         if (state.editing) ImGui::Text("Saving brush before applying...");
@@ -186,6 +251,8 @@ public:
             }
         }
         if (paused) {
+            if (ImGui::SliderFloat("Flight speed (m/s)", &flightSpeed, 1.0f, 500.0f, "%.0f", ImGuiSliderFlags_Logarithmic))
+                camera->mMovementSpeed = glm::vec3(flightSpeed);
             ImGui::SliderFloat("Brush radius", &brushRadius, 0.25f, 2.0f, "%.2f");
             ImGui::Checkbox("Empty-space skipping", &acceleration);
             if (ImGui::Button("Return to spawn") && state.ready) teleport(spawnPosition(state.seed), spawnTarget(state.seed));
@@ -198,6 +265,33 @@ public:
 private:
     static constexpr int MaxChunkDelta = 1 << 24;
     static constexpr float ReachMetres = 16.0f;
+    struct Series {
+        std::array<float, 120> samples{};
+        int count = 0, next = 0;
+        void add(float value) {
+            samples[next] = value;
+            next = (next + 1) % int(samples.size());
+            count = std::min(count + 1, int(samples.size()));
+        }
+        float mean() const {
+            float sum = 0;
+            for (int i = 0; i < count; ++i) sum += samples[i];
+            return count ? sum / float(count) : 0.0f;
+        }
+        float p99() const {
+            if (!count) return 0;
+            auto sorted = samples;
+            auto index = (99 * count + 99) / 100 - 1;
+            std::nth_element(sorted.begin(), sorted.begin() + index, sorted.begin() + count);
+            return sorted[index];
+        }
+    };
+    struct Stats {
+        Series frame, cpu, present, update, submit, gpu;
+    };
+    static float millisecondsSince(std::chrono::steady_clock::time_point start) {
+        return std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start).count();
+    }
     struct Resident {
         std::uint8_t uniform = Air;
         std::unique_ptr<ChunkData> cpu;
@@ -216,7 +310,8 @@ private:
     WorldPosition position{{0, 0, 0, 0}, glm::dvec3(0)};
     std::map<ChunkKey, Resident> resident;
     std::vector<ChunkKey> targets, drawn;
-    std::set<ChunkKey> targetSet, pending, deferred, drawnSet;
+    std::set<ChunkKey> targetSet, pending, deferred;
+    std::map<ChunkKey, std::uint16_t> drawnEntries;
     std::array<bool, LevelCount> holeValid{};
     std::array<int, LevelCount> topRow{};
     std::optional<ChunkKey> center;
@@ -224,8 +319,12 @@ private:
     int viewWidth = 0, viewHeight = 0;
     bool initialized = false, paused = false, closing = false, acceleration = true;
     bool retainRecoveryOnClose = false, cursorCaptured = false, drawnDirty = true;
-    float brushRadius = 0.75f, editCooldown = 0;
+    float brushRadius = 0.75f, editCooldown = 0, flightSpeed = 48.0f;
     std::size_t uploadedBytes = 0;
+    int tableWrites = 0;
+    Stats stats;
+    std::array<GLuint, 4> gpuQueries{};
+    std::size_t gpuRead = 0, gpuPending = 0;
 
     bool pressed(int key) const { return (input->GetKeycodeState(key) & JUST_PRESSED) != 0; }
     bool held(int key) const { return (input->GetKeycodeState(key) & PRESSED) != 0; }
@@ -311,17 +410,27 @@ private:
         auto isResident = [this](ChunkKey k) { return resident.contains(k); };
         drawn = world::drawnSet(position.anchor, ShellRadius, isResident);
         std::set<ChunkKey> next(drawn.begin(), drawn.end());
-        for (auto key : drawnSet)
-            if (!next.contains(key)) renderer.table(key.level).set(key, 0);
+        for (auto it = drawnEntries.begin(); it != drawnEntries.end();) {
+            if (next.contains(it->first)) { ++it; continue; }
+            if (it->second != 0) {
+                renderer.table(it->first.level).set(it->first, 0);
+                ++tableWrites;
+            }
+            it = drawnEntries.erase(it);
+        }
         topRow.fill(-1);
         for (auto key : drawn) {
             auto entry = entryOf(resident.at(key));
-            renderer.table(key.level).set(key, entry);
+            auto it = drawnEntries.try_emplace(key, 0).first;
+            if (it->second != entry) {
+                renderer.table(key.level).set(key, entry);
+                it->second = entry;
+                ++tableWrites;
+            }
             if (entry == 0) continue;
             auto r = region(position.anchor, key.level, ShellRadius);
             topRow[key.level] = std::max(topRow[key.level], int(key.y - r->lo.y));
         }
-        drawnSet = std::move(next);
         holeValid.fill(true);
         holeValid[0] = false;
         for (auto key : drawn) {

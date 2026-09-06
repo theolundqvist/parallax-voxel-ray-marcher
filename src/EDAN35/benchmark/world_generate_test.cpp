@@ -16,7 +16,7 @@ namespace {
 using namespace world;
 using Bytes = std::vector<std::uint8_t>;
 constexpr std::uint64_t Seed = DefaultSeed;
-constexpr std::uint64_t ExpectedFingerprint = 0x9f54eeef78c40793ull;
+constexpr std::uint64_t ExpectedTerrainFingerprint = 0x9f54eeef78c40793ull;
 
 void require(bool value, std::string const& message) {
     if (!value) throw std::runtime_error(message);
@@ -38,7 +38,7 @@ double chunkBottom(ChunkKey key) { return double((*levelZeroCorner(key)).y) * Ch
 double columnTop(ChunkData const& data, ChunkKey key, int vx, int vz) {
     double voxel = voxelSizeAt(key.level);
     for (int vy = ChunkSize - 1; vy >= 0; --vy)
-        if (data[size_t(index(vx, vy, vz))] != Air) return chunkBottom(key) + (vy + 1) * voxel;
+        if (opaque(data[size_t(index(vx, vy, vz))])) return chunkBottom(key) + (vy + 1) * voxel;
     return -INFINITY;
 }
 
@@ -60,12 +60,15 @@ void checkRule(ChunkKey key) {
                 bool solid = voxelBottom < column.height &&
                              !caveAt(Seed, column.x, voxelBottom + voxel / 2, column.z, float(voxel));
                 auto material = data[size_t(index(vx, vy, vz))];
-                require((material != Air) == solid,
+                require(opaque(material) == solid,
                         "Solidity rule violated at level " + std::to_string(key.level) + " key " +
                             std::to_string(key.x) + "," + std::to_string(key.y) + "," + std::to_string(key.z) +
                             " voxel " + std::to_string(vx) + "," + std::to_string(vy) + "," + std::to_string(vz) +
                             " h " + std::to_string(column.height) + " bottom " + std::to_string(voxelBottom) +
                             " cave " + std::to_string(caveAt(Seed, column.x, voxelBottom + voxel / 2, column.z, float(voxel))));
+                if (!solid)
+                    require(material == (voxelBottom < SeaLevel ? Water : Air),
+                            "Nonsolid voxel did not follow the sea-level water/air rule");
                 if (solid && voxelBottom + voxel <= TerrainFloor)
                     require(material == Bedrock, "Bedrock expected below TerrainFloor");
             }
@@ -113,7 +116,6 @@ void checkOverlay(int level, std::mt19937_64& rng) {
     glm::dvec3 eye = glm::dvec3(spawn.anchor.x, spawn.anchor.y, spawn.anchor.z) * double(ChunkSpan) + spawn.offset;
     ChunkKey coarseKey = keyAround(eye, level);
     auto coarse = generateChunk(Seed, coarseKey);
-    auto reference = coarse;
     int block = 1 << level;
     for (int child = 0; child < block * block * block; ++child) {
         auto corner = *levelZeroCorner(coarseKey);
@@ -127,19 +129,22 @@ void checkOverlay(int level, std::mt19937_64& rng) {
             for (int cy = 0; cy < ChunkSize / block; ++cy)
                 for (int cx = 0; cx < ChunkSize / block; ++cx) {
                     std::uint8_t expected = Air;
+                    bool water = false;
                     for (int fy = (cy + 1) * block - 1; fy >= cy * block && expected == Air; --fy)
                         for (int fz = cz * block; fz < (cz + 1) * block && expected == Air; ++fz)
-                            for (int fx = cx * block; fx < (cx + 1) * block; ++fx)
-                                if (auto v = fine[size_t(index(fx, fy, fz))]; v != Air) {
+                            for (int fx = cx * block; fx < (cx + 1) * block; ++fx) {
+                                auto v = fine[size_t(index(fx, fy, fz))];
+                                if (opaque(v)) {
                                     expected = v;
                                     break;
                                 }
+                                water |= v == Water;
+                            }
+                    if (expected == Air && water) expected = Water;
                     require(coarse[size_t(index(ox + cx, oy + cy, oz + cz))] == expected,
                             "Overlay is not the topmost-solid downsample at level " + std::to_string(level));
                 }
     }
-    bool differs = coarse != reference;
-    require(differs, "Overlay of edited children left the coarse chunk untouched");
 }
 
 void checkSpawn() {
@@ -183,16 +188,19 @@ void checkSpawn() {
               << std::atan2(look.y, dist) * 57.29577951308232 << " deg\n";
 }
 
-// Order-sensitive FNV-1a over 1000 keys across levels within 4 km of the origin; the value
-// is the generator's identity for GeneratorVersion and must not depend on the spawn.
-std::uint64_t fingerprint() {
+// Order-sensitive FNV-1a over the v4 opaque terrain, normalizing new Water back to Air.
+// Water must not change any heightfield, cave, or opaque material byte across platforms.
+std::uint64_t terrainFingerprint() {
     std::mt19937_64 rng(11);
     std::uniform_real_distribution<double> around(-4000, 4000), height(TerrainFloor - 16, 1800);
     std::uint64_t value = 1469598103934665603ull;
     for (int i = 0; i < 1000; ++i) {
         int level = i % LevelCount;
-        ChunkKey key = keyAround(glm::dvec3(around(rng), height(rng), around(rng)), level);
+        // Sequence draws explicitly: function argument evaluation order differs in GCC/Clang.
+        double z = around(rng), y = height(rng), x = around(rng);
+        ChunkKey key = keyAround(glm::dvec3(x, y, z), level);
         for (auto byte : generateChunk(Seed, key)) {
+            if (byte == Water) byte = Air;
             value ^= byte;
             value *= 1099511628211ull;
         }
@@ -232,6 +240,59 @@ void checkTrivial() {
     std::uint8_t value;
     require(isUniform(generateChunk(Seed, far), value) && value == *trivialUniform(Seed, far),
             "Unrepresentable chunk disagrees with trivialUniform");
+}
+
+void checkWater() {
+    std::mt19937_64 rng(19);
+    std::uniform_real_distribution<double> xz(-4000, 4000);
+    glm::dvec3 ocean{};
+    bool found = false;
+    for (int i = 0; i < 20000 && !found; ++i) {
+        ocean = {xz(rng), -VoxelScale, xz(rng)};
+        ocean.x = std::floor(ocean.x / ChunkSpan) * ChunkSpan + 16.5 * VoxelScale;
+        ocean.z = std::floor(ocean.z / ChunkSpan) * ChunkSpan + 16.5 * VoxelScale;
+        found = terrainHeight(Seed, ocean.x, ocean.z) < -8.0;
+    }
+    require(found, "Ocean fixture not found");
+    for (int level = 0; level < LevelCount; ++level) {
+        auto below = keyAround(ocean, level);
+        checkRule(below);
+        checkRule(*offsetKey(below, {0, 1, 0}));
+    }
+    auto wet = generateChunk(Seed, keyAround(ocean, 0));
+    require(wet[index(16, 31, 16)] == Water, "Ocean surface has no voxel water");
+
+    // Find an actual submerged cave centre, rather than treating all sub-sea Air as ocean.
+    std::uniform_int_distribution<int> coord(-16000, 16000), depth(-400, -1);
+    found = false;
+    glm::dvec3 cave{};
+    for (int i = 0; i < 20000 && !found; ++i) {
+        cave = {(coord(rng) + .5) * VoxelScale, (depth(rng) + .5) * VoxelScale,
+                (coord(rng) + .5) * VoxelScale};
+        found = cave.y - VoxelScale / 2 < terrainHeight(Seed, cave.x, cave.z) &&
+                caveAt(Seed, cave.x, cave.y, cave.z, VoxelScale);
+    }
+    require(found, "Submerged cave fixture not found");
+    auto position = *normalizedPosition({0, 0, 0, 0}, cave);
+    auto flooded = generateChunk(Seed, position.anchor);
+    auto voxel = glm::ivec3(position.offset / double(VoxelScale));
+    require(flooded[index(voxel.x, voxel.y, voxel.z)] == Water, "Submerged cave was not flooded");
+
+    for (int level = 1; level <= OverlayLevels; ++level) {
+        ChunkKey coarseKey{-1, -1, -1, std::uint8_t(level)};
+        auto savedKey = *levelZeroCorner(coarseKey);
+        int block = 1 << level;
+        ChunkData coarse, fine{};
+        coarse.fill(Stone);
+        fine[index(0, 0, 0)] = Water; // Water mixed with Air must not disappear.
+        fine[index(block, block - 1, 0)] = Water;
+        fine[index(block, 0, 0)] = 0x45; // Opaque edit below water wins the coarse voxel.
+        overlaySaved(coarse, coarseKey, savedKey, fine);
+        require(coarse[index(0, 0, 0)] == Water, "LOD discarded water mixed with Air");
+        require(coarse[index(1, 0, 0)] == 0x45, "LOD water hid an opaque saved edit");
+        require(coarse[index(2, 0, 0)] == Air, "LOD refilled a fully carved saved region");
+        require(coarse[index(31, 31, 31)] == Stone, "LOD overlay changed an unrelated region");
+    }
 }
 
 // ---------------------------------------------------------------- png --
@@ -350,9 +411,10 @@ int main(int argc, char** argv) {
         for (int level = 1; level <= OverlayLevels; ++level) checkOverlay(level, rng);
         checkCaves();
         checkTrivial();
-        std::uint64_t print = fingerprint();
-        std::cout << "fingerprint " << std::hex << print << std::dec << "\n";
-        require(print == ExpectedFingerprint, "Generator fingerprint changed: bump GeneratorVersion and pin the new value");
+        checkWater();
+        std::uint64_t print = terrainFingerprint();
+        std::cout << "opaque terrain fingerprint " << std::hex << print << std::dec << "\n";
+        require(print == ExpectedTerrainFingerprint, "Water changed the v4 opaque terrain fingerprint");
         auto t0 = std::chrono::steady_clock::now();
         int chunks = 0;
         for (int level = 0; level < LevelCount; ++level)

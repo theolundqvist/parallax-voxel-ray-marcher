@@ -10,7 +10,6 @@ struct FrameUniforms {
     glm::mat4 worldToClip;
     glm::mat4 clipToWorld;
     glm::vec3 cameraPosition;
-    float seaLevel;
     glm::vec3 sunDirection;
     bool acceleration;
     std::array<glm::vec3, 256> const* palette;
@@ -28,9 +27,9 @@ struct LevelUniforms {
     int topRow;
 };
 
-// beginFrame resets the recorded levels, drawLevel records one, march walks every recorded level
-// in a single full-screen pass into the colour/distance targets (left bound for readback), and
-// composite adds sky, fog and water into the frame's target framebuffer.
+// beginFrame resets levels; drawLevel records disjoint drawn domains. march merges their chunks
+// by ray distance into RGB8 opaque colour and RGBA32F (opaque depth, water length, first water
+// boundary depth, signed face code) targets, left bound for readback. composite adds sky/fog/water.
 class WorldRenderer {
 public:
     WorldRenderer() = default;
@@ -62,7 +61,7 @@ private:
         GLuint levels;
     };
     struct CompositeUniforms {
-        GLint color, distance, clipToWorld, camera, seaLevel, sun;
+        GLint color, distance, clipToWorld, camera, sun;
     };
 
     GLuint worldProgram = 0, compositeProgram = 0;

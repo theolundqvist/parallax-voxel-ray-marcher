@@ -102,7 +102,7 @@ ChunkKey ground(std::int64_t x, std::int64_t z) {
     return {x, std::int64_t(std::floor(height / ChunkSpan)) - 1, z, 0};
 }
 // Independent on-disk fixtures, not production fault hooks. All multibyte fields are LE.
-Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding) {
+Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding, std::uint32_t version = GeneratorVersion) {
     Bytes payload;
     if (encoding == 0) payload.push_back(data[0]);
     else if (encoding == 2) payload.assign(data.begin(), data.end());
@@ -120,7 +120,7 @@ Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding) {
     bytes.reserve(Header + 4 + payload.size());
     magic(bytes, "FWCHNK01");
     put32(bytes, 2);
-    put32(bytes, GeneratorVersion);
+    put32(bytes, version);
     put64(bytes, Seed);
     put64(bytes, static_cast<std::uint64_t>(key.x));
     put64(bytes, static_cast<std::uint64_t>(key.y));
@@ -132,11 +132,11 @@ Bytes record(ChunkKey key, ChunkData const& data, std::uint32_t encoding) {
     seal(bytes);
     return bytes;
 }
-Bytes journal(std::vector<Bytes> const& records) {
+Bytes journal(std::vector<Bytes> const& records, std::uint32_t version = GeneratorVersion) {
     Bytes bytes;
     magic(bytes, "FWTXN001");
     put32(bytes, 2);
-    put32(bytes, GeneratorVersion);
+    put32(bytes, version);
     put64(bytes, Seed);
     put32(bytes, static_cast<std::uint32_t>(records.size()));
     std::size_t size = 0;
@@ -214,6 +214,140 @@ void manifestAndLock(fs::path const& root) {
     fails([&] { Store store(islands, Seed); }, "Unsupported world format/generator");
     require(readAll(islands) == before, "Rejected islands directory was mutated");
     std::cout << "PASS manifest seed/version, exclusive writer, failed-open lock release, v1 islands rejected untouched\n";
+}
+
+void waterMigration(fs::path const& root) {
+    auto legacyWorld = [&](fs::path const& directory) {
+        initialize(directory);
+        auto manifest = read(directory / "manifest.bin");
+        set32(manifest, 12, 4);
+        reseal(manifest);
+        write(directory / "manifest.bin", manifest);
+    };
+    // Use real coastline terrain so both carved solid Air and unchanged ocean Air exist.
+    ChunkKey key{};
+    bool found = false;
+    for (int z = -4000; z <= 4000 && !found; z += 149)
+        for (int x = -4000; x <= 4000 && !found; x += 137) {
+            auto position = metres({double(x), -1, double(z)});
+            double cx = double(position.anchor.x) * ChunkSpan + 4.125;
+            double cz = double(position.anchor.z) * ChunkSpan + 4.125;
+            double h = terrainHeight(Seed, cx, cz);
+            if (h > -7 && h < -1) { key = position.anchor; found = true; }
+        }
+    require(found, "Coastline migration fixture not found");
+    auto generated = generateChunk(Seed, key);
+    auto solid = std::find_if(generated.begin(), generated.end(), [](auto v) { return opaque(v); });
+    auto water = std::find(generated.begin(), generated.end(), Water);
+    require(solid != generated.end() && water != generated.end(), "Migration fixture lacks land or water");
+    auto carved = std::size_t(solid - generated.begin()), built = std::size_t(water - generated.begin());
+    auto legacy = generated;
+    std::replace(legacy.begin(), legacy.end(), std::uint8_t(Water), std::uint8_t(Air));
+    legacy[carved] = Air;
+    legacy[built] = 0x65;
+    auto expected = generated;
+    expected[carved] = Air;
+    expected[built] = 0x65;
+    auto expectedUpgrade = [&](ChunkKey atKey, ChunkData const& old) {
+        auto result = generateChunk(Seed, atKey);
+        for (std::size_t i = 0; i < result.size(); ++i)
+            if (old[i] != Air || result[i] != Water) result[i] = old[i];
+        return result;
+    };
+    for (int encoding = 0; encoding < 3; ++encoding) {
+        auto directory = root / ("water-codec-" + std::to_string(encoding));
+        legacyWorld(directory);
+        auto old = legacy;
+        if (encoding == 0) old.fill(Air);
+        auto converted = expectedUpgrade(key, old);
+        write(snapshot(directory, key), record(key, old, encoding, 4));
+        {
+            Store store(directory);
+            require(store.load(key) == converted, "Legacy codec migration changed edits or lost ocean water");
+            require(get32(read(directory / "manifest.bin"), 12) == 5, "Migration did not finish manifest");
+        }
+        { Store store(directory); require(store.load(key) == converted, "Migrated snapshot changed on reopen"); }
+    }
+
+    auto directory = root / "water-interrupted";
+    legacyWorld(directory);
+    ChunkKey next = *offsetKey(key, {1, 0, 0});
+    ChunkKey already = *offsetKey(key, {2, 0, 0});
+    ChunkData empty{};
+    write(snapshot(directory, key), record(key, legacy, 2, 4));
+    write(snapshot(directory, next), record(next, empty, 0, 4));
+    write(snapshot(directory, already), record(already, empty, 0)); // Intentional v5 water carve.
+    auto preservedV5 = read(snapshot(directory, already));
+    auto blocker = snapshot(directory, next);
+    blocker += ".tmp";
+    fs::create_directory(blocker);
+    fails([&] { Store store(directory); }, "WorldUpgradeBlocked");
+    require(get32(read(directory / "manifest.bin"), 12) == 4, "Partial migration published v5 manifest");
+    require(get32(read(snapshot(directory, key)), 12) == 5 &&
+            get32(read(snapshot(directory, next)), 12) == 4, "Fixture did not interrupt between replacements");
+    auto firstReplacement = read(snapshot(directory, key));
+    fs::remove(blocker);
+    fs::create_directory(directory / "manifest.bin.tmp");
+    fails([&] { Store store(directory); }, "WorldUpgradeBlocked");
+    require(get32(read(directory / "manifest.bin"), 12) == 4 &&
+            get32(read(snapshot(directory, next)), 12) == 5, "Manifest was not the last migration write");
+    require(read(snapshot(directory, key)) == firstReplacement &&
+            read(snapshot(directory, already)) == preservedV5, "Resume reconverted an existing v5 snapshot");
+    fs::remove(directory / "manifest.bin.tmp");
+    {
+        Store store(directory);
+        require(store.load(key) == expected, "Interrupted conversion lost carved Air or opaque edit");
+        require(store.load(next) == expectedUpgrade(next, empty), "Resume did not upgrade remaining v4 snapshot");
+        require(store.load(already) == empty, "Resume refilled v5 carved water");
+    }
+    { Store store(directory); require(store.load(key) == expected, "Completed migration was not reopenable"); }
+
+    directory = root / "water-recovery";
+    legacyWorld(directory);
+    ChunkData stale;
+    stale.fill(Stone);
+    auto staleBytes = record(key, stale, 0, 4);
+    write(snapshot(directory, key), staleBytes);
+    auto pending = journal({record(key, legacy, 2, 4)}, 4);
+    auto corrupt = pending;
+    corrupt.back() ^= 1;
+    write(directory / "pending.txn", corrupt);
+    fails([&] { Store store(directory); }, "checksum");
+    require(read(snapshot(directory, key)) == staleBytes &&
+            get32(read(directory / "manifest.bin"), 12) == 4 &&
+            read(directory / "pending.txn") == corrupt, "Migration ran before validating v4 WAL");
+    write(directory / "pending.txn", pending);
+    blocker = snapshot(directory, key);
+    blocker += ".tmp";
+    fs::create_directory(blocker);
+    fails([&] { Store store(directory); }, "DurableCheckpointBlocked");
+    require(read(directory / "pending.txn") == pending &&
+            read(snapshot(directory, key)) == staleBytes, "Failed v4 recovery discarded recoverable data");
+    fs::remove(blocker);
+    {
+        Store store(directory);
+        require(store.load(key) == expected, "Migration used stale snapshot instead of recovered v4 WAL");
+        require(!fs::exists(directory / "pending.txn"), "Migration retained legacy WAL");
+    }
+    // Normal v5 opens must not continue accepting v4 journals or snapshots.
+    write(directory / "pending.txn", pending);
+    fails([&] { Store store(directory); }, "Unsupported journal version");
+    fs::remove(directory / "pending.txn");
+    write(snapshot(directory, key), record(key, legacy, 2, 4));
+    fails([&] { Store store(directory); store.load(key); }, "Unsupported snapshot format/generator");
+
+    directory = root / "water-corrupt-snapshot";
+    legacyWorld(directory);
+    auto good = record(key, legacy, 2, 4);
+    corrupt = good;
+    corrupt.back() ^= 1;
+    write(snapshot(directory, key), corrupt);
+    fails([&] { Store store(directory); }, "WorldUpgradeBlocked");
+    require(read(snapshot(directory, key)) == corrupt &&
+            get32(read(directory / "manifest.bin"), 12) == 4, "Migration ignored or destroyed a corrupt snapshot");
+    write(snapshot(directory, key), good);
+    { Store store(directory); require(store.load(key) == expected, "Repair could not resume migration"); }
+    std::cout << "PASS v4 water conversion, edits, all codecs, interrupted replacements/manifest, WAL-first recovery, strict v5 reopen\n";
 }
 
 void negativeBrushAndAir(fs::path const& root) {
@@ -575,6 +709,7 @@ int main() {
         }
         require(!root.empty(), "Could not create unique smoke directory");
         manifestAndLock(root);
+        waterMigration(root);
         negativeBrushAndAir(root);
         codecsAndCorruption(root);
         failureAndRecovery(root);

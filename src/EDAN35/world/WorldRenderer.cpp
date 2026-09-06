@@ -56,7 +56,7 @@ void WorldRenderer::refreshPrograms() {
     glUniformBlockBinding(worldProgram, world.levels, LevelBinding);
     comp = {at(compositeProgram, "color_buffer"), at(compositeProgram, "distance_buffer"),
             at(compositeProgram, "clip_to_world"), at(compositeProgram, "camera_position"),
-            at(compositeProgram, "sea_level"), at(compositeProgram, "sun_direction")};
+            at(compositeProgram, "sun_direction")};
 }
 
 void WorldRenderer::resize(int w, int h) {
@@ -67,7 +67,7 @@ void WorldRenderer::resize(int w, int h) {
     glDeleteTextures(1, &colorTexture);
     glDeleteTextures(1, &distanceTexture);
     colorTexture = texture2D(GL_RGB8, w, h, GL_RGB, GL_UNSIGNED_BYTE);
-    distanceTexture = texture2D(GL_R32F, w, h, GL_RED, GL_FLOAT);
+    distanceTexture = texture2D(GL_RGBA32F, w, h, GL_RGBA, GL_FLOAT);
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
@@ -141,7 +141,6 @@ void WorldRenderer::composite() {
     glUniform1i(comp.distance, 1);
     glUniformMatrix4fv(comp.clipToWorld, 1, GL_FALSE, glm::value_ptr(current.clipToWorld));
     glUniform3fv(comp.camera, 1, glm::value_ptr(current.cameraPosition));
-    glUniform1f(comp.seaLevel, current.seaLevel);
     glUniform3fv(comp.sun, 1, glm::value_ptr(current.sunDirection));
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glBindVertexArray(0);

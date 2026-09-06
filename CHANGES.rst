@@ -11,6 +11,16 @@ Unreleased
   hierarchical march over per-level page tables; coarse levels overlay saved edits.
   Chunk keys are 64-bit with a camera-relative origin, so exploration has no map edge.
   Keep the original scenes available through ``--demo``.
+* Render editable transparent water voxels, including multiple water/air
+  intervals and submerged viewpoints; replace the analytical sea plane.
+* Upgrade generator-4 mountain saves recoverably without discarding terrain
+  edits; preserve intentionally carved water in generator-5 saves.
+* Show average/p99 frame, CPU/driver, presentation and asynchronous GPU times,
+  framebuffer resolution and every key binding on the HUD.
+* Increase default flight speed to 48 m/s with wheel/menu adjustment; preserve
+  elapsed-time movement through slow frames.
+* Upload only changed page-table entries and bound zero-byte streaming replies
+  as well as voxel bytes per frame.
 * Stream distance-selected chunks within fixed residency and compressed-cache
   budgets. Save edits before display, with atomic brush recovery on Linux/macOS.
 * Skip empty voxel cells incrementally, write actual hit depth, and add palette,

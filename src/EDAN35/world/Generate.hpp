@@ -22,10 +22,14 @@ std::uint8_t surfaceMaterial(std::uint64_t seed, double x, double z, double heig
 bool caveAt(std::uint64_t seed, double x, double y, double z, float voxelSize);
 
 // Any level: voxel solid iff its bottom is below terrainHeight at the column centre and not
-// inside a cave wide enough for that level's voxel size.
+// inside a cave wide enough for that level's voxel size. A voxel that is not solid is Water when
+// its bottom is below SeaLevel (open sea, flooded caves), Air otherwise.
 ChunkData generateChunk(std::uint64_t seed, ChunkKey key);
-// Air when the chunk bottom is at or above TerrainCeiling, Bedrock when its top is at or below
-// TerrainFloor, nullopt otherwise; a value always equals isUniform of generateChunk(seed, key).
+// One-time v4 snapshot conversion, in place: only Air that is procedural Water changes.
+// Solid edits and Air carved into procedural solids are preserved.
+void upgradeLegacyWater(std::uint64_t seed, ChunkKey key, ChunkData& data);
+// Constant-time bounds only: Air above TerrainCeiling, Bedrock below TerrainFloor,
+// nullopt otherwise; a value always equals isUniform of generateChunk(seed, key).
 std::optional<std::uint8_t> trivialUniform(std::uint64_t seed, ChunkKey key);
 bool isUniform(ChunkData const& data, std::uint8_t& value);
 void overlaySaved(ChunkData& coarse, ChunkKey coarseKey, ChunkKey savedKey, ChunkData const& savedL0);

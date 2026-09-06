@@ -25,6 +25,7 @@ namespace {
 namespace fs = std::filesystem;
 using Bytes = std::vector<std::uint8_t>;
 constexpr std::uint32_t FormatVersion = 2;
+constexpr std::uint32_t LegacyGeneratorVersion = 4;
 constexpr std::size_t RawSize = ChunkSize * ChunkSize * ChunkSize;
 constexpr std::size_t RecordHeader = 60;
 constexpr std::size_t MaxRecord = RecordHeader + RawSize + 4;
@@ -203,11 +204,11 @@ std::span<const std::uint8_t> checked(std::span<const std::uint8_t> data) {
     if (crc(body) != checksum.u32()) fail("World record checksum mismatch");
     return body;
 }
-bool materialValid(std::uint8_t byte) {
-    return byte == Air || ((byte & MaterialMask) >= Grass && (byte & MaterialMask) <= Bedrock);
+bool materialValid(std::uint8_t byte, std::uint8_t maximum = Water) {
+    return byte == Air || ((byte & MaterialMask) >= Grass && (byte & MaterialMask) <= maximum);
 }
-void validateMaterials(std::span<const std::uint8_t> data) {
-    for (auto byte : data) if (!materialValid(byte)) fail("Invalid world material byte");
+void validateMaterials(std::span<const std::uint8_t> data, std::uint8_t maximum = Water) {
+    for (auto byte : data) if (!materialValid(byte, maximum)) fail("Invalid world material byte");
 }
 
 struct EncodingInfo { Encoding kind; std::size_t bytes; };
@@ -231,15 +232,15 @@ void encodeInto(Bytes& result, ChunkData const& data, Encoding kind) {
         begin = end;
     }
 }
-ChunkData decode(Encoding kind, std::span<const std::uint8_t> payload) {
+ChunkData decode(Encoding kind, std::span<const std::uint8_t> payload, std::uint8_t maximum = Water) {
     ChunkData data;
     if (kind == Encoding::Uniform) {
         if (payload.size() != 1) fail("Invalid uniform payload length");
-        validateMaterials(payload);
+        validateMaterials(payload, maximum);
         data.fill(payload[0]);
     } else if (kind == Encoding::Raw) {
         if (payload.size() != RawSize) fail("Invalid raw payload length");
-        validateMaterials(payload);
+        validateMaterials(payload, maximum);
         std::copy(payload.begin(), payload.end(), data.begin());
     } else if (kind == Encoding::Rle) {
         if (payload.empty() || payload.size() >= RawSize || payload.size() % 3 != 0)
@@ -247,7 +248,7 @@ ChunkData decode(Encoding kind, std::span<const std::uint8_t> payload) {
         std::size_t written = 0;
         for (std::size_t i = 0; i < payload.size(); i += 3) {
             std::size_t count = payload[i] | (std::size_t(payload[i + 1]) << 8);
-            if (count == 0 || count > RawSize - written || !materialValid(payload[i + 2]))
+            if (count == 0 || count > RawSize - written || !materialValid(payload[i + 2], maximum))
                 fail("Invalid RLE run");
             std::fill_n(data.begin() + written, count, payload[i + 2]);
             written += count;
@@ -274,11 +275,11 @@ void appendRecord(Bytes& result, std::uint64_t seed, ChunkKey key, ChunkData con
     encodeInto(result, data, encoding.kind);
     seal(result, begin);
 }
-Record parseRecord(std::span<const std::uint8_t> bytes, std::uint64_t seed) {
+Record parseRecord(std::span<const std::uint8_t> bytes, std::uint64_t seed, std::uint32_t expectedVersion) {
     if (bytes.size() < RecordHeader + 5 || bytes.size() > MaxRecord) fail("Invalid snapshot length");
     Reader reader{checked(bytes)};
     reader.expectMagic(RecordMagic);
-    if (reader.u32() != FormatVersion || reader.u32() != GeneratorVersion)
+    if (reader.u32() != FormatVersion || reader.u32() != expectedVersion)
         fail("Unsupported snapshot format/generator version");
     if (reader.u64() != seed) fail("Snapshot seed mismatch");
     ChunkKey key{static_cast<std::int64_t>(reader.u64()), static_cast<std::int64_t>(reader.u64()),
@@ -289,7 +290,7 @@ Record parseRecord(std::span<const std::uint8_t> bytes, std::uint64_t seed) {
     if (length > RawSize) fail("Invalid snapshot payload length");
     auto payload = reader.take(length);
     reader.end();
-    return {key, decode(encoding, payload)};
+    return {key, decode(encoding, payload, expectedVersion == LegacyGeneratorVersion ? Bedrock : Water)};
 }
 fs::path chunkPath(fs::path const& directory, ChunkKey key) {
     return directory / ("chunk_" + std::to_string(key.x) + "_" + std::to_string(key.y) + "_" +
@@ -337,12 +338,15 @@ struct Store::Impl {
         lock.fd = ::open(lockPath.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
         if (lock.fd < 0) ioError("open world lock", lockPath);
         if (::flock(lock.fd, LOCK_EX | LOCK_NB) != 0) ioError("WorldInUse: exclusive lock", lockPath);
+        std::uint32_t version = GeneratorVersion;
         auto manifest = readFile(directory / "manifest.bin", ManifestSize);
         if (manifest) {
             if (manifest->size() != ManifestSize) fail("Invalid manifest length");
             Reader reader{checked(*manifest)};
             reader.expectMagic(ManifestMagic);
-            if (reader.u32() != FormatVersion || reader.u32() != GeneratorVersion ||
+            auto format = reader.u32();
+            version = reader.u32();
+            if (format != FormatVersion || (version != LegacyGeneratorVersion && version != GeneratorVersion) ||
                 reader.u32() != ChunkSize || reader.u32() != 2 ||
                 reader.u32() != 1 || reader.u32() != 4)
                 fail("Unsupported world format/generator/material/voxel schema");
@@ -354,29 +358,68 @@ struct Store::Impl {
                 if (entry.path().filename() != "world.lock")
                     fail("Missing manifest in nonempty world directory: " + directory.string());
             worldSeed = requested.value_or(DefaultSeed);
-            Bytes bytes;
-            bytes.reserve(ManifestSize);
-            magic(bytes, ManifestMagic);
-            put32(bytes, FormatVersion);
-            put32(bytes, GeneratorVersion);
-            put32(bytes, ChunkSize);
-            put32(bytes, 2); // Material schema.
-            put32(bytes, 1); // Voxel scale numerator / denominator.
-            put32(bytes, 4);
-            put64(bytes, worldSeed);
-            seal(bytes);
-            replaceFile(directory / "manifest.bin", bytes);
+            writeManifest();
         }
         for (auto const& entry : fs::directory_iterator(directory))
             if (auto key = parseChunkName(entry.path().filename().string())) savedKeys.insert(*key);
         try {
             auto pending = readFile(directory / "pending.txn", MaxJournal);
             if (pending) {
-                auto records = validateJournal(*pending);
+                auto records = validateJournal(*pending, version);
                 checkpoint(*pending, records);
             }
         } catch (std::exception const& error) {
             fail(std::string("DurableCheckpointBlocked: recovery: ") + error.what());
+        }
+        if (version == LegacyGeneratorVersion) {
+            try {
+                upgradeSnapshots();
+                // All snapshots and the removal of the old journal are durable first.
+                writeManifest();
+            } catch (std::exception const& error) {
+                fail(std::string("WorldUpgradeBlocked: ") + error.what());
+            }
+        }
+    }
+
+    void writeManifest() {
+        Bytes bytes;
+        bytes.reserve(ManifestSize);
+        magic(bytes, ManifestMagic);
+        put32(bytes, FormatVersion);
+        put32(bytes, GeneratorVersion);
+        put32(bytes, ChunkSize);
+        put32(bytes, 2); // Material schema.
+        put32(bytes, 1); // Voxel scale numerator.
+        put32(bytes, 4);
+        put64(bytes, worldSeed);
+        seal(bytes);
+        replaceFile(directory / "manifest.bin", bytes);
+    }
+
+    void upgradeSnapshots() {
+        for (auto key : savedKeys) {
+            auto path = chunkPath(directory, key);
+            try {
+                auto bytes = readFile(path, MaxRecord);
+                if (!bytes) fail("Saved snapshot vanished");
+                Reader header{*bytes};
+                header.take(12); // Full header/checksum validation is shared with normal recovery below.
+                auto version = header.u32();
+                if (version != LegacyGeneratorVersion && version != GeneratorVersion)
+                    fail("Unsupported snapshot format/generator version");
+                auto record = parseRecord(*bytes, worldSeed, version);
+                if (record.key != key) fail("Snapshot filename/key mismatch");
+                // A completed replacement may be present after an interrupted upgrade.
+                // Never reconvert v5 Air: it may be an intentionally carved water interval.
+                if (version == GeneratorVersion) continue;
+                upgradeLegacyWater(worldSeed, key, record.data);
+                bytes->clear();
+                appendRecord(*bytes, worldSeed, key, record.data);
+                replaceFile(path, *bytes);
+            } catch (std::exception const& error) {
+                fail(path.string() + ": " + error.what());
+            }
         }
     }
 
@@ -420,7 +463,7 @@ struct Store::Impl {
             auto saved = readFile(path, MaxRecord);
             if (!saved) fail(path.string() + ": saved snapshot vanished");
             try {
-                auto record = parseRecord(*saved, worldSeed);
+                auto record = parseRecord(*saved, worldSeed, GeneratorVersion);
                 if (record.key != key) fail("Snapshot filename/key mismatch");
                 cacheData(key, record.data);
                 return record.data;
@@ -450,11 +493,11 @@ struct Store::Impl {
     }
 
     struct RecordView { ChunkKey key; std::size_t offset, size; };
-    std::vector<RecordView> validateJournal(std::span<const std::uint8_t> bytes) {
+    std::vector<RecordView> validateJournal(std::span<const std::uint8_t> bytes, std::uint32_t expectedVersion) {
         if (bytes.size() < JournalHeader + 4 || bytes.size() > MaxJournal) fail("Invalid journal length");
         Reader reader{checked(bytes)};
         reader.expectMagic(JournalMagic);
-        if (reader.u32() != FormatVersion || reader.u32() != GeneratorVersion)
+        if (reader.u32() != FormatVersion || reader.u32() != expectedVersion)
             fail("Unsupported journal version/generator");
         if (reader.u64() != worldSeed) fail("Journal seed mismatch");
         auto count = reader.u32();
@@ -466,7 +509,7 @@ struct Store::Impl {
             auto length = reader.u32();
             if (length > MaxRecord) fail("Invalid journal snapshot length");
             auto offset = reader.offset;
-            auto record = parseRecord(reader.take(length), worldSeed);
+            auto record = parseRecord(reader.take(length), worldSeed, expectedVersion);
             for (auto const& previous : records)
                 if (previous.key == record.key) fail("Duplicate journal chunk key");
             records.push_back({record.key, offset, length});

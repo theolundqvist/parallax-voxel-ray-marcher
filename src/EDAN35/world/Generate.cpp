@@ -332,6 +332,21 @@ bool caveAt(std::uint64_t seed, double x, double y, double z, float voxelSize) {
     return caves.open(toUnits(x), toUnits(y), toUnits(z), voxelSize);
 }
 
+// Chunk corner and extent in eighth-metre units; nullopt when the machine bounds are exceeded.
+struct Extent {
+    std::int64_t x0, y0, z0, voxel, span;
+};
+std::optional<Extent> extentOf(ChunkKey key) {
+    std::int64_t const voxel = 2 << key.level, span = ChunkUnits << key.level;
+    auto corner = levelZeroCorner(key);
+    auto x0 = corner ? checkedShiftLeft(corner->x, 6) : std::nullopt;
+    auto y0 = corner ? checkedShiftLeft(corner->y, 6) : std::nullopt;
+    auto z0 = corner ? checkedShiftLeft(corner->z, 6) : std::nullopt;
+    if (!x0 || !y0 || !z0 || !checkedAdd(*x0, span) || !checkedAdd(*y0, span) || !checkedAdd(*z0, span))
+        return std::nullopt;
+    return Extent{*x0, *y0, *z0, voxel, span};
+}
+
 std::optional<std::uint8_t> trivialUniform(std::uint64_t, ChunkKey key) {
     double span = double(ChunkSpan) * double(std::int64_t{1} << key.level);
     double bottom = double(key.y) * span;
@@ -342,30 +357,31 @@ std::optional<std::uint8_t> trivialUniform(std::uint64_t, ChunkKey key) {
 
 ChunkData generateChunk(std::uint64_t seed, ChunkKey key) {
     ChunkData data{};
-    std::int64_t const voxel = 2 << key.level, span = ChunkUnits << key.level;
-    auto corner = levelZeroCorner(key);
-    auto x0 = corner ? checkedShiftLeft(corner->x, 6) : std::nullopt;
-    auto y0 = corner ? checkedShiftLeft(corner->y, 6) : std::nullopt;
-    auto z0 = corner ? checkedShiftLeft(corner->z, 6) : std::nullopt;
-    if (!x0 || !y0 || !z0 || !checkedAdd(*x0, span) || !checkedAdd(*y0, span) || !checkedAdd(*z0, span)) {
+    auto e = extentOf(key);
+    if (!e) {
         data.fill(key.y < 0 ? Bedrock : Air);
         return data;
     }
+    std::int64_t const voxel = e->voxel;
     double const voxelMetres = toMetres(voxel);
-    double const chunkBottom = toMetres(*y0), chunkTop = toMetres(*y0 + span);
+    double const chunkBottom = toMetres(e->y0), chunkTop = toMetres(e->y0 + e->span);
+    // Everything that is not terrain below sea level is water; solids overwrite it below.
+    for (int vy = 0; vy < ChunkSize && toMetres(e->y0 + vy * voxel) < SeaLevel; ++vy)
+        for (int vz = 0; vz < ChunkSize; ++vz)
+            std::fill_n(data.begin() + index(0, vy, vz), ChunkSize, Water);
     bool const carve = voxelMetres < CaveLevelLimit && chunkTop > CaveFloor;
     Caves caves(seed);
     for (int vz = 0; vz < ChunkSize; ++vz) {
-        std::int64_t z = *z0 + vz * voxel + voxel / 2;
+        std::int64_t z = e->z0 + vz * voxel + voxel / 2;
         for (int vx = 0; vx < ChunkSize; ++vx) {
-            std::int64_t x = *x0 + vx * voxel + voxel / 2;
+            std::int64_t x = e->x0 + vx * voxel + voxel / 2;
             double h = heightAt(seed, x, z);
             if (chunkBottom >= h) continue;
             float slope = 0;
             if (chunkTop > h - 0.5 && h <= SnowLine && h > TerrainFloor) slope = slopeAt(seed, x, z);
             std::uint8_t tint = tintAt(seed, x, z);
             for (int vy = 0; vy < ChunkSize; ++vy) {
-                std::int64_t bottom = *y0 + vy * voxel;
+                std::int64_t bottom = e->y0 + vy * voxel;
                 double bottomMetres = toMetres(bottom);
                 if (bottomMetres >= h) break;
                 if (carve && caves.open(x, bottom + voxel / 2, z, voxelMetres)) continue;
@@ -374,6 +390,29 @@ ChunkData generateChunk(std::uint64_t seed, ChunkKey key) {
         }
     }
     return data;
+}
+
+void upgradeLegacyWater(std::uint64_t seed, ChunkKey key, ChunkData& data) {
+    assert(key.level == 0);
+    auto e = extentOf(key);
+    // Unrepresentable chunks generate only Bedrock/Air, never Water.
+    if (!e || toMetres(e->y0) >= SeaLevel || toMetres(e->y0 + e->span) <= TerrainFloor) return;
+    Caves caves(seed);
+    for (int vz = 0; vz < ChunkSize; ++vz) {
+        std::int64_t z = e->z0 + vz * e->voxel + e->voxel / 2;
+        for (int vx = 0; vx < ChunkSize; ++vx) {
+            std::int64_t x = e->x0 + vx * e->voxel + e->voxel / 2;
+            double h = heightAt(seed, x, z);
+            for (int vy = 0; vy < ChunkSize; ++vy) {
+                std::int64_t bottom = e->y0 + vy * e->voxel;
+                if (toMetres(bottom) >= SeaLevel) break;
+                auto& material = data[size_t(index(vx, vy, vz))];
+                if (material == Air && (toMetres(bottom) >= h ||
+                    caves.open(x, bottom + e->voxel / 2, z, VoxelScale)))
+                    material = Water;
+            }
+        }
+    }
 }
 
 bool isUniform(ChunkData const& data, std::uint8_t& value) {
@@ -395,17 +434,20 @@ void overlaySaved(ChunkData& coarse, ChunkKey coarseKey, ChunkKey savedKey, Chun
     for (int cz = 0; cz < count; ++cz)
         for (int cy = 0; cy < count; ++cy)
             for (int cx = 0; cx < count; ++cx) {
+                // Topmost opaque voxel; a block with only water and air is water so edited seabeds stay covered.
                 std::uint8_t material = Air;
+                bool water = false;
                 for (int fy = (cy + 1) * block - 1; fy >= cy * block && material == Air; --fy)
                     for (int fz = cz * block; fz < (cz + 1) * block && material == Air; ++fz)
                         for (int fx = cx * block; fx < (cx + 1) * block; ++fx) {
                             std::uint8_t v = savedL0[size_t(index(fx, fy, fz))];
-                            if (v != Air) {
+                            if (opaque(v)) {
                                 material = v;
                                 break;
                             }
+                            water |= v != Air;
                         }
-                coarse[size_t(index(coarseX + cx, coarseY + cy, coarseZ + cz))] = material;
+                coarse[size_t(index(coarseX + cx, coarseY + cy, coarseZ + cz))] = material == Air && water ? Water : material;
             }
 }
 
@@ -417,7 +459,7 @@ std::array<glm::vec3, 256> worldPalette() {
         return glm::vec3((hex >> 16) & 255, (hex >> 8) & 255, hex & 255) / 255.0f;
     };
     glm::vec3 const grass = rgb(0x5B9A3A), soil = rgb(0x7A5230), stone = rgb(0x8A8C8E), sand = rgb(0xD9C68A),
-                    snow = rgb(0xF2F6FA), rock = rgb(0x6B6864), bedrock = rgb(0x2E2E30);
+                    snow = rgb(0xF2F6FA), rock = rgb(0x6B6864), bedrock = rgb(0x2E2E30), water = rgb(0x2E7FA6);
     glm::vec3 const crystal[3] = {rgb(0x7FE6FF), rgb(0xC77DFF), rgb(0xFFB3E6)};
     std::array<glm::vec3, 256> palette{};
     for (int tint = 0; tint < 16; ++tint) {
@@ -435,6 +477,7 @@ std::array<glm::vec3, 256> worldPalette() {
             case Snow: c = snow * (1.0f + 0.02f * (value - 1.0f)); break;
             case Rock: c = rock * value; break;
             case Bedrock: c = bedrock; break;
+            case Water: c = water; break;
             default: break;
             }
             palette[size_t(id | (tint << 4))] = c;

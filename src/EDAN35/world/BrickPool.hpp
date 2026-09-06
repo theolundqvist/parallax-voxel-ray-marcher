@@ -11,7 +11,7 @@ namespace world {
 inline constexpr glm::ivec3 PoolBricks{16, 20, 16};
 static_assert(PoolBricks.x * PoolBricks.y * PoolBricks.z == BrickCapacity);
 
-// R8 pool of ChunkSize^3 bricks plus an R8 any-solid occupancy texture of 8^3 cells per brick.
+// R8 pool of ChunkSize^3 bricks; R8 8^3-cell presence masks: opaque=1, water=2, air=4.
 class BrickPool {
 public:
     static constexpr int capacity = BrickCapacity;
