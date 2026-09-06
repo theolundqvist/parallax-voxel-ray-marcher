@@ -45,9 +45,11 @@ int main() {
         ChunkKey camera{randomCoordinate(rng, trial), std::int64_t(std::uniform_int_distribution<int>(-64, 300)(rng)),
                         randomCoordinate(rng, trial + 2), 0};
         auto targets = residencyTargets(camera, ShellRadius);
-        require(!targets.empty(), "targets empty");
-        for (std::size_t i = 1; i < targets.size(); ++i)
-            require(targets[i - 1].level <= targets[i].level, "targets are not fine-first");
+        std::set<ChunkKey> arriving{*keyAtLevel(camera, LevelCount - 1)};
+        arriving.insert(targets.begin(), targets.begin() + 128);
+        auto visible = drawnSet(camera, ShellRadius, [&](ChunkKey key) { return arriving.contains(key); });
+        require(std::find(visible.begin(), visible.end(), camera) != visible.end(),
+                "Near detail remained hidden behind its coarse ancestor after 128 loads");
         double keep = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
         std::set<ChunkKey> resident;
         for (auto key : targets)

@@ -85,7 +85,8 @@ public:
         if (initialized && (!center || *center != position.anchor)) retarget();
         uploadedBytes = 0;
         tableWrites = 0;
-        for (std::size_t replies = 0; replies < Stream::DataRepliesInFlight && uploadedBytes < FrameUploadBudget; ++replies) {
+        constexpr std::size_t FrameReplyBudget = 64;
+        for (std::size_t replies = 0; replies < FrameReplyBudget && uploadedBytes < FrameUploadBudget; ++replies) {
             auto reply = stream->poll();
             if (!reply) break;
             for (auto& chunk : reply->chunks) {
@@ -113,18 +114,16 @@ public:
             for (auto key : targets) {
                 if (pending.contains(key) || deferred.contains(key)) continue;
                 if (auto it = resident.find(key); it != resident.end() && !it->second.stale) continue;
-                if (!stream->request(key, epoch)) break;
+                if (!stream->request(key)) break;
                 pending.insert(key);
             }
             if (!paused && !state.editing) {
-                editCooldown -= std::chrono::duration<float>(delta).count();
-                if (editCooldown <= 0 && (held(GLFW_KEY_SPACE) || mouseHeld(GLFW_MOUSE_BUTTON_LEFT) ||
-                                         held(GLFW_KEY_X) || mouseHeld(GLFW_MOUSE_BUTTON_RIGHT))) {
+                if (held(GLFW_KEY_SPACE) || mouseHeld(GLFW_MOUSE_BUTTON_LEFT) ||
+                    held(GLFW_KEY_X) || mouseHeld(GLFW_MOUSE_BUTTON_RIGHT)) {
                     bool add = held(GLFW_KEY_X) || mouseHeld(GLFW_MOUSE_BUTTON_RIGHT);
                     if (auto hit = pick()) {
                         auto centre = normalizedPosition(position.anchor, *hit);
-                        if (centre && stream->edit({*centre, brushRadius, std::uint8_t(add ? Stone : Air)}))
-                            editCooldown = 0.15f;
+                        if (centre) stream->edit({*centre, brushRadius, std::uint8_t(add ? Stone : Air)});
                     }
                 }
             }
@@ -315,11 +314,10 @@ private:
     std::array<bool, LevelCount> holeValid{};
     std::array<int, LevelCount> topRow{};
     std::optional<ChunkKey> center;
-    std::uint64_t epoch = 0;
     int viewWidth = 0, viewHeight = 0;
     bool initialized = false, paused = false, closing = false, acceleration = true;
     bool retainRecoveryOnClose = false, cursorCaptured = false, drawnDirty = true;
-    float brushRadius = 0.75f, editCooldown = 0, flightSpeed = 48.0f;
+    float brushRadius = 0.75f, flightSpeed = 48.0f;
     std::size_t uploadedBytes = 0;
     int tableWrites = 0;
     Stats stats;
@@ -350,12 +348,11 @@ private:
     }
     void retarget() {
         center = position.anchor;
-        ++epoch;
-        stream->retarget(epoch);
-        pending.clear();
         deferred.clear();
         targets = residencyTargets(position.anchor, ShellRadius);
         targetSet = std::set<ChunkKey>(targets.begin(), targets.end());
+        stream->retarget(position.anchor);
+        std::erase_if(pending, [this](ChunkKey key) { return !targetSet.contains(key); });
         for (auto it = resident.begin(); it != resident.end();) {
             if (retained(it->first, position.anchor, ShellRadius)) { ++it; continue; }
             if (it->second.slot) renderer.bricks().release(*it->second.slot);
@@ -485,7 +482,6 @@ private:
         targetSet.clear();
         center.reset();
         initialized = false;
-        epoch = 0;
         drawnDirty = true;
         stream = std::make_unique<Stream>(path, requestedSeed);
     }

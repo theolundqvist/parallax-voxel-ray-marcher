@@ -21,8 +21,10 @@ Unreleased
   elapsed-time movement through slow frames.
 * Upload only changed page-table entries and bound zero-byte streaming replies
   as well as voxel bytes per frame.
-* Stream distance-selected chunks within fixed residency and compressed-cache
-  budgets. Save edits before display, with atomic brush recovery on Linux/macOS.
+* Keep still-needed streamed loads across camera movement and complete near-camera
+  refinement chains before bulk terrain. Bound residency and compressed-cache work.
+* Reserve a request slot for brushes and remove the artificial edit cooldown.
+  Save edits before display, with atomic brush recovery on Linux/macOS.
 * Skip empty voxel cells incrementally, write actual hit depth, and add palette,
   sunlight, sky, and fog shading. Compare reference/accelerated color and depth
   using native OpenGL benchmarks; exercise saves and streaming with real files.

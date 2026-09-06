@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Chunk.hpp"
+#include <algorithm>
 #include <map>
 #include <vector>
 
@@ -85,21 +86,28 @@ inline std::int64_t distanceSquared(ChunkKey a, ChunkKey b) {
     return x * x + y * y + z * z;
 }
 
-// Fine levels first: a coarse voxel around the eye reads as solid, so the camera's own detail must land before
-// the horizon. Within a level, nearest first.
+// Complete the camera's ancestor sibling groups before refining the rest of each level.
 inline std::vector<ChunkKey> residencyTargets(ChunkKey cameraL0, int radius) {
     std::vector<ChunkKey> out;
+    std::array<ChunkKey, LevelCount> centers;
     for (int level = 0; level < LevelCount; ++level) {
         auto r = region(cameraL0, level, radius);
         if (!r) continue;
-        auto c = *keyAtLevel(cameraL0, level);
-        auto begin = out.size();
+        centers[level] = *keyAtLevel(cameraL0, level);
         r->each([&](ChunkKey k) { out.push_back(k); });
-        std::sort(out.begin() + begin, out.end(), [c](ChunkKey a, ChunkKey b) {
-            auto da = distanceSquared(a, c), db = distanceSquared(b, c);
-            return da == db ? a < b : da < db;
-        });
     }
+    auto cameraFamily = [&](ChunkKey key) {
+        return key.level == LevelCount - 1 ? key == centers[key.level]
+            : parentOf(key) == centers[key.level + 1];
+    };
+    std::sort(out.begin(), out.end(), [&](ChunkKey a, ChunkKey b) {
+        bool nearA = cameraFamily(a), nearB = cameraFamily(b);
+        if (nearA != nearB) return nearA;
+        if (nearA && a.level != b.level) return a.level < b.level;
+        auto da = distanceSquared(a, centers[a.level]), db = distanceSquared(b, centers[b.level]);
+        if (da != db) return da < db;
+        return a.level == b.level ? a < b : a.level < b.level;
+    });
     return out;
 }
 

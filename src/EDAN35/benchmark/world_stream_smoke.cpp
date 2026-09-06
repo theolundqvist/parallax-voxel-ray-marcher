@@ -40,19 +40,27 @@ int main(int argc, char** argv) try {
     {
         Stream stream(path, 17);
         waitFor([&] { return stream.status().ready; }, stream);
-        stream.retarget(1);
-        for (int x = 0; x < 8; ++x) stream.request({x, 5, 0}, 1);
-        stream.retarget(2);
-        require(stream.request({-5, 5, -7}, 2), "New camera load rejected");
+        stream.retarget({0, 5, 0});
+        for (int x = 0; x < 4; ++x) require(stream.request({x, 5, 0}), "Initial load rejected");
+        waitFor([&] { return stream.status().replies == 4; }, stream);
+        stream.retarget({2, 5, 0});
+        for (int x = 0; x < 4; ++x)
+            require(next(stream).chunks[0].key == ChunkKey{x, 5, 0}, "Retarget discarded a still-needed reply");
+        for (int x = 0; x < 4; ++x) require(stream.request({x, 5, 0}), "Retained load rejected");
+        stream.retarget({-5, 5, -7});
+        require(stream.request({-5, 5, -7}), "New camera load rejected");
         auto reply = next(stream);
-        require(!reply.edit && reply.epoch == 2 && reply.chunks.size() == 1 &&
+        require(!reply.edit && reply.chunks.size() == 1 &&
                 reply.chunks[0].key == ChunkKey{-5, 5, -7}, "Stale camera reply escaped retarget");
-        require(!stream.request({0, 5, 0}, 1), "Old camera request accepted");
+        require(!stream.request({0, 5, 0}), "Out-of-view request accepted");
 
-        require(stream.request({0, Sky, 0}, 2) && stream.request({0, -100, 0}, 2), "Uniform loads rejected");
+        stream.retarget({0, Sky, 0});
+        require(stream.request({0, Sky, 0}), "Sky load rejected");
         reply = next(stream);
         require(reply.chunks[0].key == ChunkKey{0, Sky, 0} && !reply.chunks[0].data && reply.chunks[0].uniform == Air,
                 "Sky chunk was not collapsed to uniform air");
+        stream.retarget({0, -100, 0});
+        require(stream.request({0, -100, 0}), "Deep load rejected");
         reply = next(stream);
         require(reply.chunks[0].key == ChunkKey{0, -100, 0} && !reply.chunks[0].data && reply.chunks[0].uniform == Bedrock,
                 "Deep chunk was not collapsed to uniform bedrock");
@@ -60,7 +68,7 @@ int main(int argc, char** argv) try {
         Brush brush{metres({-0.125, 24.0, -0.125}), 0.5f, Crystal};
         require(stream.edit(brush), "Brush could not be queued");
         require(!stream.edit(brush), "Concurrent brush accepted");
-        stream.retarget(3);
+        stream.retarget({3, Sky, 3});
         reply = next(stream);
         require(reply.edit && !reply.chunks.empty(), "Teleport discarded a durable brush reply");
         bool found = false;
@@ -78,51 +86,55 @@ int main(int argc, char** argv) try {
                 "Sky brush did not edit its chunk");
         for (int level = 1; level <= OverlayLevels; ++level) {
             auto coarse = *keyAtLevel(sky, level);
-            require(stream.request(coarse, 3), "Coarse request rejected");
+            require(stream.request(coarse), "Coarse request rejected");
             reply = next(stream);
             require(reply.chunks.size() == 1 && reply.chunks[0].key == coarse, "Coarse reply key mismatch");
             require(reply.chunks[0].data != nullptr && hasCrystal(reply.chunks[0]), "Saved edit not overlaid at level 1..3");
         }
         for (int level = OverlayLevels + 1; level <= 6; ++level) {
             auto coarse = *keyAtLevel(sky, level);
-            require(stream.request(coarse, 3), "Coarse request rejected");
+            require(stream.request(coarse), "Coarse request rejected");
             reply = next(stream);
             require(reply.chunks.size() == 1 && reply.chunks[0].key == coarse, "Coarse reply key mismatch");
             require(!reply.chunks[0].data && reply.chunks[0].uniform == Air, "Level above OverlayLevels was overlaid or not collapsed");
         }
         auto top = *keyAtLevel(sky, LevelCount - 1);
-        require(stream.request(top, 3), "Top-level request rejected");
+        require(stream.request(top), "Top-level request rejected");
         reply = next(stream);
         require(reply.chunks[0].key == top && !hasCrystal(reply.chunks[0]), "Top level chunk was overlaid");
-        require(stream.request(sky, 3), "Edited level-0 request rejected");
+        require(stream.request(sky), "Edited level-0 request rejected");
         reply = next(stream);
         require(reply.chunks[0].data != nullptr && hasCrystal(reply.chunks[0]), "Edited level-0 chunk lost its edit");
 
-        stream.retarget(4);
+        stream.retarget(sky);
         // Data replies fill the in-flight bound; one more blocks the worker so the queue stays full.
-        for (int i = 0; i < int(Stream::DataRepliesInFlight) + 1; ++i) require(stream.request(sky, 4), "Data request rejected");
+        for (int i = 0; i < int(Stream::DataRepliesInFlight) + 1; ++i) require(stream.request(sky), "Data request rejected");
         waitFor([&] { return stream.status().replies == Stream::DataRepliesInFlight; }, stream);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         require(stream.status().replies == Stream::DataRepliesInFlight && stream.status().queued == 0, "Data replies exceeded in-flight bound");
-        for (int i = 0; i < int(Stream::RequestCapacity); ++i)
-            require(stream.request({i, Sky, 0}, 4), "Request queue below capacity rejected");
-        require(!stream.request({0, Sky + 1, 0}, 4), "Request queue exceeded capacity");
+        for (int i = 0; i < int(Stream::RequestCapacity) - 1; ++i)
+            require(stream.request({i % 8, Sky + 1, i / 8}), "Request queue below capacity rejected");
+        require(!stream.request({0, Sky + 1, 0}), "Terrain loads consumed the brush queue slot");
+        require(stream.edit({{sky, glm::dvec3(4.0)}, 0.5f, Stone}), "Full terrain queue starved a brush");
         for (int i = 0; i < int(Stream::DataRepliesInFlight); ++i) {
             auto ready = stream.poll();
             require(ready && ready->chunks[0].key == sky && ready->chunks[0].data, "Data reply missing");
         }
         waitFor([&] { return stream.status().replies == Stream::RequestCapacity + 1; }, stream);
         require(stream.poll()->chunks[0].key == sky, "Blocked data reply not released");
-        for (std::size_t i = 0; i < Stream::RequestCapacity; ++i) {
+        auto priorityEdit = next(stream);
+        require(priorityEdit.edit, "Brush did not precede queued terrain loads");
+        for (std::size_t i = 0; i < Stream::RequestCapacity - 1; ++i) {
             auto ready = stream.poll();
-            require(ready && !ready->chunks[0].data && ready->chunks[0].key == ChunkKey{std::int64_t(i), Sky, 0},
+            require(ready && !ready->chunks[0].data &&
+                    ready->chunks[0].key == ChunkKey{std::int64_t(i % 8), Sky + 1, std::int64_t(i / 8)},
                     "Uniform reply burst lost order or data");
         }
         require(!stream.poll(), "Reply queue not drained");
 
         for (int x = 0; x < 1000; ++x) {
-            stream.retarget(5 + x);
-            require(stream.request({x, 5, 0}, 5 + x), "Travel request rejected");
+            stream.retarget({x, 5, 0});
+            require(stream.request({x, 5, 0}), "Travel request rejected");
             reply = next(stream);
             auto state = stream.status();
             require(state.queued <= Stream::RequestCapacity && state.replies <= Stream::DataRepliesInFlight &&
@@ -142,8 +154,8 @@ int main(int argc, char** argv) try {
         require(store.savedKeysWithin(*keyAtLevel({3, Sky, 3}, 3)) == std::vector<ChunkKey>{{3, Sky, 3}},
                 "Sky edit missing from saved keys after restart");
     }
-    std::cout << "PASS: stale loads rejected, uniform collapse, overlay at levels 1..3 only, 64-request burst, "
-                 "edits survive teleport and shutdown, 1000-chunk worker/cache bounds\n";
+    std::cout << "PASS: retained loads survive retarget, stale loads rejected, uniform collapse, overlays, "
+                 "brush priority, edits survive teleport and shutdown, 1000-chunk worker/cache bounds\n";
     return 0;
 } catch (std::exception const& error) {
     std::cerr << "FAIL: " << error.what() << '\n';

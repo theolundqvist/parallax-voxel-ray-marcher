@@ -67,8 +67,10 @@ last. An interruption resumes safely. Solid edits and carved terrain remain;
 old air that was naturally below sea level gains water. Generator-5 carved water
 stays air on reopening. Earlier island formats remain unsupported.
 
-Brush edits become visible only after a durable save. A redo journal makes a
-cross-chunk brush recoverable as one operation; startup finishes an interrupted
+Held brushes run one durable edit at a time, without an extra cooldown; a terrain
+load queue cannot consume the brush's reserved slot. Edits become visible only
+after a durable save. A redo journal makes a cross-chunk brush recoverable as one
+operation; startup finishes an interrupted
 checkpoint before loading chunks. Corrupt files and storage failures stop edits
 rather than regenerate saved terrain. Retry recovery from the menu, or explicitly
 close while retaining the recovery files. An unacknowledged interrupted brush may
@@ -78,12 +80,16 @@ saved chunks when they are generated, so a carved hillside stays carved when the
 camera moves away.
 
 Residency is based on distance per level, not which way the camera points, with
-one-chunk hysteresis before eviction; frustum culling only suppresses draws.
+one-chunk hysteresis before eviction. Camera movement keeps still-needed loads
+and replies. Requests complete the camera's ancestor sibling groups first, so
+missing intermediate chunks cannot hide ready nearby detail behind a coarse
+ancestor; remaining work interleaves levels by distance.
 Chunk keys are 64-bit integers with a camera-relative render origin, so there is
 no map edge during normal exploration. Vertical travel is bounded to −128 to
-2048 m. One background worker, bounded request/reply queues, a 1 MiB per-frame
-upload budget, and a 5,120-brick GPU pool (every targeted chunk can hold a brick)
-bound streaming work. Brushes stay atomic across at most eight chunks.
+2048 m. One background worker, bounded queues, at most 64 replies and a 1 MiB
+voxel-upload budget per frame, and a 5,120-brick GPU pool bound streaming work.
+Uniform chunks share the reply limit but consume no voxel-upload bytes. Brushes
+stay atomic across at most eight chunks.
 
 ### Persistent voxel storage
 
@@ -139,10 +145,12 @@ build/src/EDAN35/voxel_benchmark --scenario mountains --pose ridge --frames 100 
 
 The generator test pins the cross-platform terrain fingerprint, level consistency,
 overlay superset, spawn determinism, and the cave cutoff per level. The frontier
-test checks that 1,000 random anchors with random residency draw every point
-exactly once, finest level first. The stream smoke requires a new scratch
-directory and never deletes an existing world. It exercises stale camera requests,
-edits surviving teleport and shutdown, level overlays, and 1,000-chunk travel. The
+test checks that 1,000 random anchors with random residency draw every reachable
+point exactly once, and that near-camera detail becomes visible within 128 loads
+even with an existing coarse ancestor. The stream smoke requires a new scratch
+directory and never deletes an existing world. It exercises retained and obsolete
+camera loads, brush priority behind a full terrain queue, durable edits surviving
+teleport and shutdown, level overlays, and 1,000-chunk travel. The
 storage smoke checks encoding/cache bounds, 64-bit key boundaries, restart,
 exclusive access, corruption, journal recovery, and interrupted generator-4 water
 migration using real filesystem failures.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Chunk.hpp"
+#include "Frontier.hpp"
 #include "Generate.hpp"
 #include "Store.hpp"
 #include <algorithm>
@@ -25,7 +26,6 @@ public:
     // One frame can ingest FrameUploadBudget of bricks, so the worker may run that far ahead.
     static constexpr std::size_t DataRepliesInFlight = FrameUploadBudget / sizeof(ChunkData);
     struct Reply {
-        std::uint64_t epoch = 0;
         bool edit = false;
         std::vector<Chunk> chunks;
     };
@@ -62,22 +62,27 @@ public:
         result.replies = replies.size();
         return result;
     }
-    void retarget(std::uint64_t epoch) {
+    void retarget(ChunkKey camera) {
         std::lock_guard lock(mutex);
-        currentEpoch = epoch;
+        center = camera;
+        if (loading && !wanted(*loading)) loadRequested = false;
         requests.erase(std::remove_if(requests.begin(), requests.end(),
-            [](Request const& request) { return !request.brush; }), requests.end());
+            [this](Request const& request) { return !request.brush && !wanted(request.key); }), requests.end());
         replies.erase(std::remove_if(replies.begin(), replies.end(),
-            [](Reply const& reply) { return !reply.edit; }), replies.end());
+            [this](Reply const& reply) { return !reply.edit && !wanted(reply.chunks.front().key); }), replies.end());
         dataReplies = countDataReplies();
         changed.notify_all();
     }
-    bool request(ChunkKey key, std::uint64_t epoch) {
+    bool request(ChunkKey key) {
         std::lock_guard lock(mutex);
-        if (!state.ready || !state.error.empty() || stopping || requests.size() >= RequestCapacity ||
-            epoch != currentEpoch)
-            return false;
-        requests.push_back({key, epoch, std::nullopt});
+        if (!state.ready || !state.error.empty() || stopping || !wanted(key)) return false;
+        if (loading == key && !loadRequested) {
+            loadRequested = true;
+            return true;
+        }
+        // Terrain loads must leave a queue slot for the next brush.
+        if (requests.size() >= RequestCapacity - 1) return false;
+        requests.push_back({key, std::nullopt});
         changed.notify_one();
         return true;
     }
@@ -87,7 +92,7 @@ public:
             requests.size() >= RequestCapacity)
             return false;
         state.editing = true;
-        requests.push_front({{}, currentEpoch, brush});
+        requests.push_front({{}, brush});
         changed.notify_one();
         return true;
     }
@@ -105,7 +110,6 @@ public:
 private:
     struct Request {
         ChunkKey key;
-        std::uint64_t epoch;
         std::optional<Brush> brush;
     };
     mutable std::mutex mutex;
@@ -113,11 +117,18 @@ private:
     std::deque<Request> requests;
     std::deque<Reply> replies;
     Status state;
-    std::uint64_t currentEpoch = 0;
+    std::optional<ChunkKey> center;
+    std::optional<ChunkKey> loading;
+    bool loadRequested = false;
     std::size_t dataReplies = 0;
     bool stopping = false;
     std::thread worker;
 
+    bool wanted(ChunkKey key) const {
+        if (!center) return false;
+        auto view = region(*center, key.level, ShellRadius);
+        return view && view->contains(key);
+    }
     static bool carriesData(Reply const& reply) {
         return std::any_of(reply.chunks.begin(), reply.chunks.end(), [](Chunk const& c) { return c.data != nullptr; });
     }
@@ -172,8 +183,12 @@ private:
                     if (requests.empty()) break;
                     request = requests.front();
                     requests.pop_front();
+                    if (!request.brush) {
+                        loading = request.key;
+                        loadRequested = true;
+                    }
                 }
-                Reply reply{request.epoch, request.brush.has_value(), {}};
+                Reply reply{request.brush.has_value(), {}};
                 if (request.brush) {
                     reply.chunks = store.edit(*request.brush);
                     for (auto& chunk : reply.chunks) collapse(chunk);
@@ -184,13 +199,15 @@ private:
                     state.cachedBytes = store.cachedBytes();
                     state.cachedChunks = store.cachedChunks();
                     changed.wait(lock, [this, &reply, data] {
-                        return stopping || (!reply.edit && reply.epoch != currentEpoch) || !data ||
+                        return stopping || (!reply.edit && !loadRequested) || !data ||
                                dataReplies < DataRepliesInFlight;
                     });
-                    if (!stopping && (reply.edit || reply.epoch == currentEpoch)) {
+                    if (!stopping && (reply.edit || loadRequested)) {
                         replies.push_back(std::move(reply));
                         dataReplies += data;
                     }
+                    loading.reset();
+                    loadRequested = false;
                 }
             }
         } catch (std::exception const& error) {
