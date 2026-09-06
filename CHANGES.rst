@@ -3,7 +3,13 @@ Revision history for CG_Labs
 Unreleased
 ==========
 
-* Add a seeded floating-island world with caves, arches, free flight, and carving.
+* Replace the floating islands with a continuous mountain landscape: connected
+  ridges and valleys, caves, a transparent sea with a visible seabed, and a
+  deterministic valley-floor spawn. Terrain is hashed on integer lattices so a seed
+  generates identical chunks on macOS and Linux.
+* Render distant terrain from ten levels of coarser chunks in one full-screen
+  hierarchical march over per-level page tables; coarse levels overlay saved edits.
+  Chunk keys are 64-bit with a camera-relative origin, so exploration has no map edge.
   Keep the original scenes available through ``--demo``.
 * Stream distance-selected chunks within fixed residency and compressed-cache
   budgets. Save edits before display, with atomic brush recovery on Linux/macOS.
